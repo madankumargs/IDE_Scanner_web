@@ -225,6 +225,7 @@ export type EvidenceIntelligenceReport = {
   guide: ReviewerGuideDraft;
   access_surface: AccessSurfaceEntry[];
   data_flow: EvidenceIntelligenceContext["data_flow"];
+  causal_evidence: EvidenceIntelligenceContext["causal_evidence"];
   blast_radius: BlastRadiusAssessment;
   release_delta: ReleaseDelta;
   evidence: EvidenceReference[];
@@ -692,6 +693,7 @@ export function buildDeterministicReviewFallback(
   const releaseChanges: ReviewerGuideChange[] = context.release_delta.available
     ? [...context.release_delta.added.map((item, index) => ({ change_id: `added-${index + 1}`, text: `Added: ${item}`, evidence_refs: ["scan.baseline"] })), ...context.release_delta.removed.map((item, index) => ({ change_id: `removed-${index + 1}`, text: `Removed: ${item}`, evidence_refs: ["scan.baseline"] }))].slice(0, REVIEWER_GUIDE_LIMITS.release_changes)
     : [];
+  const fallbackOwner: ReviewerGuideAction["owner"] = reviewGoal === "publisher_response" ? "publisher" : "security_team";
   const nextActions: ReviewerGuideAction[] = [
     {
       action_id: "fallback-artifact-check",
@@ -702,12 +704,12 @@ export function buildDeterministicReviewFallback(
     },
     {
       action_id: "fallback-rationale-review",
-      owner: reviewGoal === "publisher_response" ? "publisher" : "security_team",
+      owner: fallbackOwner,
       priority: "next",
       text: reviewGoal === "publisher_response" ? "Explain or remediate the behavior named in the decision rationale, then submit a new artifact for review." : "Open the cited decision rationale and verify it against the exact report evidence.",
       evidence_refs: ["scan.reason"],
     },
-    ...(context.release_delta.available ? [{ action_id: "fallback-release-compare", owner: reviewGoal === "publisher_response" ? "publisher" as const : "security_team" as const, priority: "next" as const, text: `Compare this release with baseline ${context.release_delta.baseline_version || "the recorded baseline"}.`, evidence_refs: ["scan.baseline"] }] : [{ action_id: "fallback-coverage-review", owner: "security_team" as const, priority: "optional" as const, text: "Confirm which runtime triggers and host conditions were covered by the scan.", evidence_refs: ["scan.coverage_boundaries"] }]),
+    ...(context.release_delta.available ? [{ action_id: "fallback-release-compare", owner: fallbackOwner, priority: "next" as const, text: `Compare this release with baseline ${context.release_delta.baseline_version || "the recorded baseline"}.`, evidence_refs: ["scan.baseline"] }] : [{ action_id: "fallback-coverage-review", owner: "security_team" as const, priority: "optional" as const, text: "Confirm which runtime triggers and host conditions were covered by the scan.", evidence_refs: ["scan.coverage_boundaries"] }]),
   ].slice(0, REVIEWER_GUIDE_LIMITS.next_actions);
   const unknowns = context.coverage_boundaries.slice(0, REVIEWER_GUIDE_LIMITS.unknowns).map((boundary, index) => ({
     unknown_id: `fallback-unknown-${index + 1}`,
@@ -847,7 +849,7 @@ function validateEventChain(value: unknown, context: EvidenceIntelligenceContext
     if (role !== "trigger" && role !== "action" && role !== "target" && role !== "consequence") throw new EvidenceIntelligenceValidationError("The event chain contained an unsupported step role.");
     const refs = validatedRefs(step.evidence_refs, allowedRefs, aliases, 6, false);
     if (!refs.some((ref) => causalRefs.has(ref))) throw new EvidenceIntelligenceValidationError("An event-chain step was not tied to structured causal evidence.");
-    return { step_id: requiredText(step.step_id, 80), role, label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: refs };
+    return { step_id: requiredText(step.step_id, 80), role: role as ReviewerGuideChainStep["role"], label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: refs };
   });
   const roles = new Set(steps.map((step) => step.role));
   if (!roles.has("trigger") || !roles.has("action") || (!roles.has("target") && !roles.has("consequence"))) throw new EvidenceIntelligenceValidationError("The event chain omitted a required causal role.");
