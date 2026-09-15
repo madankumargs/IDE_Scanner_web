@@ -364,7 +364,7 @@ export async function createEvidenceIntelligenceReport(
             "The deterministic decision, severity, coverage, artifact identity, and findings are authoritative. Never create, remove, upgrade, or reinterpret a finding as a new fact.",
             "Describe potential blast radius only from the supplied access surface and deterministic dimensions. Do not claim malware, malicious intent, compromise, exploitability, credential theft, exfiltration, or remote impact unless the supplied evidence explicitly and deterministically states that fact.",
             "Use observed only for facts directly represented by evidence. Use bounded_inference for carefully qualified consequences. Use unknown for missing, unassessed, or low-confidence information.",
-            "Every summary reference, claim, positive signal, unknown, and verification action must use only evidence refs supplied in the evidence catalog. Never invent refs.",
+            "Every summary reference, claim, positive signal, unknown, and verification action must use only the exact ref values supplied in the evidence catalog. Fact refs and object IDs are not valid evidence refs unless the same string also appears in that catalog. Never invent refs.",
             "Use a globally unique claim_id across claims, positive_signals, and unknowns.",
             "Do not emit HTML, Markdown tables, SVG, CSS, links, code, chain-of-thought, or hidden reasoning. Return only JSON matching the supplied schema.",
           ].join("\n"),

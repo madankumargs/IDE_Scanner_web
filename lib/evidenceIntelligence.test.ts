@@ -46,6 +46,7 @@ describe("evidence intelligence compiler", () => {
     expect(context.blast_radius.dimensions.network.level).toBe("moderate");
     expect(context.blast_radius.dimensions.integrity.level).toBe("broad");
     expect(context.blast_radius.dimensions.supply_chain.level).toBe("moderate");
+    expect(context.evidence_refs).toEqual(expect.arrayContaining(["scan.reason", "scan.capabilities", "scan.inventory"]));
     expect(context.coverage_boundaries).toContain("Only 82% of the scanner coverage target was recorded.");
     expect(context.context_digest).toMatch(/^[a-f0-9]{64}$/);
   });

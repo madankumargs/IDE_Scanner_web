@@ -231,6 +231,7 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
 
   addEvidence({ ref: "scan.identity", kind: "scan", label: "Exact scan identity", detail: `${extensionId}@${version} · ${scanId}`, section: "overview" });
   addEvidence({ ref: "scan.decision", kind: "scan", label: "Deterministic decision", detail: safeText(scan.decision, 80) || "incomplete", section: "overview" });
+  addEvidence({ ref: "scan.reason", kind: "scan", label: "Decision rationale", detail: safeText(scan.decision_reason, MAX_STRING) || "No deterministic rationale was recorded.", section: "overview" });
   addEvidence({ ref: "scan.coverage", kind: "coverage", label: "Analysis coverage", detail: formatCoverage(scan.coverage_percent), section: "coverage" });
   addEvidence({ ref: "scan.provenance", kind: "scan", label: "Artifact provenance", detail: `${safeText(scan.provenance_tier, 100) || "unknown"} · ${artifactSha || "hash not recorded"}`, section: "provenance" });
   addFact({ ref: "scan.decision", label: "Decision", value: safeText(scan.decision, 80) || "incomplete", certainty: "observed", evidence_refs: ["scan.decision"] });
@@ -293,7 +294,9 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
   const dataFlow = buildDataFlow(extensionId, accessSurface);
 
   addFact({ ref: "scan.capabilities", label: "Recorded capability families", value: String(capabilityRecords.length), certainty: capabilityRecords.length ? "observed" : "unknown", evidence_refs: capabilityRecords.map((item) => item.evidence_ref).filter(Boolean) });
+  addEvidence({ ref: "scan.capabilities", kind: "capability", label: "Recorded capability families", detail: `${capabilityRecords.length} capability family(ies) normalized from the report`, section: "capabilities" });
   addFact({ ref: "scan.inventory", label: "Report inventory", value: `${findings.length} findings · ${files.length} files · ${dependencies.length} dependencies`, certainty: "observed", evidence_refs: ["scan.identity"] });
+  addEvidence({ ref: "scan.inventory", kind: "scan", label: "Report inventory", detail: `${findings.length} findings · ${files.length} files · ${dependencies.length} dependencies`, section: "overview" });
 
   const coverageBoundaries = deriveCoverageBoundaries(scan, product, findings, files);
   const releaseDelta = deriveReleaseDelta(scan, version, addEvidence);
