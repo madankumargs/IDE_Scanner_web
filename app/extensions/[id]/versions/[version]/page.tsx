@@ -21,5 +21,10 @@ export default async function VersionPage({ params }: { params: Promise<{ id: st
   const scan = versionProduct?.scan as Record<string, unknown> | null | undefined;
   const scanId = scan?.id ? String(scan.id) : "";
   const fullAnalysisHref = scanId ? `/extensions/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/scans/${encodeURIComponent(scanId)}` : undefined;
-  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={extensionProduct.versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={signedIn}/>;
+  const versions = scan
+    ? extensionProduct.versions.map((item) => String(item.version || "") === version
+      ? { ...item, latest_scan_id: scan.id, scan_state: scan.analysis_status, decision: scan.decision, coverage_percent: scan.coverage_percent, scanned_at: scan.scanned_at || scan.created_at }
+      : item)
+    : extensionProduct.versions;
+  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={signedIn}/>;
 }

@@ -288,38 +288,6 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
   return { version: { extension_id: extensionId, version, latest_scan_id: scanId, scan_state: report.analysis_status }, scan: report, findings, files, dependencies };
 }
 
-export async function getCloudflareScanSummaries(extensionId: string): Promise<Row[]> {
-  if (!cloudflarePrivateAvailable()) return [];
-  const rows = await privateDb().prepare(`
-    SELECT
-      report.scan_id AS id,
-      report.extension_id,
-      report.version,
-      report.artifact_sha256,
-      report.created_at,
-      json_extract(extension.value, '$.analysis_status') AS analysis_status,
-      json_extract(extension.value, '$.decision') AS decision,
-      json_extract(extension.value, '$.decision_reason') AS decision_reason,
-      json_extract(extension.value, '$.public_outcome') AS public_outcome,
-      json_extract(extension.value, '$.decision_basis') AS decision_basis,
-      json_extract(extension.value, '$.evidence_confidence') AS evidence_confidence,
-      json_extract(extension.value, '$.coverage_percent') AS coverage_percent,
-      json_extract(extension.value, '$.risk_score') AS risk_score,
-      json_extract(extension.value, '$.malware_score') AS malware_score,
-      json_extract(extension.value, '$.scanner_build') AS scanner_build,
-      json_extract(extension.value, '$.ruleset_version') AS ruleset_version,
-      json_extract(extension.value, '$.capability_assessment') AS capability_assessment
-    FROM app_scan_reports report
-    JOIN json_each(report.report_json, '$.extensions') extension ON true
-    WHERE lower(report.extension_id)=lower(?)
-    ORDER BY report.created_at DESC
-  `).bind(extensionId).all<Row>();
-  return rows.results.map((row) => ({
-    ...row,
-    capability_assessment: parseJson(row.capability_assessment),
-  }));
-}
-
 export async function getCloudflareLatestScanProduct(extensionId: string, version: string): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
   const row = await privateDb()
