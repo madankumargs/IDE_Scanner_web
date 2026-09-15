@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   compileEvidenceIntelligenceContext,
+  buildDeterministicReviewFallback,
   deriveBlastRadius,
   signEvidenceIntelligenceContext,
-  validateIntelligenceNarrative,
+  validateReviewerGuide,
   verifyEvidenceIntelligenceTicket,
   EvidenceIntelligenceValidationError,
 } from "@/lib/evidenceIntelligence";
@@ -68,90 +69,117 @@ describe("evidence intelligence compiler", () => {
 });
 
 describe("evidence intelligence output validation", () => {
-  it("accepts cited, calibrated narrative output", () => {
+  function guide(overrides: Record<string, unknown> = {}) {
+    return {
+      primary_takeaway: {
+        title: "Pause before approval",
+        statement: "This exact release has a deterministic review result.",
+        action: "Verify the cited rationale before approval.",
+        certainty: "observed",
+        evidence_refs: ["scan.decision", "scan.reason"],
+      },
+      event_chain: {
+        available: false,
+        unavailable_reason: "The report does not contain a complete structured causal chain.",
+        steps: [],
+        evidence_refs: ["scan.coverage_boundaries"],
+      },
+      scenarios: [{
+        scenario_id: "scenario-1",
+        title: "Network and external services",
+        when: "If the extension exercises the recorded capability",
+        mechanism: "make outbound network requests",
+        consequence: "The stated external scope could be involved; actual effect is not established.",
+        affected_surface: "external destinations reachable by the host",
+        certainty: "bounded_inference",
+        evidence_refs: ["capability.network.1"],
+      }],
+      release_changes: [],
+      next_actions: [{ action_id: "action-1", owner: "security_team", priority: "next", text: "Verify the cited rationale against the exact report.", evidence_refs: ["scan.reason"] }],
+      unknowns: [{ unknown_id: "unknown-1", question: "Which runtime trigger activates the capability?", why_it_matters: "Activation conditions limit what the static report can establish.", certainty: "unknown", evidence_refs: ["scan.coverage_boundaries"] }],
+      ...overrides,
+    };
+  }
+
+  it("accepts a concise cited reviewer guide", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    const narrative = validateIntelligenceNarrative({
-      headline: "Review the exact release before approval",
-      bottom_line: "The scan recorded outbound network and process capabilities; the deterministic decision remains review.",
-      summary_evidence_refs: ["scan.decision", "capability.network.1"],
-      claims: [
-        { claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["capability.network.1"] },
-        { claim_id: "claim-2", section: "blast_radius", text: "The potential integrity impact is broad if process execution is exercised.", certainty: "bounded_inference", evidence_refs: ["capability.process-exec.2", "scan.coverage"] },
-      ],
-      positive_signals: [],
-      unknowns: [{ claim_id: "unknown-1", section: "context", text: "Runtime activation conditions were not fully assessed.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
-      verify_next: [{ text: "Confirm the expected network destination in the publisher's documentation.", evidence_refs: ["capability.network.1"] }],
-    }, context);
-    expect(narrative.claims).toHaveLength(2);
+    const reviewerGuide = validateReviewerGuide(guide(), context);
+    expect(reviewerGuide.scenarios).toHaveLength(1);
+    expect(reviewerGuide.next_actions).toHaveLength(1);
   });
 
   it("canonicalizes model references to validated access-surface evidence", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    const narrative = validateIntelligenceNarrative({
-      headline: "Review the exact release",
-      bottom_line: "The release exposes a network access surface; the deterministic decision remains review.",
-      summary_evidence_refs: ["access.external_services"],
-      claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["external_services"] }],
-      positive_signals: [],
-      unknowns: [],
-      verify_next: [],
-    }, context);
-    expect(narrative.summary_evidence_refs).toEqual(["capability.network.1"]);
-    expect(narrative.claims[0].evidence_refs).toEqual(["capability.network.1"]);
+    const reviewerGuide = validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], evidence_refs: ["external_services"] }] }), context);
+    expect(reviewerGuide.scenarios[0].evidence_refs).toEqual(["capability.network.1"]);
   });
 
   it("canonicalizes capability prefixes and unindexed catalog refs without widening evidence", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    const narrative = validateIntelligenceNarrative({
-      headline: "Review the exact release",
-      bottom_line: "The release exposes a network access surface; the deterministic decision remains review.",
-      summary_evidence_refs: ["access.network"],
-      claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["capability.network.1"] }],
-      positive_signals: [],
-      unknowns: [],
-      verify_next: [],
-    }, context);
-    expect(narrative.summary_evidence_refs).toEqual(["capability.network.1"]);
-    expect(narrative.claims[0].evidence_refs).toEqual(["capability.network.1"]);
+    const reviewerGuide = validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], evidence_refs: ["access.network"] }] }), context);
+    expect(reviewerGuide.scenarios[0].evidence_refs).toEqual(["capability.network.1"]);
   });
 
   it("rejects a foreign evidence reference", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    expect(() => validateIntelligenceNarrative({
-      headline: "Unsupported claim",
-      bottom_line: "This is not grounded.",
-      summary_evidence_refs: ["finding.unknown"],
-      claims: [{ claim_id: "claim-1", section: "context", text: "The extension can access everything.", certainty: "observed", evidence_refs: ["finding.unknown"] }],
-      positive_signals: [],
-      unknowns: [],
-      verify_next: [],
-    }, context)).toThrow(EvidenceIntelligenceValidationError);
+    expect(() => validateReviewerGuide(guide({ primary_takeaway: { ...guide().primary_takeaway, evidence_refs: ["finding.unknown"] } }), context)).toThrow(EvidenceIntelligenceValidationError);
   });
 
   it("rejects unsupported compromise and credential-theft assertions", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    expect(() => validateIntelligenceNarrative({
-      headline: "Review",
-      bottom_line: "The scanner recorded a capability.",
-      summary_evidence_refs: ["scan.decision"],
-      claims: [{ claim_id: "claim-1", section: "blast_radius", text: "This extension will exfiltrate and steal credentials.", certainty: "bounded_inference", evidence_refs: ["capability.network.1"] }],
-      positive_signals: [],
-      unknowns: [],
-      verify_next: [],
-    }, context)).toThrow(EvidenceIntelligenceValidationError);
+    expect(() => validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], consequence: "This extension will exfiltrate and steal credentials." }] }), context)).toThrow(EvidenceIntelligenceValidationError);
   });
 
   it("rejects a model attempt to introduce a different decision", () => {
     const context = compileEvidenceIntelligenceContext(product());
-    expect(() => validateIntelligenceNarrative({
-      headline: "Allow this release",
-      bottom_line: "The deterministic decision remains allow.",
-      summary_evidence_refs: ["scan.decision"],
-      claims: [{ claim_id: "claim-1", section: "decision", text: "The release is safe and should be allowed.", certainty: "observed", evidence_refs: ["scan.decision"] }],
-      positive_signals: [],
-      unknowns: [],
-      verify_next: [],
-    }, context)).toThrow(EvidenceIntelligenceValidationError);
+    expect(() => validateReviewerGuide(guide({ primary_takeaway: { ...guide().primary_takeaway, statement: "The decision is allow and approve this release." } }), context)).toThrow(EvidenceIntelligenceValidationError);
+  });
+
+  it("does not accept a causal chain when structured causal evidence is absent", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    expect(() => validateReviewerGuide(guide({ event_chain: { available: true, unavailable_reason: "", steps: [{ step_id: "one", role: "trigger", label: "Startup", detail: "Starts", evidence_refs: ["scan.reason"] }, { step_id: "two", role: "action", label: "Executes", detail: "Runs", evidence_refs: ["scan.reason"] }, { step_id: "three", role: "target", label: "Host", detail: "Host", evidence_refs: ["scan.reason"] }], evidence_refs: ["scan.reason"] } }), context)).toThrow(EvidenceIntelligenceValidationError);
+  });
+
+  it("rejects repeated primary conclusions and invented release changes", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    expect(() => validateReviewerGuide(guide({ next_actions: [{ action_id: "action-1", owner: "you", priority: "now", text: "This exact release has a deterministic review result.", evidence_refs: ["scan.decision"] }] }), context)).toThrow(EvidenceIntelligenceValidationError);
+    expect(() => validateReviewerGuide(guide({ release_changes: [{ change_id: "change-1", text: "The capability changed in this release.", evidence_refs: ["scan.identity"] }] }), context)).toThrow(EvidenceIntelligenceValidationError);
+  });
+
+  it("accepts a causal chain only when the scanner supplied structured roles", () => {
+    const context = compileEvidenceIntelligenceContext(product({ event_chain: [
+      { role: "trigger", label: "Startup", detail: "The extension activates at startup." },
+      { role: "action", label: "Download", detail: "The extension downloads a package." },
+      { role: "target", label: "Local host", detail: "The package reaches the local host." },
+    ] }));
+    const reviewerGuide = validateReviewerGuide(guide({ event_chain: {
+      available: true,
+      unavailable_reason: "Not applicable when structured causal evidence is present.",
+      steps: [
+        { step_id: "step-1", role: "trigger", label: "Startup", detail: "The extension activates at startup.", evidence_refs: ["scan.causal_evidence"] },
+        { step_id: "step-2", role: "action", label: "Download", detail: "The extension downloads a package.", evidence_refs: ["scan.causal_evidence"] },
+        { step_id: "step-3", role: "target", label: "Local host", detail: "The package reaches the local host.", evidence_refs: ["scan.causal_evidence"] },
+      ],
+      evidence_refs: ["scan.causal_evidence"],
+    } }), context);
+    expect(context.causal_evidence.available).toBe(true);
+    expect(reviewerGuide.event_chain.steps).toHaveLength(3);
+  });
+
+  it("accepts release changes only when a comparable baseline exists", () => {
+    const context = compileEvidenceIntelligenceContext(product({ baseline_diff: { from_version: "1.2.2", added: ["network access"] } }));
+    const reviewerGuide = validateReviewerGuide(guide({ release_changes: [{ change_id: "change-1", text: "Added: network access", evidence_refs: ["scan.baseline"] }] }), context);
+    expect(context.release_delta.available).toBe(true);
+    expect(reviewerGuide.release_changes[0].evidence_refs).toEqual(["scan.baseline"]);
+  });
+
+  it("falls back to a short deterministic guide without provider text", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    const report = buildDeterministicReviewFallback(context, "install_decision");
+    expect(report.validation).toMatchObject({ status: "deterministic_fallback", source: "deterministic" });
+    expect(report.guide.event_chain.available).toBe(false);
+    expect(report.guide.next_actions.length).toBeLessThanOrEqual(3);
+    expect(JSON.stringify(report)).not.toContain("chain-of-thought");
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowDown, CircleHelp, ExternalLink, Network, ShieldAlert } from "lucide-react";
-import type { BlastRadiusAssessment, DataFlowEdge, DataFlowNode, EvidenceReference } from "@/lib/evidenceIntelligence";
+import { ArrowDown, ArrowRight, CircleHelp, ExternalLink, Network, ShieldAlert } from "lucide-react";
+import type { BlastRadiusAssessment, DataFlowEdge, DataFlowNode, EvidenceReference, ReviewerGuideChainStep } from "@/lib/evidenceIntelligence";
 import styles from "./evidenceIntelligence.module.css";
 
 export function EvidenceFlowVisual({
@@ -69,6 +69,25 @@ export function BlastRadiusVisual({ assessment, evidence }: { assessment: BlastR
         </table>
       </div>
     </div>
+  );
+}
+
+export function ReviewerEventChainVisual({ steps, evidence }: { steps: ReviewerGuideChainStep[]; evidence: EvidenceReference[] }) {
+  if (steps.length < 2) return <div className={styles.visualEmpty}><CircleHelp aria-hidden="true" /><p>No complete trigger-to-consequence chain is available in this report.</p></div>;
+  return (
+    <ol className={styles.eventChain} aria-label="Validated evidence-backed event chain">
+      {steps.map((step, index) => (
+        <li key={step.step_id} className={styles.eventChainItem}>
+          <article className={`${styles.eventStep} ${styles[`eventStep_${step.role}`]}`}>
+            <span className={styles.eventRole}>{humanize(step.role)}</span>
+            <strong>{step.label}</strong>
+            <p>{step.detail}</p>
+            <EvidenceRefs refs={step.evidence_refs} evidence={evidence} />
+          </article>
+          {index < steps.length - 1 ? <ArrowRight className={styles.eventArrow} aria-hidden="true" /> : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 

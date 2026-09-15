@@ -3,10 +3,10 @@ import "server-only";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 
-export const EVIDENCE_INTELLIGENCE_SCHEMA_VERSION = "1.0";
+export const EVIDENCE_INTELLIGENCE_SCHEMA_VERSION = "2.0";
 export const EVIDENCE_INTELLIGENCE_MAX_CONTEXT_CHARS = 30_000;
 
-export type IntelligenceAudience = "security_lead" | "engineer" | "publisher";
+export type IntelligenceReviewGoal = "install_decision" | "flag_investigation" | "publisher_response";
 export type IntelligenceDepth = "standard";
 export type EvidenceCertainty = "observed" | "bounded_inference" | "unknown";
 export type BlastRadiusLevel = "none" | "low" | "moderate" | "broad" | "critical" | "unknown";
@@ -85,27 +85,76 @@ export type ReleaseDelta = {
   evidence_refs: string[];
 };
 
-export type IntelligenceClaim = {
-  claim_id: string;
-  section: IntelligenceSection;
-  text: string;
+export type ReviewerGuidePrimaryTakeaway = {
+  title: string;
+  statement: string;
+  action: string;
   certainty: EvidenceCertainty;
   evidence_refs: string[];
 };
 
-export type IntelligenceAction = {
+export type ReviewerGuideChainStep = {
+  step_id: string;
+  role: "trigger" | "action" | "target" | "consequence";
+  label: string;
+  detail: string;
+  evidence_refs: string[];
+};
+
+export type ReviewerGuideEventChain = {
+  available: boolean;
+  unavailable_reason: string;
+  steps: ReviewerGuideChainStep[];
+  evidence_refs: string[];
+};
+
+export type ReviewerGuideScenario = {
+  scenario_id: string;
+  title: string;
+  when: string;
+  mechanism: string;
+  consequence: string;
+  affected_surface: string;
+  certainty: EvidenceCertainty;
+  evidence_refs: string[];
+};
+
+export type ReviewerGuideChange = {
+  change_id: string;
   text: string;
   evidence_refs: string[];
 };
 
-export type IntelligenceNarrativeDraft = {
-  headline: string;
-  bottom_line: string;
-  summary_evidence_refs: string[];
-  claims: IntelligenceClaim[];
-  positive_signals: IntelligenceClaim[];
-  unknowns: IntelligenceClaim[];
-  verify_next: IntelligenceAction[];
+export type ReviewerGuideAction = {
+  action_id: string;
+  owner: "you" | "security_team" | "publisher";
+  priority: "now" | "next" | "optional";
+  text: string;
+  evidence_refs: string[];
+};
+
+export type ReviewerGuideUnknown = {
+  unknown_id: string;
+  question: string;
+  why_it_matters: string;
+  certainty: "unknown";
+  evidence_refs: string[];
+};
+
+export type ReviewerGuideDraft = {
+  primary_takeaway: ReviewerGuidePrimaryTakeaway;
+  event_chain: ReviewerGuideEventChain;
+  scenarios: ReviewerGuideScenario[];
+  release_changes: ReviewerGuideChange[];
+  next_actions: ReviewerGuideAction[];
+  unknowns: ReviewerGuideUnknown[];
+};
+
+export type CausalEvidenceStep = {
+  role: "trigger" | "action" | "target" | "consequence";
+  label: string;
+  detail: string;
+  evidence_refs: string[];
 };
 
 export type EvidenceIntelligenceContext = {
@@ -135,6 +184,11 @@ export type EvidenceIntelligenceContext = {
     nodes: DataFlowNode[];
     edges: DataFlowEdge[];
   };
+  causal_evidence: {
+    available: boolean;
+    steps: CausalEvidenceStep[];
+    evidence_refs: string[];
+  };
   blast_radius: BlastRadiusAssessment;
   release_delta: ReleaseDelta;
   report_inventory: {
@@ -161,14 +215,14 @@ export type EvidenceIntelligenceReport = {
   schema_version: string;
   generated_at: string;
   model: string;
-  audience: IntelligenceAudience;
+  review_goal: IntelligenceReviewGoal;
   depth: IntelligenceDepth;
   context_digest: string;
   identity: EvidenceIntelligenceContext["identity"];
   deterministic: EvidenceIntelligenceContext["deterministic"] & {
     decision_unchanged: true;
   };
-  narrative: IntelligenceNarrativeDraft;
+  guide: ReviewerGuideDraft;
   access_surface: AccessSurfaceEntry[];
   data_flow: EvidenceIntelligenceContext["data_flow"];
   blast_radius: BlastRadiusAssessment;
@@ -178,7 +232,8 @@ export type EvidenceIntelligenceReport = {
   coverage_boundaries: string[];
   omitted_fields: string[];
   validation: {
-    status: "validated";
+    status: "validated" | "deterministic_fallback";
+    source: "sarvam" | "deterministic";
     claims_with_evidence: number;
     generated_at: string;
   };
@@ -191,6 +246,21 @@ const MAX_FILES = 100;
 const MAX_DEPENDENCIES = 60;
 const MAX_EVIDENCE_REFERENCES = 260;
 const MAX_STRING = 700;
+export const REVIEWER_GUIDE_LIMITS = {
+  scenarios: 3,
+  release_changes: 3,
+  next_actions: 3,
+  unknowns: 3,
+  chain_steps: 4,
+  primary_title: 120,
+  primary_statement: 320,
+  primary_action: 220,
+  item_title: 120,
+  item_text: 320,
+  action_text: 260,
+  unknown_text: 260,
+  total_chars: 6_000,
+} as const;
 const LEVEL_RANK: Record<BlastRadiusLevel, number> = {
   none: 0,
   low: 1,
@@ -315,6 +385,7 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
   const coverageBoundaries = deriveCoverageBoundaries(scan, product, findings, files);
   addEvidence({ ref: "scan.coverage_boundaries", kind: "coverage", label: "Coverage boundaries", detail: coverageBoundaries.join(" ").slice(0, MAX_STRING), section: "coverage" });
   const releaseDelta = deriveReleaseDelta(scan, version, addEvidence);
+  const causalEvidence = deriveCausalEvidence(product, scan, addEvidence);
   const omittedFields = [
     findings.length > MAX_FINDINGS ? `${findings.length - MAX_FINDINGS} findings beyond the context limit` : "",
     files.length > MAX_FILES ? `${files.length - MAX_FILES} files beyond the context limit` : "",
@@ -342,6 +413,7 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
     evidence,
     access_surface: accessSurface,
     data_flow: dataFlow,
+    causal_evidence: causalEvidence,
     blast_radius: blastRadius,
     release_delta: releaseDelta,
     report_inventory: {
@@ -409,7 +481,13 @@ export function verifyEvidenceIntelligenceTicket(ticket: EvidenceIntelligenceTic
   try {
     const context = JSON.parse(ticket.serialized) as EvidenceIntelligenceContext;
     const evidenceRefs = Array.isArray(context.evidence) ? context.evidence.map((reference) => reference.ref).filter((ref): ref is string => typeof ref === "string") : [];
-    return { ...context, serialized: ticket.serialized, context_digest: ticket.context_digest.toLowerCase(), evidence_refs: evidenceRefs };
+    return {
+      ...context,
+      causal_evidence: context.causal_evidence || { available: false, steps: [], evidence_refs: [] },
+      serialized: ticket.serialized,
+      context_digest: ticket.context_digest.toLowerCase(),
+      evidence_refs: evidenceRefs,
+    };
   } catch {
     return null;
   }
@@ -503,52 +581,150 @@ export function deriveBlastRadius(
   return { overall, dimensions, evidence_refs: uniqueStrings([...refs, ...Object.keys(dimensions).map((name) => `blast.${name}`)]).slice(0, 24) };
 }
 
-export function validateIntelligenceNarrative(value: unknown, context: EvidenceIntelligenceContext): IntelligenceNarrativeDraft {
+export function validateReviewerGuide(value: unknown, context: EvidenceIntelligenceContext): ReviewerGuideDraft {
   const input = objectValue(value);
   const allowedRefs = new Set(context.evidence_refs);
   const aliases = evidenceRefAliases(context);
-  const headline = requiredText(input.headline, 300);
-  const bottomLine = requiredText(input.bottom_line, 700);
-  const summaryRefs = validatedRefs(input.summary_evidence_refs, allowedRefs, aliases, 8, true);
-  const claims = validateClaims(input.claims, allowedRefs, aliases, 10, false);
-  const positiveSignals = validateClaims(input.positive_signals, allowedRefs, aliases, 4, false);
-  const unknowns = validateClaims(input.unknowns, allowedRefs, aliases, 6, true);
-  const verifyNext = validateActions(input.verify_next, allowedRefs, aliases, 4);
-  const allClaims = [...claims, ...positiveSignals, ...unknowns];
-  if (new Set(allClaims.map((claim) => claim.claim_id)).size !== allClaims.length) throw new EvidenceIntelligenceValidationError("The intelligence report reused a claim identifier.");
-  rejectOverclaim(`${headline}\n${bottomLine}`);
-  rejectDecisionMutation([headline, bottomLine, ...claims, ...positiveSignals, ...unknowns, ...verifyNext].map((item) => typeof item === "string" ? item : item.text).join("\n"), context.deterministic.decision);
-  if (!claims.length) throw new EvidenceIntelligenceValidationError("The intelligence report did not contain any grounded claims.");
-  if (!summaryRefs.length) throw new EvidenceIntelligenceValidationError("The intelligence summary was not tied to report evidence.");
-  return { headline, bottom_line: bottomLine, summary_evidence_refs: summaryRefs, claims, positive_signals: positiveSignals, unknowns, verify_next: verifyNext };
+  const primaryInput = objectValue(input.primary_takeaway);
+  const primary: ReviewerGuidePrimaryTakeaway = {
+    title: requiredText(primaryInput.title, REVIEWER_GUIDE_LIMITS.primary_title),
+    statement: requiredText(primaryInput.statement, REVIEWER_GUIDE_LIMITS.primary_statement),
+    action: requiredText(primaryInput.action, REVIEWER_GUIDE_LIMITS.primary_action),
+    certainty: requiredCertainty(primaryInput.certainty),
+    evidence_refs: validatedRefs(primaryInput.evidence_refs, allowedRefs, aliases, 6, false),
+  };
+  const eventChain = validateEventChain(input.event_chain, context, allowedRefs, aliases);
+  const scenarios = validateScenarios(input.scenarios, allowedRefs, aliases);
+  const releaseChanges = validateReleaseChanges(input.release_changes, context, allowedRefs, aliases);
+  const nextActions = validateGuideActions(input.next_actions, allowedRefs, aliases);
+  const unknowns = validateUnknowns(input.unknowns, allowedRefs, aliases);
+  const textValues = [
+    primary.title,
+    primary.statement,
+    primary.action,
+    eventChain.unavailable_reason,
+    ...eventChain.steps.flatMap((step) => [step.label, step.detail]),
+    ...scenarios.flatMap((scenario) => [scenario.title, scenario.when, scenario.mechanism, scenario.consequence, scenario.affected_surface]),
+    ...releaseChanges.map((change) => change.text),
+    ...nextActions.map((action) => action.text),
+    ...unknowns.flatMap((unknown) => [unknown.question, unknown.why_it_matters]),
+  ];
+  const totalChars = textValues.reduce((total, item) => total + item.length, 0);
+  if (totalChars > REVIEWER_GUIDE_LIMITS.total_chars) throw new EvidenceIntelligenceValidationError("The reviewer guide exceeded the total text limit.");
+  rejectOverclaim(textValues.join("\n"));
+  rejectDecisionMutation(textValues.join("\n"), context.deterministic.decision);
+  rejectRepeatedGuideText(textValues);
+  return { primary_takeaway: primary, event_chain: eventChain, scenarios, release_changes: releaseChanges, next_actions: nextActions, unknowns };
 }
 
 export function assembleEvidenceIntelligenceReport(
   context: EvidenceIntelligenceContext,
-  narrative: IntelligenceNarrativeDraft,
-  metadata: { model: string; audience: IntelligenceAudience; depth: IntelligenceDepth; generated_at: string },
+  guide: ReviewerGuideDraft,
+  metadata: { model: string; review_goal: IntelligenceReviewGoal; depth: IntelligenceDepth; generated_at: string; source?: "sarvam" | "deterministic" },
 ): EvidenceIntelligenceReport {
-  const claimsWithEvidence = narrative.claims.filter((claim) => claim.evidence_refs.length).length + narrative.positive_signals.filter((claim) => claim.evidence_refs.length).length + narrative.unknowns.filter((claim) => claim.evidence_refs.length).length + narrative.verify_next.filter((item) => item.evidence_refs.length).length;
+  const claimsWithEvidence = 1 + guide.event_chain.steps.length + guide.scenarios.length + guide.release_changes.length + guide.next_actions.length + guide.unknowns.length;
+  const source = metadata.source || "sarvam";
   return {
     schema_version: EVIDENCE_INTELLIGENCE_SCHEMA_VERSION,
     generated_at: metadata.generated_at,
     model: metadata.model,
-    audience: metadata.audience,
+    review_goal: metadata.review_goal,
     depth: metadata.depth,
     context_digest: context.context_digest,
     identity: context.identity,
     deterministic: { ...context.deterministic, decision_unchanged: true },
-    narrative,
+    guide,
     access_surface: context.access_surface,
     data_flow: context.data_flow,
+    causal_evidence: context.causal_evidence,
     blast_radius: context.blast_radius,
     release_delta: context.release_delta,
     evidence: context.evidence,
     report_inventory: context.report_inventory,
     coverage_boundaries: context.coverage_boundaries,
     omitted_fields: context.omitted_fields,
-    validation: { status: "validated", claims_with_evidence: claimsWithEvidence, generated_at: metadata.generated_at },
+    validation: { status: source === "deterministic" ? "deterministic_fallback" : "validated", source, claims_with_evidence: claimsWithEvidence, generated_at: metadata.generated_at },
   };
+}
+
+export function buildDeterministicReviewFallback(
+  context: EvidenceIntelligenceContext,
+  reviewGoal: IntelligenceReviewGoal,
+  generatedAt = new Date().toISOString(),
+): EvidenceIntelligenceReport {
+  const decision = context.deterministic.decision.toLowerCase();
+  const decisionLabel = context.deterministic.decision.toUpperCase();
+  const reason = compactReason(context.deterministic.decision_reason);
+  const reasonText = reason && reason !== "No deterministic rationale was recorded." ? ` ${reason}` : "";
+  const primaryByGoal: Record<IntelligenceReviewGoal, ReviewerGuidePrimaryTakeaway> = {
+    install_decision: {
+      title: decision === "allow" ? "This exact release cleared the scan gate" : "Pause before installing this exact release",
+      statement: `GuardRails recorded ${decisionLabel} for ${context.identity.extension_id}@${context.identity.version}.${reasonText}`.trim(),
+      action: decision === "allow" ? "Verify the artifact hash before installing this exact version." : "Keep this version out of the install path until the recorded decision is resolved.",
+      certainty: "observed",
+      evidence_refs: uniqueStrings(["scan.decision", "scan.reason"]),
+    },
+    flag_investigation: {
+      title: "Investigate the evidence behind this release decision",
+      statement: `The deterministic result for ${context.identity.extension_id}@${context.identity.version} is ${decisionLabel}.${reasonText}`.trim(),
+      action: "Start with the cited decision rationale, then verify the exact artifact and report coverage.",
+      certainty: "observed",
+      evidence_refs: uniqueStrings(["scan.decision", "scan.reason"]),
+    },
+    publisher_response: {
+      title: "Resolve the cited evidence before publishing this release",
+      statement: `This exact release is currently ${decisionLabel} in GuardRails.${reasonText}`.trim(),
+      action: "Address the cited rationale or provide release-specific evidence before requesting a new review.",
+      certainty: "observed",
+      evidence_refs: uniqueStrings(["scan.decision", "scan.reason"]),
+    },
+  };
+  const scenarios: ReviewerGuideScenario[] = context.access_surface.slice(0, REVIEWER_GUIDE_LIMITS.scenarios).map((entry, index) => ({
+    scenario_id: `deterministic-scenario-${index + 1}`,
+    title: entry.asset_label,
+    when: "If the extension exercises this recorded capability",
+    mechanism: entry.operation,
+    consequence: `The stated scope could be involved; actual effect depends on runtime conditions not established here.`,
+    affected_surface: entry.scope,
+    certainty: "bounded_inference",
+    evidence_refs: entry.evidence_refs.length ? entry.evidence_refs : ["scan.capabilities"],
+  }));
+  const releaseChanges: ReviewerGuideChange[] = context.release_delta.available
+    ? [...context.release_delta.added.map((item, index) => ({ change_id: `added-${index + 1}`, text: `Added: ${item}`, evidence_refs: ["scan.baseline"] })), ...context.release_delta.removed.map((item, index) => ({ change_id: `removed-${index + 1}`, text: `Removed: ${item}`, evidence_refs: ["scan.baseline"] }))].slice(0, REVIEWER_GUIDE_LIMITS.release_changes)
+    : [];
+  const nextActions: ReviewerGuideAction[] = [
+    {
+      action_id: "fallback-artifact-check",
+      owner: reviewGoal === "publisher_response" ? "publisher" : "you",
+      priority: "now",
+      text: decision === "allow" ? "Compare the published artifact hash with this exact report before approval." : "Do not approve or install this exact version while the deterministic result is unresolved.",
+      evidence_refs: uniqueStrings(["scan.decision", "scan.provenance"]),
+    },
+    {
+      action_id: "fallback-rationale-review",
+      owner: reviewGoal === "publisher_response" ? "publisher" : "security_team",
+      priority: "next",
+      text: reviewGoal === "publisher_response" ? "Explain or remediate the behavior named in the decision rationale, then submit a new artifact for review." : "Open the cited decision rationale and verify it against the exact report evidence.",
+      evidence_refs: ["scan.reason"],
+    },
+    ...(context.release_delta.available ? [{ action_id: "fallback-release-compare", owner: reviewGoal === "publisher_response" ? "publisher" as const : "security_team" as const, priority: "next" as const, text: `Compare this release with baseline ${context.release_delta.baseline_version || "the recorded baseline"}.`, evidence_refs: ["scan.baseline"] }] : [{ action_id: "fallback-coverage-review", owner: "security_team" as const, priority: "optional" as const, text: "Confirm which runtime triggers and host conditions were covered by the scan.", evidence_refs: ["scan.coverage_boundaries"] }]),
+  ].slice(0, REVIEWER_GUIDE_LIMITS.next_actions);
+  const unknowns = context.coverage_boundaries.slice(0, REVIEWER_GUIDE_LIMITS.unknowns).map((boundary, index) => ({
+    unknown_id: `fallback-unknown-${index + 1}`,
+    question: boundary,
+    why_it_matters: "This boundary limits what the exact report can establish.",
+    certainty: "unknown" as const,
+    evidence_refs: ["scan.coverage_boundaries"],
+  }));
+  const guide: ReviewerGuideDraft = {
+    primary_takeaway: primaryByGoal[reviewGoal],
+    event_chain: { available: false, unavailable_reason: "This exact report does not contain structured trigger, action, and target evidence.", steps: [], evidence_refs: ["scan.coverage_boundaries"] },
+    scenarios,
+    release_changes: releaseChanges,
+    next_actions: nextActions,
+    unknowns,
+  };
+  return assembleEvidenceIntelligenceReport(context, guide, { model: "deterministic", review_goal: reviewGoal, depth: "standard", generated_at: generatedAt, source: "deterministic" });
 }
 
 function normalizeCapabilityRecords(scan: RecordValue): Array<{ key: string; source: "observed" | "detected"; evidence_ref: string }> {
@@ -598,6 +774,43 @@ function deriveReleaseDelta(scan: RecordValue, currentVersion: string, addEviden
   return { available, baseline_version: baselineVersion, current_version: currentVersion, summary: available ? `${baselineVersion} → ${currentVersion} normalized release evidence is available.` : "No comparable baseline evidence was supplied for this exact report.", added: added.slice(0, 20), removed: removed.slice(0, 20), unchanged: unchanged.slice(0, 20), evidence_refs: available ? ["scan.baseline"] : ["scan.identity"] };
 }
 
+function deriveCausalEvidence(product: RecordValue, scan: RecordValue, addEvidence: (reference: EvidenceReference) => void): { available: boolean; steps: CausalEvidenceStep[]; evidence_refs: string[] } {
+  const source = scan.causal_chain || scan.event_chain || scan.behavior_chain || product.causal_chain || product.event_chain;
+  const steps: CausalEvidenceStep[] = [];
+  const roleFor = (value: unknown): CausalEvidenceStep["role"] | null => {
+    const role = safeText(value, 40).toLowerCase().replaceAll("-", "_");
+    if (role === "trigger" || role === "activation" || role === "entry") return "trigger";
+    if (role === "action" || role === "operation" || role === "behavior") return "action";
+    if (role === "target" || role === "destination" || role === "asset") return "target";
+    if (role === "consequence" || role === "impact" || role === "effect") return "consequence";
+    return null;
+  };
+  const addStep = (role: CausalEvidenceStep["role"], value: unknown) => {
+    const item = objectValue(value);
+    const text = typeof value === "string" ? safeText(value, 220) : safeText(item.detail || item.description || item.text || item.summary || item.value, 220);
+    const label = typeof value === "string" ? text : safeText(item.label || item.name || item.title || item.type, 120);
+    if (label || text) steps.push({ role, label: label || role.replaceAll("_", " "), detail: text || label, evidence_refs: ["scan.causal_evidence"] });
+  };
+  if (Array.isArray(source)) {
+    for (const item of source.slice(0, REVIEWER_GUIDE_LIMITS.chain_steps)) {
+      const input = objectValue(item);
+      const role = roleFor(input.role || input.type || input.stage);
+      if (role) addStep(role, item);
+    }
+  } else if (source && typeof source === "object") {
+    const input = objectValue(source);
+    for (const role of ["trigger", "action", "target", "consequence"] as const) {
+      const value = input[role] || input[`${role}_event`] || input[`${role}_description`];
+      if (value !== undefined) addStep(role, value);
+    }
+  }
+  const roles = new Set(steps.map((step) => step.role));
+  const available = roles.has("trigger") && roles.has("action") && (roles.has("target") || roles.has("consequence"));
+  if (!available) return { available: false, steps: [], evidence_refs: [] };
+  addEvidence({ ref: "scan.causal_evidence", kind: "scan", label: "Structured causal evidence", detail: steps.map((step) => `${step.role}: ${step.label}`).join(" → ").slice(0, MAX_STRING), section: "alerts" });
+  return { available: true, steps, evidence_refs: ["scan.causal_evidence"] };
+}
+
 function collectDeltaLabels(value: RecordValue, key: string): string[] {
   const result: string[] = [];
   const raw = value[key];
@@ -615,33 +828,108 @@ function levelForDimension(name: keyof BlastRadiusAssessment["dimensions"], entr
   return "moderate";
 }
 
-function validateClaims(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean): IntelligenceClaim[] {
-  if (!Array.isArray(value) || value.length > maxItems) throw new EvidenceIntelligenceValidationError("The intelligence report claims were not a bounded array.");
-  const result: IntelligenceClaim[] = [];
-  for (const item of value) {
-    const input = objectValue(item);
-    const text = requiredText(input.text, 560);
-    const section = input.section;
-    const certainty = input.certainty;
-    if (!isSection(section) || !isCertainty(certainty)) throw new EvidenceIntelligenceValidationError("The intelligence report contains an unsupported claim classification.");
-    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, allowEmpty && certainty === "unknown");
-    if (!evidenceRefs.length && !(allowEmpty && certainty === "unknown")) throw new EvidenceIntelligenceValidationError("A material intelligence claim was not tied to evidence.");
-    rejectOverclaim(text);
-    result.push({ claim_id: requiredText(input.claim_id, 100), section, text, certainty, evidence_refs: evidenceRefs });
+function validateEventChain(value: unknown, context: EvidenceIntelligenceContext, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideEventChain {
+  const input = objectValue(value);
+  if (typeof input.available !== "boolean") throw new EvidenceIntelligenceValidationError("The event-chain availability was invalid.");
+  const unavailableReason = requiredText(input.unavailable_reason, 260);
+  const stepsInput = input.steps;
+  if (!Array.isArray(stepsInput) || stepsInput.length > REVIEWER_GUIDE_LIMITS.chain_steps) throw new EvidenceIntelligenceValidationError("The event chain was not a bounded array.");
+  const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
+  if (!input.available) {
+    if (stepsInput.length) throw new EvidenceIntelligenceValidationError("An unavailable event chain must not contain generated steps.");
+    return { available: false, unavailable_reason: unavailableReason, steps: [], evidence_refs: evidenceRefs };
   }
-  if (new Set(result.map((claim) => claim.claim_id)).size !== result.length) throw new EvidenceIntelligenceValidationError("The intelligence report contained duplicate claim identifiers.");
-  return result;
+  if (!context.causal_evidence.available || stepsInput.length < 2) throw new EvidenceIntelligenceValidationError("The report does not contain enough structured evidence for a causal chain.");
+  const causalRefs = new Set(context.causal_evidence.evidence_refs);
+  const steps = stepsInput.map((item) => {
+    const step = objectValue(item);
+    const role = step.role;
+    if (role !== "trigger" && role !== "action" && role !== "target" && role !== "consequence") throw new EvidenceIntelligenceValidationError("The event chain contained an unsupported step role.");
+    const refs = validatedRefs(step.evidence_refs, allowedRefs, aliases, 6, false);
+    if (!refs.some((ref) => causalRefs.has(ref))) throw new EvidenceIntelligenceValidationError("An event-chain step was not tied to structured causal evidence.");
+    return { step_id: requiredText(step.step_id, 80), role, label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: refs };
+  });
+  const roles = new Set(steps.map((step) => step.role));
+  if (!roles.has("trigger") || !roles.has("action") || (!roles.has("target") && !roles.has("consequence"))) throw new EvidenceIntelligenceValidationError("The event chain omitted a required causal role.");
+  return { available: true, unavailable_reason: unavailableReason, steps, evidence_refs: evidenceRefs };
 }
 
-function validateActions(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>, maxItems: number): IntelligenceAction[] {
-  if (!Array.isArray(value) || value.length > maxItems) throw new EvidenceIntelligenceValidationError("The verification plan was not a bounded array.");
+function validateScenarios(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideScenario[] {
+  if (!Array.isArray(value) || value.length > REVIEWER_GUIDE_LIMITS.scenarios) throw new EvidenceIntelligenceValidationError("The reviewer scenarios were not a bounded array.");
   return value.map((item) => {
     const input = objectValue(item);
-    const text = requiredText(input.text, 420);
+    const certainty = requiredCertainty(input.certainty);
     const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
-    rejectOverclaim(text);
-    return { text, evidence_refs: evidenceRefs };
+    const scenario = {
+      scenario_id: requiredText(input.scenario_id, 80),
+      title: requiredText(input.title, REVIEWER_GUIDE_LIMITS.item_title),
+      when: requiredText(input.when, REVIEWER_GUIDE_LIMITS.item_text),
+      mechanism: requiredText(input.mechanism, REVIEWER_GUIDE_LIMITS.item_text),
+      consequence: requiredText(input.consequence, REVIEWER_GUIDE_LIMITS.item_text),
+      affected_surface: requiredText(input.affected_surface, REVIEWER_GUIDE_LIMITS.item_text),
+      certainty,
+      evidence_refs: evidenceRefs,
+    };
+    return scenario;
   });
+}
+
+function validateReleaseChanges(value: unknown, context: EvidenceIntelligenceContext, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideChange[] {
+  if (!Array.isArray(value) || value.length > REVIEWER_GUIDE_LIMITS.release_changes) throw new EvidenceIntelligenceValidationError("The release changes were not a bounded array.");
+  if (value.length && !context.release_delta.available) throw new EvidenceIntelligenceValidationError("Release changes were generated without a comparable baseline.");
+  return value.map((item) => {
+    const input = objectValue(item);
+    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
+    if (!evidenceRefs.includes("scan.baseline")) throw new EvidenceIntelligenceValidationError("A release change was not tied to the baseline evidence.");
+    return { change_id: requiredText(input.change_id, 80), text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: evidenceRefs };
+  });
+}
+
+function validateGuideActions(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideAction[] {
+  if (!Array.isArray(value) || value.length > REVIEWER_GUIDE_LIMITS.next_actions) throw new EvidenceIntelligenceValidationError("The next-action list was not a bounded array.");
+  return value.map((item) => {
+    const input = objectValue(item);
+    if (input.owner !== "you" && input.owner !== "security_team" && input.owner !== "publisher") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported owner.");
+    if (input.priority !== "now" && input.priority !== "next" && input.priority !== "optional") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported priority.");
+    return { action_id: requiredText(input.action_id, 80), owner: input.owner, priority: input.priority, text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.action_text), evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+  });
+}
+
+function validateUnknowns(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideUnknown[] {
+  if (!Array.isArray(value) || value.length > REVIEWER_GUIDE_LIMITS.unknowns) throw new EvidenceIntelligenceValidationError("The unknowns list was not a bounded array.");
+  return value.map((item) => {
+    const input = objectValue(item);
+    const certainty = requiredCertainty(input.certainty);
+    if (certainty !== "unknown") throw new EvidenceIntelligenceValidationError("An unknown must be marked unknown.");
+    return { unknown_id: requiredText(input.unknown_id, 80), question: requiredText(input.question, REVIEWER_GUIDE_LIMITS.unknown_text), why_it_matters: requiredText(input.why_it_matters, REVIEWER_GUIDE_LIMITS.unknown_text), certainty, evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+  });
+}
+
+function requiredCertainty(value: unknown): EvidenceCertainty {
+  if (!isCertainty(value)) throw new EvidenceIntelligenceValidationError("The reviewer guide contained an unsupported certainty.");
+  return value;
+}
+
+function rejectRepeatedGuideText(values: string[]): void {
+  const sentences = values.flatMap((value) => value.split(/[.!?]+/).map((sentence) => normalizeGuideText(sentence)).filter((sentence) => sentence.length >= 24));
+  if (new Set(sentences).size !== sentences.length) throw new EvidenceIntelligenceValidationError("The reviewer guide repeated the same conclusion.");
+  const primary = tokenizeGuideText(values[1]);
+  for (const sentence of sentences.slice(1)) {
+    const tokens = tokenizeGuideText(sentence);
+    if (primary.length >= 5 && tokens.length >= 5) {
+      const shared = tokens.filter((token) => primary.includes(token)).length;
+      if (shared / Math.min(primary.length, tokens.length) >= 0.85) throw new EvidenceIntelligenceValidationError("The reviewer guide repeated the primary takeaway.");
+    }
+  }
+  if (values.some((value) => /\b(?:this report provides|valuable insights|it is important to note|in conclusion|potential blast radius)\b/i.test(value))) throw new EvidenceIntelligenceValidationError("The reviewer guide used generic narrative boilerplate.");
+}
+
+function normalizeGuideText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenizeGuideText(value: string): string[] {
+  return [...new Set(normalizeGuideText(value).split(" ").filter((token) => token.length > 2))];
 }
 
 function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean): string[] {
@@ -772,6 +1060,13 @@ function safeText(value: unknown, max: number): string {
 function requiredText(value: unknown, max: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > max) throw new EvidenceIntelligenceValidationError("The intelligence report contained missing or oversized text.");
   return value.trim();
+}
+
+function compactReason(value: string): string {
+  const text = value.trim();
+  if (!text) return "";
+  const firstSentence = text.split(/(?<=[.!?])\s+/)[0] || text;
+  return firstSentence.length > 220 ? `${firstSentence.slice(0, 217).trimEnd()}…` : firstSentence;
 }
 
 function safeStringArray(value: unknown, maxItems: number, maxLength: number): string[] {

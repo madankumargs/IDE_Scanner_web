@@ -148,30 +148,30 @@ describe("Sarvam evidence boundary", () => {
       choices: [{
         message: {
           content: JSON.stringify({
-            headline: "Review the exact release",
-            bottom_line: "The scanner recorded outbound network capability; the deterministic decision remains review.",
-            summary_evidence_refs: ["scan.decision", "capability.network.1"],
-            claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded.", certainty: "observed", evidence_refs: ["capability.network.1"] }],
-            positive_signals: [],
-            unknowns: [{ claim_id: "unknown-1", section: "context", text: "The runtime destination is not assessed by this report.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
-            verify_next: [{ text: "Confirm the expected destination with the publisher.", evidence_refs: ["capability.network.1"] }],
+            primary_takeaway: { title: "Pause before approval", statement: "This exact release has a deterministic review result.", action: "Verify the cited rationale before approval.", certainty: "observed", evidence_refs: ["scan.decision", "scan.reason"] },
+            event_chain: { available: false, unavailable_reason: "The report does not contain a complete structured causal chain.", steps: [], evidence_refs: ["scan.coverage_boundaries"] },
+            scenarios: [{ scenario_id: "scenario-1", title: "Network access", when: "If the extension exercises the recorded capability", mechanism: "make outbound network requests", consequence: "The destination is not established by this report.", affected_surface: "external destinations reachable by the host", certainty: "bounded_inference", evidence_refs: ["capability.network.1"] }],
+            release_changes: [],
+            next_actions: [{ action_id: "action-1", owner: "security_team", priority: "next", text: "Confirm the expected destination with the publisher.", evidence_refs: ["capability.network.1"] }],
+            unknowns: [{ unknown_id: "unknown-1", question: "Which runtime destination is used?", why_it_matters: "The destination changes the review context.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
           }),
         },
       }],
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createEvidenceIntelligenceReport(context, "security_lead");
+    const result = await createEvidenceIntelligenceReport(context, "install_decision");
 
     expect(result.model).toBe("sarvam-105b");
     expect(result.report.validation.status).toBe("validated");
     expect(result.report.deterministic.decision_unchanged).toBe(true);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.response_format.json_schema.name).toBe("guardrails_security_intelligence_report");
-    expect(body.max_tokens).toBe(3000);
+    expect(body.max_tokens).toBe(1800);
     expect(body.reasoning_effort).toBeNull();
     expect(body.messages[1].content).toContain("BEGIN_UNTRUSTED_EVIDENCE_CONTEXT");
     expect(body.messages[1].content).not.toContain("canonical_report");
+    expect(body.messages[1].content).toContain("Review goal: install_decision");
   });
 
   it("collects streamed JSON while discarding reasoning chunks", async () => {
@@ -184,13 +184,12 @@ describe("Sarvam evidence boundary", () => {
       dependencies: [],
     });
     const narrative = {
-      headline: "Review the exact release",
-      bottom_line: "The deterministic decision remains review for this exact release.",
-      summary_evidence_refs: ["scan.decision"],
-      claims: [{ claim_id: "claim-1", section: "decision", text: "The report records a review decision.", certainty: "observed", evidence_refs: ["scan.decision"] }],
-      positive_signals: [],
-      unknowns: [{ claim_id: "unknown-1", section: "context", text: "Runtime exploitability is not established by this report.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
-      verify_next: [{ text: "Confirm the expected network destination before approval.", evidence_refs: ["scan.decision"] }],
+      primary_takeaway: { title: "Pause before approval", statement: "This exact release has a deterministic review result.", action: "Verify the cited rationale before approval.", certainty: "observed", evidence_refs: ["scan.decision", "scan.reason"] },
+      event_chain: { available: false, unavailable_reason: "The report does not contain a complete structured causal chain.", steps: [], evidence_refs: ["scan.coverage_boundaries"] },
+      scenarios: [],
+      release_changes: [],
+      next_actions: [{ action_id: "action-1", owner: "security_team", priority: "next", text: "Confirm the expected network destination before approval.", evidence_refs: ["scan.decision"] }],
+      unknowns: [{ unknown_id: "unknown-1", question: "Is runtime exploitability established?", why_it_matters: "Static coverage does not establish runtime behavior.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
     };
     const streamBody = [
       `data: ${JSON.stringify({ model: "sarvam-105b", choices: [{ delta: { reasoning_content: "hidden" } }] })}`,
@@ -201,7 +200,7 @@ describe("Sarvam evidence boundary", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(streamBody, { status: 200, headers: { "content-type": "text/event-stream" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await createEvidenceIntelligenceReport(context, "security_lead");
+    const result = await createEvidenceIntelligenceReport(context, "install_decision");
 
     expect(result.report.validation.status).toBe("validated");
     expect(JSON.stringify(result)).not.toContain("hidden");

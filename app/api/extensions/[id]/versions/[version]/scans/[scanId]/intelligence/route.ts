@@ -5,9 +5,11 @@ import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb, userFromSession } from "@/lib/cloudflarePrivate";
 import {
   compileEvidenceIntelligenceContext,
+  buildDeterministicReviewFallback,
   verifyEvidenceIntelligenceTicket,
+  type EvidenceIntelligenceContext,
   type EvidenceIntelligenceTicket,
-  type IntelligenceAudience,
+  type IntelligenceReviewGoal,
   type IntelligenceDepth,
 } from "@/lib/evidenceIntelligence";
 import {
@@ -67,8 +69,9 @@ export async function POST(
       headers: { "Content-Type": "application/json", "Cache-Control": "private, no-store", "Retry-After": String(limit.retryAfter) },
     });
   }
+  let evidence: EvidenceIntelligenceContext | null = null;
   try {
-    let evidence = options.context_ticket ? verifyEvidenceIntelligenceTicket(options.context_ticket) : null;
+    evidence = options.context_ticket ? verifyEvidenceIntelligenceTicket(options.context_ticket) : null;
     if (options.context_ticket && !evidence) return errorResponse("The exact report context could not be verified.", 409, "context_invalid");
     if (evidence) {
       if (evidence.identity.scan_id !== scanId || evidence.identity.extension_id.toLowerCase() !== extensionId.toLowerCase() || evidence.identity.version !== version || evidence.deterministic.analysis_status !== "complete" || !/^[a-f0-9]{64}$/i.test(evidence.identity.artifact_sha256)) {
@@ -85,7 +88,8 @@ export async function POST(
       }
       evidence = compileEvidenceIntelligenceContext({ ...product, scan });
     }
-    const result = await createEvidenceIntelligenceReport(evidence, options.audience, options.depth);
+    if (!evidence) return errorResponse("This exact report is not available.", 404);
+    const result = await createEvidenceIntelligenceReport(evidence, options.review_goal, options.depth);
     return NextResponse.json(result.report, {
       headers: {
         "Cache-Control": "private, no-store",
@@ -94,26 +98,35 @@ export async function POST(
       },
     });
   } catch (error) {
-    if (error instanceof SarvamConfigurationError) return errorResponse("Evidence intelligence is not configured yet.", 503, "ai_unavailable");
     if (error instanceof SarvamProviderError && error.status === 429) return errorResponse("Sarvam is rate limiting this request. Try again shortly.", 429, "provider_rate_limited");
-    if (error instanceof SarvamOutputError) return errorResponse("The intelligence report could not be evidence-verified and was not shown.", 502, "invalid_model_output");
+    if (evidence && (error instanceof SarvamConfigurationError || error instanceof SarvamOutputError || error instanceof SarvamProviderError)) {
+      const fallback = buildDeterministicReviewFallback(evidence, options.review_goal);
+      return NextResponse.json(fallback, {
+        headers: {
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+        },
+      });
+    }
     console.warn("[evidence-intelligence] generation failed", { error: error instanceof Error ? error.name : "unknown" });
     return errorResponse("Evidence intelligence generation is temporarily unavailable.", 502, "provider_unavailable");
   }
 }
 
-async function readOptions(request: Request): Promise<{ audience: IntelligenceAudience; depth: IntelligenceDepth; context_ticket?: EvidenceIntelligenceTicket } | null> {
+async function readOptions(request: Request): Promise<{ review_goal: IntelligenceReviewGoal; depth: IntelligenceDepth; context_ticket?: EvidenceIntelligenceTicket } | null> {
   const raw = await request.text().catch(() => "");
   if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) return null;
-  if (!raw.trim()) return { audience: "security_lead", depth: "standard" };
+  if (!raw.trim()) return { review_goal: "install_decision", depth: "standard" };
   try {
-    const body = JSON.parse(raw) as { audience?: unknown; depth?: unknown; context_ticket?: unknown };
-    const audience = body?.audience;
+    const body = JSON.parse(raw) as { review_goal?: unknown; depth?: unknown; context_ticket?: unknown };
+    const reviewGoal = body?.review_goal;
     const depth = body?.depth || "standard";
-    if ((audience !== "security_lead" && audience !== "engineer" && audience !== "publisher") || depth !== "standard") return null;
+    if (reviewGoal !== "install_decision" && reviewGoal !== "flag_investigation" && reviewGoal !== "publisher_response") return null;
+    if (depth !== "standard") return null;
     const contextTicket = body.context_ticket;
     if (contextTicket !== undefined && (!contextTicket || typeof contextTicket !== "object" || Array.isArray(contextTicket))) return null;
-    return { audience, depth, ...(contextTicket ? { context_ticket: contextTicket as EvidenceIntelligenceTicket } : {}) };
+    return { review_goal: reviewGoal, depth, ...(contextTicket ? { context_ticket: contextTicket as EvidenceIntelligenceTicket } : {}) };
   } catch {
     return null;
   }
