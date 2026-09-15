@@ -4,7 +4,7 @@ import { getPublicRegistryProduct, getPublicRegistrySnapshot } from "@/lib/publi
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
 import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { cloudflarePrivateAvailable, getCloudflareLatestScanProduct, getCloudflareScanProduct, getCloudflareScanSummary } from "@/lib/cloudflareDeepScan";
+import { cloudflarePrivateAvailable, getCloudflareScanProduct, getCloudflareScanSummary } from "@/lib/cloudflareDeepScan";
 
 const cachedVersions=unstable_cache(async(id:string)=>listMarketplaceVersions(id),["registry-versions-v2"],{revalidate:21600,tags:["registry-versions"]});
 const MAX_RENDERED_VERSION_HISTORY = 120;
@@ -271,10 +271,27 @@ async function registryProduct(id: string): Promise<{ extension: CatalogExtensio
 }
 
 export async function getVersionProduct(id: string, version: string, client?: SupabaseClient): Promise<Record<string, unknown> | null> {
-  const latestD1Scan = cloudflarePrivateAvailable()
-    ? await getCloudflareLatestScanProduct(id, version).catch(() => null)
+  // Version pages only need the exact release summary. Parsing the complete
+  // report here duplicates work with the immutable report route and can push
+  // a large VSIX report over Cloudflare Worker's CPU limit. The full report is
+  // intentionally reserved for getVersionScanProduct below.
+  const d1Summary = cloudflarePrivateAvailable()
+    ? await getCloudflareScanSummary(id, version).catch(() => null)
     : null;
-  if (latestD1Scan) return latestD1Scan;
+  if (d1Summary) {
+    return {
+      version: {
+        extension_id: id,
+        version,
+        latest_scan_id: d1Summary.id,
+        scan_state: d1Summary.analysis_status,
+      },
+      scan: d1Summary,
+      findings: [],
+      files: [],
+      dependencies: [],
+    };
+  }
   const cloudflareProduct = await getCloudflareRegistryProduct<{ versions?: Array<Record<string, unknown>>; scans?: Array<{ version?: string; scan?: Record<string, unknown>; findings?: Array<Record<string, unknown>>; files?: Array<Record<string, unknown>>; dependencies?: Array<Record<string, unknown>> }> }>(id);
   const cloudflareVersions = cloudflareProduct?.versions || (await getCloudflareRegistryCatalogExtension<Record<string, unknown>>(id) ? await cachedVersions(id).catch(() => []) : []);
   if (cloudflareVersions.length) {
