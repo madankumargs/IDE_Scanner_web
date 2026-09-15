@@ -8,9 +8,6 @@
     "allow_importable_env",
     "global_fetch_strictly_public"
   ],
-  "limits": {
-    "cpu_ms": 1000
-  },
   "workers_dev": true,
   "vars": {
     "GITHUB_OAUTH_CLIENT_ID": "Ov23liWQ5kElxVniE4tx"
