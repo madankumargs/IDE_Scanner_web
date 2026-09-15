@@ -242,6 +242,12 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
   addEvidence({ ref: "scan.reason", kind: "scan", label: "Decision rationale", detail: safeText(scan.decision_reason, MAX_STRING) || "No deterministic rationale was recorded.", section: "overview" });
   addEvidence({ ref: "scan.coverage", kind: "coverage", label: "Analysis coverage", detail: formatCoverage(scan.coverage_percent), section: "coverage" });
   addEvidence({ ref: "scan.provenance", kind: "scan", label: "Artifact provenance", detail: `${safeText(scan.provenance_tier, 100) || "unknown"} · ${artifactSha || "hash not recorded"}`, section: "provenance" });
+  addEvidence({ ref: "scan.analysis_status", kind: "scan", label: "Analysis status", detail: safeText(scan.analysis_status, 80) || "incomplete", section: "overview" });
+  addEvidence({ ref: "scan.severity", kind: "scan", label: "Deterministic severity", detail: safeText(scan.severity, 80) || "INFO", section: "overview" });
+  addEvidence({ ref: "scan.public_outcome", kind: "scan", label: "Public outcome", detail: safeText(scan.public_outcome, 120) || "incomplete", section: "overview" });
+  addEvidence({ ref: "scan.evidence_confidence", kind: "scan", label: "Evidence confidence", detail: safeText(scan.evidence_confidence, 100) || "unknown", section: "overview" });
+  addEvidence({ ref: "scan.scanner_build", kind: "scan", label: "Scanner build", detail: safeText(scan.scanner_build, 120) || "unknown", section: "provenance" });
+  addEvidence({ ref: "scan.ruleset_version", kind: "scan", label: "Ruleset version", detail: safeText(scan.ruleset_version, 120) || "unknown", section: "provenance" });
   addFact({ ref: "scan.decision", label: "Decision", value: safeText(scan.decision, 80) || "incomplete", certainty: "observed", evidence_refs: ["scan.decision"] });
   addFact({ ref: "scan.coverage", label: "Coverage", value: formatCoverage(scan.coverage_percent), certainty: "observed", evidence_refs: ["scan.coverage"] });
   addFact({ ref: "scan.reason", label: "Decision rationale", value: safeText(scan.decision_reason, MAX_STRING) || "No deterministic rationale was recorded.", certainty: "observed", evidence_refs: ["scan.decision"] });
@@ -659,21 +665,49 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
     }
     if (!existing) aliases.set(alias, ref);
   };
-  for (const fact of context.facts) add(fact.ref, fact.evidence_refs);
+  const addVariants = (alias: string | undefined, refs: string[]) => {
+    if (!alias) return;
+    add(alias, refs);
+    add(alias.replaceAll("-", "_"), refs);
+    add(alias.replace(/[._-]+/g, "_"), refs);
+  };
+  for (const fact of context.facts) addVariants(fact.ref, fact.evidence_refs);
   for (const entry of context.access_surface) {
-    add(entry.id, entry.evidence_refs);
-    add(`access.${entry.id}`, entry.evidence_refs);
-    add(`capability.${entry.id}`, entry.evidence_refs);
+    addVariants(entry.id, entry.evidence_refs);
+    addVariants(`access.${entry.id}`, entry.evidence_refs);
+    addVariants(`capability.${entry.id}`, entry.evidence_refs);
   }
-  for (const node of context.data_flow.nodes) add(node.id, node.evidence_refs);
-  for (const edge of context.data_flow.edges) add(edge.id, edge.evidence_refs);
-  for (const [name, dimension] of Object.entries(context.blast_radius.dimensions)) add(`blast_radius.${name}`, dimension.evidence_refs);
-  add("release_delta", context.release_delta.evidence_refs);
+  for (const node of context.data_flow.nodes) addVariants(node.id, node.evidence_refs);
+  for (const edge of context.data_flow.edges) addVariants(edge.id, edge.evidence_refs);
+  for (const [name, dimension] of Object.entries(context.blast_radius.dimensions)) addVariants(`blast_radius.${name}`, dimension.evidence_refs);
+  addVariants("release_delta", context.release_delta.evidence_refs);
+  const scanAliases: Record<string, string> = {
+    artifact: "scan.provenance",
+    artifact_sha256: "scan.provenance",
+    extension_id: "scan.identity",
+    scan_id: "scan.identity",
+    version: "scan.identity",
+    decision: "scan.decision",
+    outcome: "scan.public_outcome",
+    rationale: "scan.reason",
+    decision_reason: "scan.reason",
+    coverage: "scan.coverage",
+    analysis_status: "scan.analysis_status",
+    severity: "scan.severity",
+    public_outcome: "scan.public_outcome",
+    evidence_confidence: "scan.evidence_confidence",
+    scanner_build: "scan.scanner_build",
+    ruleset_version: "scan.ruleset_version",
+    capabilities: "scan.capabilities",
+    inventory: "scan.inventory",
+  };
+  for (const [alias, ref] of Object.entries(scanAliases)) addVariants(alias, [ref]);
   for (const reference of context.evidence) {
-    add(reference.ref.replace(/\.\d+$/, ""), [reference.ref]);
+    addVariants(reference.ref.replace(/\.\d+$/, ""), [reference.ref]);
+    addVariants(reference.ref, [reference.ref]);
     const label = slug(reference.label).replaceAll("-", "_");
-    add(label, [reference.ref]);
-    add(`${reference.section}.${label}`, [reference.ref]);
+    addVariants(label, [reference.ref]);
+    addVariants(`${reference.section}.${label}`, [reference.ref]);
   }
   return aliases;
 }
