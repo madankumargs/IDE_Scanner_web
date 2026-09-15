@@ -351,7 +351,7 @@ export async function createEvidenceIntelligenceReport(
     body: JSON.stringify({
       model,
       temperature: 0.05,
-      max_tokens: 1_800,
+      max_tokens: 2_600,
       ...structuredOutputControls,
       messages: [
         {
