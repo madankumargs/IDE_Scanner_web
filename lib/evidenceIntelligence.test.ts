@@ -105,7 +105,7 @@ describe("evidence intelligence output validation", () => {
       headline: "Review the exact release",
       bottom_line: "The release exposes a network access surface; the deterministic decision remains review.",
       summary_evidence_refs: ["access.network"],
-      claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["capability.network"] }],
+      claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["capability.network.1"] }],
       positive_signals: [],
       unknowns: [],
       verify_next: [],

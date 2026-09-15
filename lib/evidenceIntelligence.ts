@@ -647,7 +647,7 @@ function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string
   if (!Array.isArray(value) || value.length > maxItems || value.some((item) => typeof item !== "string")) throw new EvidenceIntelligenceValidationError("The intelligence report contained invalid evidence references.");
   const refs = value.map((item) => String(item));
   if (!allowEmpty && refs.length === 0) throw new EvidenceIntelligenceValidationError("The intelligence report omitted required evidence references.");
-  const canonicalRefs = refs.map((ref) => aliases.get(ref) || ref);
+  const canonicalRefs = refs.map((ref) => aliases.get(ref) || aliases.get(ref.replace(/\.\d+$/, "")) || ref);
   if (canonicalRefs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError("The intelligence report referenced evidence outside the exact report.");
   return uniqueStrings(canonicalRefs);
 }
