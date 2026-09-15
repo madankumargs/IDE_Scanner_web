@@ -173,4 +173,38 @@ describe("Sarvam evidence boundary", () => {
     expect(body.messages[1].content).toContain("BEGIN_UNTRUSTED_EVIDENCE_CONTEXT");
     expect(body.messages[1].content).not.toContain("canonical_report");
   });
+
+  it("collects streamed JSON while discarding reasoning chunks", async () => {
+    process.env.SARVAM_API_KEY = "test-key";
+    const context = compileEvidenceIntelligenceContext({
+      version: "1.2.3",
+      scan: { id: "scan-1", extension_id: "publisher.extension", version: "1.2.3", artifact_sha256: "a".repeat(64), analysis_status: "complete", decision: "review", coverage_percent: 100, capabilities: { network: true } },
+      findings: [],
+      files: [],
+      dependencies: [],
+    });
+    const narrative = {
+      headline: "Review the exact release",
+      bottom_line: "The deterministic decision remains review for this exact release.",
+      summary_evidence_refs: ["scan.decision"],
+      claims: [{ claim_id: "claim-1", section: "decision", text: "The report records a review decision.", certainty: "observed", evidence_refs: ["scan.decision"] }],
+      positive_signals: [],
+      unknowns: [{ claim_id: "unknown-1", section: "context", text: "Runtime exploitability is not established by this report.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
+      verify_next: [{ text: "Confirm the expected network destination before approval.", evidence_refs: ["scan.decision"] }],
+    };
+    const streamBody = [
+      `data: ${JSON.stringify({ model: "sarvam-105b", choices: [{ delta: { reasoning_content: "hidden" } }] })}`,
+      `data: ${JSON.stringify({ model: "sarvam-105b", choices: [{ delta: { content: JSON.stringify(narrative) }, finish_reason: "stop" }] })}`,
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(streamBody, { status: 200, headers: { "content-type": "text/event-stream" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createEvidenceIntelligenceReport(context, "security_lead");
+
+    expect(result.report.validation.status).toBe("validated");
+    expect(JSON.stringify(result)).not.toContain("hidden");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).stream).toBe(true);
+  });
 });

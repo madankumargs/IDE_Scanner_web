@@ -12,7 +12,7 @@ import {
 
 const SARVAM_ORIGIN = "https://api.sarvam.ai";
 const REQUEST_TIMEOUT_MS = 20_000;
-const INTELLIGENCE_REQUEST_TIMEOUT_MS = 28_000;
+const INTELLIGENCE_REQUEST_TIMEOUT_MS = 55_000;
 const MAX_CONTEXT_CHARS = 24_000;
 const MAX_ARRAY_ITEMS = 60;
 
@@ -352,6 +352,7 @@ export async function createEvidenceIntelligenceReport(
       model,
       temperature: 0.05,
       max_tokens: 2_600,
+      stream: true,
       ...structuredOutputControls,
       messages: [
         {
@@ -401,8 +402,9 @@ export async function createEvidenceIntelligenceReport(
     console.warn("[sarvam-evidence-intelligence] provider rejected request", { status: response.status });
     throw new SarvamProviderError(response.status);
   }
-  const payload = await response.json().catch(() => null);
-  const content = extractMessageContent(payload);
+  const streamed = await readStructuredResponse(response);
+  const payload = streamed.payload;
+  const content = streamed.content;
   if (!content) {
     console.warn("[sarvam-evidence-intelligence] empty structured output", providerPayloadShape(response.status, payload));
     throw new SarvamOutputError();
@@ -460,6 +462,53 @@ function extractMessageContent(payload: unknown): string {
   const first = objectValue(choices[0]);
   const message = objectValue(first.message);
   return typeof message.content === "string" ? message.content.trim() : "";
+}
+
+async function readStructuredResponse(response: Response): Promise<{ payload: unknown; content: string }> {
+  if (!response.headers.get("content-type")?.toLowerCase().includes("text/event-stream") || !response.body) {
+    const payload = await response.json().catch(() => null);
+    return { payload, content: extractMessageContent(payload) };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let finishReason: string | null = null;
+  let model: string | null = null;
+  let choices = 0;
+
+  const consume = (chunk: string) => {
+    buffer += chunk;
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || "";
+    for (const event of events) {
+      const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+      if (!data || data === "[DONE]") continue;
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(data) as Record<string, unknown>; }
+      catch { continue; }
+      if (typeof payload.model === "string") model = payload.model.slice(0, 80);
+      const streamChoices = Array.isArray(payload.choices) ? payload.choices : [];
+      choices = Math.max(choices, streamChoices.length);
+      const first = objectValue(streamChoices[0]);
+      if (typeof first.finish_reason === "string") finishReason = first.finish_reason.slice(0, 40);
+      const delta = objectValue(first.delta);
+      if (typeof delta.content === "string") content += delta.content;
+    }
+  };
+
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    consume(decoder.decode(result.value, { stream: true }));
+  }
+  consume(decoder.decode());
+  if (buffer.trim()) consume("\n\n");
+  return {
+    payload: { model, choices: Array.from({ length: choices }, (_, index) => ({ index, finish_reason: finishReason, message: { content } })) },
+    content: content.trim(),
+  };
 }
 
 function providerPayloadShape(status: number, payload: unknown): Record<string, unknown> {
