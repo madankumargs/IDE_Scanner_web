@@ -352,7 +352,7 @@ export async function createEvidenceIntelligenceReport(
       model,
       temperature: 0.05,
       max_tokens: 2_600,
-      stream: true,
+      stream: false,
       ...structuredOutputControls,
       messages: [
         {

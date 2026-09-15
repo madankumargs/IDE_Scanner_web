@@ -205,6 +205,6 @@ describe("Sarvam evidence boundary", () => {
 
     expect(result.report.validation.status).toBe("validated");
     expect(JSON.stringify(result)).not.toContain("hidden");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).stream).toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).stream).toBe(false);
   });
 });
