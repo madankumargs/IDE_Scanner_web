@@ -12,6 +12,7 @@ import {
 
 const SARVAM_ORIGIN = "https://api.sarvam.ai";
 const REQUEST_TIMEOUT_MS = 20_000;
+const INTELLIGENCE_REQUEST_TIMEOUT_MS = 28_000;
 const MAX_CONTEXT_CHARS = 24_000;
 const MAX_ARRAY_ITEMS = 60;
 
@@ -134,9 +135,9 @@ const INTELLIGENCE_RESPONSE_SCHEMA = {
 } as const;
 
 export function selectedSarvamModel(): SarvamReasoningModel {
-  // Keep the flagship model available as an explicit override, but use the
-  // lower-latency global model for the interactive report path by default.
-  const configured = process.env.SARVAM_REASONING_MODEL?.trim() || "glm5.3-flash";
+  // The flagship endpoint is available on standard keys. Beta v2 models stay
+  // allowlisted for operators who have explicitly enabled them.
+  const configured = process.env.SARVAM_REASONING_MODEL?.trim() || "sarvam-105b";
   if (!(configured in SARVAM_REASONING_MODELS)) {
     throw new SarvamConfigurationError("SARVAM_REASONING_MODEL is not allowlisted.");
   }
@@ -389,7 +390,7 @@ export async function createEvidenceIntelligenceReport(
       },
     }),
     cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(INTELLIGENCE_REQUEST_TIMEOUT_MS),
   }).catch((error) => {
     if (error instanceof SarvamProviderError) throw error;
     throw new SarvamProviderError(502);

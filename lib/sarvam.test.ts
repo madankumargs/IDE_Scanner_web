@@ -57,7 +57,7 @@ describe("Sarvam evidence boundary", () => {
 
   it("allows only configured reasoning models", () => {
     delete process.env.SARVAM_REASONING_MODEL;
-    expect(selectedSarvamModel()).toBe("glm5.3-flash");
+    expect(selectedSarvamModel()).toBe("sarvam-105b");
     process.env.SARVAM_REASONING_MODEL = "not-a-model";
     expect(() => selectedSarvamModel()).toThrow(SarvamConfigurationError);
   });
