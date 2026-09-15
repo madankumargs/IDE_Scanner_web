@@ -12,7 +12,7 @@ import {
   Printer,
   ShieldAlert,
 } from "lucide-react";
-import type { EvidenceIntelligenceReport, IntelligenceAudience, IntelligenceClaim } from "@/lib/evidenceIntelligence";
+import type { EvidenceIntelligenceReport, EvidenceIntelligenceTicket, IntelligenceAudience, IntelligenceClaim } from "@/lib/evidenceIntelligence";
 import { BlastRadiusVisual, EvidenceFlowVisual, EvidenceRefs } from "./EvidenceIntelligenceVisuals";
 import styles from "./evidenceIntelligence.module.css";
 
@@ -23,11 +23,13 @@ export default function EvidenceIntelligenceReport({
   version,
   scanId,
   signedIn,
+  intelligenceTicket,
 }: {
   extensionId: string;
   version: string;
   scanId: string;
   signedIn: boolean;
+  intelligenceTicket?: EvidenceIntelligenceTicket;
 }) {
   const [audience, setAudience] = useState<IntelligenceAudience>("security_lead");
   const [report, setReport] = useState<EvidenceIntelligenceReport | null>(null);
@@ -41,7 +43,7 @@ export default function EvidenceIntelligenceReport({
       const response = await fetch(`/api/extensions/${encodeURIComponent(extensionId)}/versions/${encodeURIComponent(version)}/scans/${encodeURIComponent(scanId)}/intelligence`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audience, depth: "standard" }),
+        body: JSON.stringify({ audience, depth: "standard", ...(intelligenceTicket ? { context_ticket: intelligenceTicket } : {}) }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {

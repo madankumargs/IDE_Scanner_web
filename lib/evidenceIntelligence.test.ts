@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   compileEvidenceIntelligenceContext,
   deriveBlastRadius,
+  signEvidenceIntelligenceContext,
   validateIntelligenceNarrative,
+  verifyEvidenceIntelligenceTicket,
   EvidenceIntelligenceValidationError,
 } from "@/lib/evidenceIntelligence";
 
@@ -128,5 +130,21 @@ describe("blast-radius rules", () => {
     const assessment = deriveBlastRadius([], [], [], context.deterministic as Record<string, unknown>, () => undefined);
     expect(assessment.overall).toBe("unknown");
     expect(assessment.dimensions.confidentiality.level).toBe("unknown");
+  });
+});
+
+describe("signed context ticket", () => {
+  it("accepts only an untampered context signed by the server secret", () => {
+    const previous = process.env.SARVAM_API_KEY;
+    process.env.SARVAM_API_KEY = "test-signing-secret";
+    try {
+      const context = compileEvidenceIntelligenceContext(product());
+      const ticket = signEvidenceIntelligenceContext(context);
+      expect(verifyEvidenceIntelligenceTicket(ticket)).toMatchObject({ context_digest: context.context_digest, identity: context.identity });
+      expect(verifyEvidenceIntelligenceTicket({ ...ticket, serialized: `${ticket.serialized} ` })).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.SARVAM_API_KEY;
+      else process.env.SARVAM_API_KEY = previous;
+    }
   });
 });

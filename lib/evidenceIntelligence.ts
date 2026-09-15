@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { runtimeEnv } from "@/lib/runtimeEnv";
 
 export const EVIDENCE_INTELLIGENCE_SCHEMA_VERSION = "1.0";
 export const EVIDENCE_INTELLIGENCE_MAX_CONTEXT_CHARS = 30_000;
@@ -117,6 +118,7 @@ export type EvidenceIntelligenceContext = {
   };
   deterministic: {
     decision: string;
+    analysis_status: string;
     severity: string;
     public_outcome: string;
     decision_reason: string;
@@ -147,6 +149,12 @@ export type EvidenceIntelligenceContext = {
   serialized: string;
   context_digest: string;
   evidence_refs: string[];
+};
+
+export type EvidenceIntelligenceTicket = {
+  serialized: string;
+  context_digest: string;
+  signature: string;
 };
 
 export type EvidenceIntelligenceReport = {
@@ -313,6 +321,7 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
     identity: { extension_id: extensionId, version, scan_id: scanId, artifact_sha256: artifactSha },
     deterministic: {
       decision: safeText(scan.decision, 80) || "incomplete",
+      analysis_status: safeText(scan.analysis_status, 80) || "incomplete",
       severity: safeText(scan.severity, 80) || "INFO",
       public_outcome: safeText(scan.public_outcome, 120) || "incomplete",
       decision_reason: safeText(scan.decision_reason, MAX_STRING) || "No deterministic rationale was recorded.",
@@ -370,6 +379,40 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
     context_digest: createHash("sha256").update(serialized).digest("hex"),
     evidence_refs: includedRefs,
   };
+}
+
+export function signEvidenceIntelligenceContext(context: EvidenceIntelligenceContext): EvidenceIntelligenceTicket {
+  const serialized = context.serialized;
+  const contextDigest = context.context_digest;
+  const secret = contextSigningSecret();
+  return {
+    serialized,
+    context_digest: contextDigest,
+    signature: secret ? createHmac("sha256", secret).update(ticketPayload(serialized, contextDigest)).digest("hex") : "",
+  };
+}
+
+export function verifyEvidenceIntelligenceTicket(ticket: EvidenceIntelligenceTicket): EvidenceIntelligenceContext | null {
+  if (!ticket || typeof ticket.serialized !== "string" || ticket.serialized.length > EVIDENCE_INTELLIGENCE_MAX_CONTEXT_CHARS || !/^[a-f0-9]{64}$/i.test(ticket.context_digest) || !/^[a-f0-9]{64}$/i.test(ticket.signature)) return null;
+  const secret = contextSigningSecret();
+  if (!secret) return null;
+  const expected = createHmac("sha256", secret).update(ticketPayload(ticket.serialized, ticket.context_digest)).digest("hex");
+  if (!timingSafeEqual(Buffer.from(expected), Buffer.from(ticket.signature))) return null;
+  if (createHash("sha256").update(ticket.serialized).digest("hex") !== ticket.context_digest.toLowerCase()) return null;
+  try {
+    const context = JSON.parse(ticket.serialized) as EvidenceIntelligenceContext;
+    return { ...context, serialized: ticket.serialized, context_digest: ticket.context_digest.toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
+function contextSigningSecret(): string {
+  return runtimeEnv("SARVAM_CONTEXT_SIGNING_SECRET").trim() || runtimeEnv("SARVAM_API_KEY").trim();
+}
+
+function ticketPayload(serialized: string, contextDigest: string): string {
+  return `${contextDigest.toLowerCase()}.${serialized}`;
 }
 
 export function deriveAccessSurface(

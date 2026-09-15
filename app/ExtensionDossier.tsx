@@ -35,6 +35,7 @@ import AlertsSection from "@/app/dossier/AlertsSection";
 import ChangesSection from "@/app/dossier/ChangesSection";
 import OverviewSection from "@/app/dossier/OverviewSection";
 import EvidenceIntelligenceReport from "@/app/EvidenceIntelligenceReport";
+import type { EvidenceIntelligenceTicket } from "@/lib/evidenceIntelligence";
 import { benchmarkValidation } from "@/lib/benchmarkLookup";
 import {
   coveragePresentation,
@@ -79,7 +80,7 @@ const sections: Array<{ id: Section; label: string; icon: typeof Radar }> = [
   { id: "raw", label: "Raw evidence", icon: Terminal },
 ];
 
-export default function AnalysisReport({ data, signedIn = false }: Props & { signedIn?: boolean }) {
+export default function AnalysisReport({ data, signedIn = false, intelligenceTicket }: Props & { signedIn?: boolean; intelligenceTicket?: EvidenceIntelligenceTicket }) {
   const {
     id,
     version,
@@ -206,6 +207,7 @@ export default function AnalysisReport({ data, signedIn = false }: Props & { sig
         version={version}
         scanId={String(scan.id || "")}
         signedIn={signedIn}
+        intelligenceTicket={intelligenceTicket}
       />
       <div className={`dossierLayout ${reportStyles.layout}`}>
         <DossierNavigation

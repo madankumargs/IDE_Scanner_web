@@ -5,6 +5,8 @@ import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb, userFromSession } from "@/lib/cloudflarePrivate";
 import {
   compileEvidenceIntelligenceContext,
+  verifyEvidenceIntelligenceTicket,
+  type EvidenceIntelligenceTicket,
   type IntelligenceAudience,
   type IntelligenceDepth,
 } from "@/lib/evidenceIntelligence";
@@ -17,7 +19,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MAX_BODY_BYTES = 2_048;
+const MAX_BODY_BYTES = 36_864;
 const WINDOW_MS = 10 * 60 * 1_000;
 const MAX_REQUESTS_PER_WINDOW = 3;
 const localRequestBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -69,22 +71,27 @@ export async function POST(
   }
   console.warn("[evidence-intelligence] phase", { name: "rate_limit_checked" });
 
-  const product = await getVersionScanProduct(extensionId, version, scanId, db, { compact: true, includePreviews: false, skipCloudflareCatalog: true });
-  console.warn("[evidence-intelligence] phase", { name: "product_loaded" });
-  const scan = product?.scan as Record<string, unknown> | null | undefined;
-  if (!product || !scan || String(scan.id || "") !== scanId || String(scan.extension_id || "").toLowerCase() !== extensionId.toLowerCase() || String(scan.version || "") !== version) {
-    return errorResponse("This exact report is not available.", 404);
-  }
-  if (String(scan.analysis_status || "") !== "complete" || !/^[a-f0-9]{64}$/i.test(String(scan.artifact_sha256 || ""))) {
-    return errorResponse("A completed exact-artifact report is required.", 409);
-  }
-
   try {
-    const evidence = compileEvidenceIntelligenceContext({
-      ...product,
-      scan,
-    });
-    console.warn("[evidence-intelligence] phase", { name: "context_compiled" });
+    let evidence = options.context_ticket ? verifyEvidenceIntelligenceTicket(options.context_ticket) : null;
+    if (options.context_ticket && !evidence) return errorResponse("The exact report context could not be verified.", 409, "context_invalid");
+    if (evidence) {
+      if (evidence.identity.scan_id !== scanId || evidence.identity.extension_id.toLowerCase() !== extensionId.toLowerCase() || evidence.identity.version !== version || evidence.deterministic.analysis_status !== "complete" || !/^[a-f0-9]{64}$/i.test(evidence.identity.artifact_sha256)) {
+        return errorResponse("A completed exact-artifact report is required.", 409);
+      }
+      console.warn("[evidence-intelligence] phase", { name: "context_verified" });
+    } else {
+      const product = await getVersionScanProduct(extensionId, version, scanId, db, { compact: true, includePreviews: false, skipCloudflareCatalog: true });
+      console.warn("[evidence-intelligence] phase", { name: "product_loaded" });
+      const scan = product?.scan as Record<string, unknown> | null | undefined;
+      if (!product || !scan || String(scan.id || "") !== scanId || String(scan.extension_id || "").toLowerCase() !== extensionId.toLowerCase() || String(scan.version || "") !== version) {
+        return errorResponse("This exact report is not available.", 404);
+      }
+      if (String(scan.analysis_status || "") !== "complete" || !/^[a-f0-9]{64}$/i.test(String(scan.artifact_sha256 || ""))) {
+        return errorResponse("A completed exact-artifact report is required.", 409);
+      }
+      evidence = compileEvidenceIntelligenceContext({ ...product, scan });
+      console.warn("[evidence-intelligence] phase", { name: "context_compiled" });
+    }
     const result = await createEvidenceIntelligenceReport(evidence, options.audience, options.depth);
     console.warn("[evidence-intelligence] phase", { name: "provider_validated" });
     return NextResponse.json(result.report, {
@@ -103,16 +110,18 @@ export async function POST(
   }
 }
 
-async function readOptions(request: Request): Promise<{ audience: IntelligenceAudience; depth: IntelligenceDepth } | null> {
+async function readOptions(request: Request): Promise<{ audience: IntelligenceAudience; depth: IntelligenceDepth; context_ticket?: EvidenceIntelligenceTicket } | null> {
   const raw = await request.text().catch(() => "");
   if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) return null;
   if (!raw.trim()) return { audience: "security_lead", depth: "standard" };
   try {
-    const body = JSON.parse(raw) as { audience?: unknown; depth?: unknown };
+    const body = JSON.parse(raw) as { audience?: unknown; depth?: unknown; context_ticket?: unknown };
     const audience = body?.audience;
     const depth = body?.depth || "standard";
     if ((audience !== "security_lead" && audience !== "engineer" && audience !== "publisher") || depth !== "standard") return null;
-    return { audience, depth };
+    const contextTicket = body.context_ticket;
+    if (contextTicket !== undefined && (!contextTicket || typeof contextTicket !== "object" || Array.isArray(contextTicket))) return null;
+    return { audience, depth, ...(contextTicket ? { context_ticket: contextTicket as EvidenceIntelligenceTicket } : {}) };
   } catch {
     return null;
   }
