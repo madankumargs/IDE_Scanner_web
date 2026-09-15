@@ -1,4 +1,6 @@
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
+import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
+import { privateDb } from "@/lib/cloudflarePrivate";
 import { serviceDb } from "@/lib/supabase";
 
 export type PublicationHealth = {
@@ -38,6 +40,7 @@ export function summarizeReleaseMemberScans(rows: ReleaseMemberScan[]): Pick<Pub
 }
 
 export async function getPublicationHealth(): Promise<PublicationHealth> {
+  if (cloudflarePrivateAvailable()) return getCloudflarePublicationHealth();
   const db = serviceDb();
   const releaseResult = await db.from("scan_publication_releases").select("id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports,activated_at").eq("active", true).maybeSingle();
   if (releaseResult.error) throw releaseResult.error;
@@ -65,4 +68,40 @@ export async function getPublicationHealth(): Promise<PublicationHealth> {
   const recentScans = scans.data || [];
   const scanFailures = recentScans.filter((item) => item.analysis_status === "failed").length;
   return evaluatePublicationHealth({ active_release: release ? { id: String(release.id), expected_reports: Number(release.expected_reports), activated_at: String(release.activated_at) } : null, current_report_count: currentReportCount, newest_scan_at: newestScanAt, runner_status: runner.status, runner_last_seen_at: runner.last_seen_at, scan_failure_rate: recentScans.length ? scanFailures / recentScans.length : 0, notification_failure_rate: completed.length ? failures / completed.length : 0 });
+}
+
+async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
+  const db = privateDb();
+  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const [reports, jobs, deliveries, runner] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count, MAX(created_at) AS newest_scan_at FROM app_scan_reports").first<Record<string, unknown>>(),
+    db.prepare("SELECT status, COUNT(*) AS count FROM app_scan_jobs WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
+    db.prepare("SELECT status, COUNT(*) AS count FROM app_notification_deliveries WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
+    getDeepScanHealth(),
+  ]);
+  const currentReportCount = Number(reports?.count || 0);
+  const newestScanAt = reports?.newest_scan_at ? String(reports.newest_scan_at) : null;
+  const jobRows = jobs.results || [];
+  const deliveryRows = deliveries.results || [];
+  const jobCount = jobRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const failedJobs = jobRows.filter((row) => String(row.status) === "failed").reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const deliveryCount = deliveryRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const failedDeliveries = deliveryRows.filter((row) => String(row.status) === "failed").reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const reasons: string[] = [];
+  if (!currentReportCount) reasons.push("No completed Deep Scan reports in Cloudflare D1.");
+  if (!newestScanAt || Date.now() - new Date(newestScanAt).getTime() > 30 * 60 * 60 * 1000) reasons.push("Public scan corpus is older than 30 hours.");
+  if (runner.status !== "ready") reasons.push(`Deep Scan runner is ${runner.status}.`);
+  if (jobCount && failedJobs / jobCount > 0.1) reasons.push("Scan failure rate exceeds 10 percent.");
+  if (deliveryCount && failedDeliveries / deliveryCount > 0.1) reasons.push("Notification failure rate exceeds 10 percent.");
+  return {
+    healthy: reasons.length === 0,
+    reasons,
+    active_release: currentReportCount ? { id: "cloudflare-d1-corpus", expected_reports: currentReportCount, activated_at: newestScanAt || new Date().toISOString() } : null,
+    current_report_count: currentReportCount,
+    newest_scan_at: newestScanAt,
+    runner_status: runner.status,
+    runner_last_seen_at: runner.last_seen_at,
+    scan_failure_rate: jobCount ? failedJobs / jobCount : 0,
+    notification_failure_rate: deliveryCount ? failedDeliveries / deliveryCount : 0,
+  };
 }

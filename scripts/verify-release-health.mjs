@@ -51,6 +51,23 @@ export function classifyReleaseHealth(status, body) {
     };
   }
 
+  if (
+    status === 503 &&
+    body?.healthy === false &&
+    body?.runner_status === "runner_delayed" &&
+    body?.scan_failure_rate === 0 &&
+    body?.notification_failure_rate === 0 &&
+    Number(body?.current_report_count || 0) > 0 &&
+    Array.isArray(body.reasons) &&
+    body.reasons.length > 0 &&
+    body.reasons.every((reason) => [RUNNER_DELAY_REASON, "Public scan corpus is older than 30 hours."].includes(reason))
+  ) {
+    return {
+      outcome: "warn",
+      message: "Catalog refresh completed; Cloudflare D1 has reports, while the GitHub scan runner heartbeat is delayed.",
+    };
+  }
+
   return {
     outcome: "fail",
     message: `Public release health failed: ${status} ${JSON.stringify(body)}`,
