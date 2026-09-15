@@ -41,7 +41,6 @@ export async function POST(
   if (Number.isFinite(length) && length > MAX_BODY_BYTES) return errorResponse("Request body too large.", 413);
 
   const cloudflare = cloudflarePrivateAvailable();
-  console.warn("[evidence-intelligence] phase", { name: "request_validated" });
   let db: Awaited<ReturnType<typeof serverDb>> | undefined;
   let userId = "";
   if (cloudflare) {
@@ -57,7 +56,6 @@ export async function POST(
 
   const options = await readOptions(request);
   if (!options) return errorResponse("Unsupported intelligence review options.", 400);
-  console.warn("[evidence-intelligence] phase", { name: "options_read" });
   if (process.env.SARVAM_INTELLIGENCE_REPORT_ENABLED?.trim().toLowerCase() === "false") {
     return errorResponse("Evidence intelligence is temporarily disabled.", 503, "ai_disabled");
   }
@@ -69,8 +67,6 @@ export async function POST(
       headers: { "Content-Type": "application/json", "Cache-Control": "private, no-store", "Retry-After": String(limit.retryAfter) },
     });
   }
-  console.warn("[evidence-intelligence] phase", { name: "rate_limit_checked" });
-
   try {
     let evidence = options.context_ticket ? verifyEvidenceIntelligenceTicket(options.context_ticket) : null;
     if (options.context_ticket && !evidence) return errorResponse("The exact report context could not be verified.", 409, "context_invalid");
@@ -78,10 +74,8 @@ export async function POST(
       if (evidence.identity.scan_id !== scanId || evidence.identity.extension_id.toLowerCase() !== extensionId.toLowerCase() || evidence.identity.version !== version || evidence.deterministic.analysis_status !== "complete" || !/^[a-f0-9]{64}$/i.test(evidence.identity.artifact_sha256)) {
         return errorResponse("A completed exact-artifact report is required.", 409);
       }
-      console.warn("[evidence-intelligence] phase", { name: "context_verified" });
     } else {
       const product = await getVersionScanProduct(extensionId, version, scanId, db, { compact: true, includePreviews: false, skipCloudflareCatalog: true });
-      console.warn("[evidence-intelligence] phase", { name: "product_loaded" });
       const scan = product?.scan as Record<string, unknown> | null | undefined;
       if (!product || !scan || String(scan.id || "") !== scanId || String(scan.extension_id || "").toLowerCase() !== extensionId.toLowerCase() || String(scan.version || "") !== version) {
         return errorResponse("This exact report is not available.", 404);
@@ -90,10 +84,8 @@ export async function POST(
         return errorResponse("A completed exact-artifact report is required.", 409);
       }
       evidence = compileEvidenceIntelligenceContext({ ...product, scan });
-      console.warn("[evidence-intelligence] phase", { name: "context_compiled" });
     }
     const result = await createEvidenceIntelligenceReport(evidence, options.audience, options.depth);
-    console.warn("[evidence-intelligence] phase", { name: "provider_validated" });
     return NextResponse.json(result.report, {
       headers: {
         "Cache-Control": "private, no-store",
