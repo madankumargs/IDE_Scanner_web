@@ -287,6 +287,15 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
   return { version: { extension_id: extensionId, version, latest_scan_id: scanId, scan_state: report.analysis_status }, scan: report, findings, files, dependencies };
 }
 
+export async function getCloudflareLatestScanProduct(extensionId: string, version: string): Promise<Row | null> {
+  if (!cloudflarePrivateAvailable()) return null;
+  const row = await privateDb()
+    .prepare("SELECT scan_id FROM app_scan_reports WHERE extension_id=? AND version=? ORDER BY created_at DESC LIMIT 1")
+    .bind(extensionId, version)
+    .first<Row>();
+  return row?.scan_id ? getCloudflareScanProduct(extensionId, version, String(row.scan_id)) : null;
+}
+
 export async function getCloudflareSourcePreview(extensionId: string, version: string, scanId: string | null, path: string): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
   const row = await privateDb().prepare(`
