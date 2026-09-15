@@ -647,18 +647,34 @@ function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string
 
 function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, string> {
   const aliases = new Map<string, string>();
+  const ambiguous = new Set<string>();
   const add = (alias: string | undefined, refs: string[]) => {
-    if (alias && refs.length && !aliases.has(alias)) aliases.set(alias, refs[0]);
+    if (!alias || !refs.length || ambiguous.has(alias)) return;
+    const ref = refs[0];
+    const existing = aliases.get(alias);
+    if (existing && existing !== ref) {
+      aliases.delete(alias);
+      ambiguous.add(alias);
+      return;
+    }
+    if (!existing) aliases.set(alias, ref);
   };
   for (const fact of context.facts) add(fact.ref, fact.evidence_refs);
   for (const entry of context.access_surface) {
     add(entry.id, entry.evidence_refs);
     add(`access.${entry.id}`, entry.evidence_refs);
+    add(`capability.${entry.id}`, entry.evidence_refs);
   }
   for (const node of context.data_flow.nodes) add(node.id, node.evidence_refs);
   for (const edge of context.data_flow.edges) add(edge.id, edge.evidence_refs);
   for (const [name, dimension] of Object.entries(context.blast_radius.dimensions)) add(`blast_radius.${name}`, dimension.evidence_refs);
   add("release_delta", context.release_delta.evidence_refs);
+  for (const reference of context.evidence) {
+    add(reference.ref.replace(/\.\d+$/, ""), [reference.ref]);
+    const label = slug(reference.label).replaceAll("-", "_");
+    add(label, [reference.ref]);
+    add(`${reference.section}.${label}`, [reference.ref]);
+  }
   return aliases;
 }
 

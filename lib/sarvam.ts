@@ -367,6 +367,7 @@ export async function createEvidenceIntelligenceReport(
             "Every summary reference, claim, positive signal, unknown, and verification action must use only the exact ref values supplied in the evidence catalog. Fact refs and object IDs are not valid evidence refs unless the same string also appears in that catalog. Never invent refs.",
             "Use a globally unique claim_id across claims, positive_signals, and unknowns.",
             "Keep the report compact: prefer 4-8 total claims, at most 4 unknowns, and at most 4 verification actions.",
+            `Available evidence refs (copy exactly; do not infer new ones): ${context.evidence.map((reference) => reference.ref).join(", ")}`,
             "Do not emit HTML, Markdown tables, SVG, CSS, links, code, chain-of-thought, or hidden reasoning. Return only JSON matching the supplied schema.",
           ].join("\n"),
         },
