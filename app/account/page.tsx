@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { browserDb } from "@/lib/supabase";
+import { browserAuthHeaders } from "@/lib/browserAuth";
 import { authErrorMessage } from "@/lib/authError";
 import { isEmailOtp, normalizeEmail, normalizeEmailOtp } from "@/lib/emailOtp";
 import { trackProductEvent } from "@/lib/analyticsEvents";
@@ -19,10 +20,12 @@ import "./account.css";
 
 type AccountState = {
   email: string;
-  token: string;
+  provider: "cloudflare" | "supabase";
   profile: Record<string, unknown> | null;
 };
-const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
+// Google and email have Cloudflare/D1 implementations in production. Keep
+// the buttons visible even when the legacy Supabase browser client is absent.
+const googleEnabled = true;
 // GitHub OAuth is handled by the Cloudflare Worker and does not depend on the
 // Supabase project. Keep the Supabase flags for local compatibility, but always
 // expose the working Cloudflare path in production.
@@ -42,6 +45,14 @@ export default function AccountPage() {
       ? "That sign-in link is invalid or expired. Start a new sign-in."
       : error === "missing_code"
         ? "The sign-in response was incomplete. Start again."
+        : error === "invalid_state"
+          ? "That sign-in session expired. Start again."
+          : error === "provider_denied"
+            ? "The sign-in provider declined the request. Try again or use another option."
+            : error === "missing_email"
+              ? "The provider did not return a verified email address. Try another option."
+              : error === "provider_unavailable"
+                ? "That sign-in provider is temporarily unavailable. Try again shortly."
         : "";
   });
   const [role, setRole] = useState("developer");
@@ -72,7 +83,7 @@ export default function AccountPage() {
         if (cloudflare.ok && cloudflareBody.user) {
           setAccount({
             email: String(cloudflareBody.user.email || ""),
-            token: "",
+            provider: "cloudflare",
             profile: cloudflareBody.profile || null,
           });
           setLoading(false);
@@ -82,17 +93,22 @@ export default function AccountPage() {
           setLoading(false);
           return;
         }
-        const { data } = await db.auth.getSession();
-        const session = data.session;
-        if (!session) {
+        const headers = await browserAuthHeaders(db);
+        if (!headers.Authorization) {
+          setLoading(false);
+          return;
+        }
+        const { data } = await db.auth.getUser();
+        const user = data.user;
+        if (!user) {
           setLoading(false);
           return;
         }
         const response = await fetch("/api/profile", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers,
         });
         const body = await response.json();
-        setAccount({ email: session.user.email || "", token: session.access_token, profile: body.profile || null });
+        setAccount({ email: user.email || "", provider: "supabase", profile: body.profile || null });
         setLoading(false);
       } catch {
         setLoading(false);
@@ -127,10 +143,11 @@ export default function AccountPage() {
       window.location.assign(`/api/auth/github?next=${encodeURIComponent(next)}`);
       return;
     }
-    if (!db)
-      return setMessage(
-        "Sign-in is temporarily unavailable. Public extension intelligence remains accessible.",
-      );
+    if (!db) {
+      const next = new URLSearchParams(window.location.search).get("next") || "/workspace";
+      window.location.assign(`/api/auth/google?next=${encodeURIComponent(next)}`);
+      return;
+    }
     trackProductEvent({
       name: "workspace_signup_started",
       source_route: window.location.pathname,
@@ -144,8 +161,6 @@ export default function AccountPage() {
   }
   async function sendEmailOtp() {
     const address = normalizeEmail(email);
-    if (!db)
-      return setMessage("Supabase Auth is not connected to this deployment.");
     if (!address) return setMessage("Enter an email address.");
     trackProductEvent({
       name: "workspace_signup_started",
@@ -153,6 +168,25 @@ export default function AccountPage() {
       entry_point: entryPoint,
     });
     setEmailAuthPending(true);
+    if (!db) {
+      try {
+        const response = await fetch("/api/auth/email/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: address }),
+        });
+        const body = await response.json().catch(() => ({}));
+        setEmailAuthPending(false);
+        if (!response.ok) return setMessage(body.error || "Email sign-in is temporarily unavailable.");
+        setEmail(address);
+        setEmailOtp("");
+        setEmailOtpSent(true);
+        return setMessage(body.message || "Enter the sign-in code we sent to your email.");
+      } catch {
+        setEmailAuthPending(false);
+        return setMessage("Email sign-in is temporarily unavailable. Try Google or GitHub.");
+      }
+    }
     const result = await db.auth.signInWithOtp({
       email: address,
       options: { shouldCreateUser: true, emailRedirectTo: callbackUrl() },
@@ -166,11 +200,30 @@ export default function AccountPage() {
   }
   async function verifyEmailOtp() {
     const address = normalizeEmail(email);
-    if (!db)
-      return setMessage("Supabase Auth is not connected to this deployment.");
     if (!isEmailOtp(emailOtp))
       return setMessage("Enter the complete sign-in code.");
     setEmailAuthPending(true);
+    if (!db) {
+      try {
+        const response = await fetch("/api/auth/email/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: address,
+            code: emailOtp,
+            next: new URLSearchParams(window.location.search).get("next") || "/workspace",
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        setEmailAuthPending(false);
+        if (!response.ok) return setMessage(body.error || "That code is invalid or expired.");
+        window.location.assign(body.next || "/workspace");
+        return;
+      } catch {
+        setEmailAuthPending(false);
+        return setMessage("Email sign-in is temporarily unavailable. Try again.");
+      }
+    }
     const result = await db.auth.verifyOtp({
       email: address,
       token: emailOtp,
@@ -189,10 +242,12 @@ export default function AccountPage() {
     setOnboardingSaving(true);
     setMessage("");
     try {
+      const headers = await browserAuthHeaders(db);
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const teamsResponse = await fetch("/api/teams", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${account.token}`,
+          ...headers,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ name, onboarding: true }),
@@ -207,7 +262,7 @@ export default function AccountPage() {
       const profileResponse = await fetch("/api/profile", {
         method: "PATCH",
         headers: {
-          Authorization: `Bearer ${account.token}`,
+          ...headers,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ role, primary_ide: ide, use_case: useCase }),
@@ -228,7 +283,7 @@ export default function AccountPage() {
     }
   }
   async function signOut() {
-    if (account?.token) await db?.auth.signOut();
+    if (account?.provider === "supabase") await db?.auth.signOut();
     else await fetch("/api/auth/logout", { method: "POST" });
     setAccount(null);
   }
@@ -420,12 +475,12 @@ export default function AccountPage() {
             <GitHubMark /> Continue with GitHub <ArrowRight />
           </button>
         ) : null}
-        {db && (googleEnabled || githubEnabled) ? (
+        {googleEnabled || githubEnabled ? (
           <div className="authDivider">
             <span>or use email</span>
           </div>
         ) : null}
-        {db ? <form
+        <form
           className="emailOtp"
           onSubmit={(event) => {
             event.preventDefault();
@@ -482,7 +537,7 @@ export default function AccountPage() {
               {emailAuthPending ? "Sending…" : "Email me a code"}
             </button>
           )}
-        </form> : <p className="authMessage" role="status">Email-code sign-in is temporarily unavailable while the Cloudflare private auth path is active. Continue with GitHub above.</p>}
+        </form>
         {message ? (
           <p className="authMessage" role="status">
             {message}

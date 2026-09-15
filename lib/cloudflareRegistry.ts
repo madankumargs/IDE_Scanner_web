@@ -1,6 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 type RegistryChunk = { payload: string };
+type RegistryCatalogEntry = Record<string, unknown>;
+type RegistryCatalogPayload = RegistryCatalogEntry[] | { catalog?: RegistryCatalogEntry[] };
 
 function registryDb(): D1Database | null {
   try {
@@ -61,8 +63,16 @@ export async function getCloudflareRegistryProduct<T>(
 export async function getCloudflareRegistryCatalogExtension<T>(
   extensionId: string,
 ): Promise<T | null> {
-  const catalog = await getCloudflareRegistrySection<{ catalog?: Array<Record<string, unknown>> }>("catalog");
-  const match = catalog?.catalog?.find(
+  const catalog = await getCloudflareRegistrySection<RegistryCatalogPayload>("catalog");
+  return findCloudflareRegistryCatalogExtension<T>(catalog, extensionId);
+}
+
+export function findCloudflareRegistryCatalogExtension<T>(
+  catalog: RegistryCatalogPayload | null,
+  extensionId: string,
+): T | null {
+  const entries = Array.isArray(catalog) ? catalog : catalog?.catalog || [];
+  const match = entries.find(
     (item) => String(item.id || "").toLowerCase() === extensionId.toLowerCase(),
   );
   return (match || null) as T | null;

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { browserDb } from "@/lib/supabase";
+import { browserAuthHeaders } from "@/lib/browserAuth";
 
 export default function InvitationAcceptance({ token }: { token: string }) {
   const db = useMemo(() => browserDb(), []);
@@ -13,11 +14,10 @@ export default function InvitationAcceptance({ token }: { token: string }) {
 
   async function accept() {
     setState("saving"); setMessage("");
-    const session = await db?.auth.getSession();
-    const accessToken = session?.data.session?.access_token;
-    if (!accessToken) { router.push(`/account?next=${encodeURIComponent(`/workspace/invitations/${token}`)}`); return; }
+    const headers = await browserAuthHeaders(db);
+    if (!headers.Authorization) { router.push(`/account?next=${encodeURIComponent(`/workspace/invitations/${token}`)}`); return; }
     try {
-      const response = await fetch("/api/team-invitations/accept", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
+      const response = await fetch("/api/team-invitations/accept", { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ token }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) { setState("error"); setMessage(String(body.error || "Could not accept invitation.")); return; }
       router.replace("/workspace"); router.refresh();

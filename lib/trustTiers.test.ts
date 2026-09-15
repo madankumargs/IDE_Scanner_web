@@ -103,4 +103,9 @@ describe("trustBadgeText", () => {
     });
     expect(trustBadgeText(info)).toBe("1 undeclared capability detected");
   });
+
+  it("adds the diagnostic risk score to a generated badge when available", () => {
+    const info = deriveTrustTier({ decision: "allow", analysis_status: "complete" });
+    expect(trustBadgeText(info, "3.0.33", 7)).toBe("analyzed · risk 7/100 · v3.0.33");
+  });
 });

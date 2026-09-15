@@ -25,7 +25,7 @@ export default function SettingsView({
   onMutateMember,
   onCreateInvite,
   notificationSettings,
-  getToken,
+  getAuthHeaders,
 }: {
   team: Team;
   members: Member[];
@@ -38,7 +38,7 @@ export default function SettingsView({
     role: string,
   ) => Promise<{ ok: true; url: string } | { ok: false; error: string }>;
   notificationSettings: React.ReactNode;
-  getToken: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
 }) {
   const [section, setSection] = useState<
     "general" | "members" | "notifications" | "api"
@@ -174,7 +174,7 @@ export default function SettingsView({
                   <input value={roleName(team.role)} readOnly />
                 </label>
               </div>
-              <BillingPanel teamId={team.id} getToken={getToken} />
+              <BillingPanel teamId={team.id} getAuthHeaders={getAuthHeaders} />
               <div className={styles.settingBlock}>
                 <span>Access model</span>
                 <h2>Clear responsibility at every level</h2>
@@ -396,7 +396,7 @@ export default function SettingsView({
           ) : section === "notifications" ? (
             notificationSettings
           ) : (
-            <ApiKeysPanel teamId={team.id} getToken={getToken} />
+            <ApiKeysPanel teamId={team.id} getAuthHeaders={getAuthHeaders} />
           )}
         </section>
       </div>

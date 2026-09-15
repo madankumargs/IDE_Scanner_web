@@ -33,7 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ slug?:
     return svg("analysis pending", TIER_COLORS.unanalyzed, "not analyzed");
   }
   const info = deriveTrustTier(decision);
-  return svg(trustBadgeText(info, decision.version), TIER_COLORS[info.tier] || TIER_COLORS.analyzed, info.label);
+  return svg(trustBadgeText(info, decision.version, decision.risk_score), TIER_COLORS[info.tier] || TIER_COLORS.analyzed, info.label);
 }
 
 function svg(label: string, fill: string, ariaLabel: string) {

@@ -675,6 +675,8 @@ export type BadgeDecision = {
   analysis_status: string;
   capability_assessment: Record<string, unknown>;
   analysis_coverage: Record<string, unknown>;
+  risk_score: number | null;
+  malware_score: number | null;
   scanned_at: string | null;
 };
 
@@ -688,10 +690,12 @@ const emptyBadgeDecision = (found = false): BadgeDecision => ({
   analysis_status: "incomplete",
   capability_assessment: {},
   analysis_coverage: {},
+  risk_score: null,
+  malware_score: null,
   scanned_at: null,
 });
 
-const cachedBadgeDecision=unstable_cache(async(id:string)=>fetchBadgeDecision(id, null),["public-badge-v2"],{revalidate:300,tags:["public-intel"]});
+const cachedBadgeDecision=unstable_cache(async(id:string)=>fetchBadgeDecision(id, null),["public-badge-v3"],{revalidate:300,tags:["public-intel"]});
 const cachedVersionBadgeDecision=unstable_cache(async(id:string,version:string)=>fetchBadgeDecision(id, version),["public-badge-version-v1"],{revalidate:300,tags:["public-intel"]});
 
 export function getBadgeDecision(id: string): Promise<BadgeDecision> { return cachedBadgeDecision(id.toLowerCase()); }
@@ -705,13 +709,28 @@ export function getVersionBadgeDecision(id: string, version: string): Promise<Ba
 
 async function fetchBadgeDecision(rawId: string, version: string | null): Promise<BadgeDecision> {
   const mirror = async () => mirroredBadgeDecision(rawId, version);
+  if (cloudflarePrivateAvailable()) {
+    try {
+      const product = await getCloudflareRegistryProduct<{ extension?: Record<string, unknown>; versions?: Array<Record<string, unknown>> }>(rawId);
+      const catalogFallback = product?.extension
+        ? null
+        : await getCloudflareRegistryCatalogExtension<{ latest_version?: unknown }>(rawId);
+      const targetVersion = version || String(product?.extension?.latest_version || product?.versions?.find((item) => item.is_latest)?.version || product?.versions?.[0]?.version || catalogFallback?.latest_version || "");
+      if (targetVersion) {
+        const scan = await getCloudflareScanSummary(rawId, targetVersion);
+        if (scan) return badgeDecisionFromScan(rawId, scan, targetVersion);
+      }
+    } catch {
+      // Continue to the public Supabase/snapshot compatibility paths below.
+    }
+  }
   const db = publicDb();
   if (!db) return mirror();
   try {
     const storedId = await resolveStoredExtensionId(db, rawId);
     if (!storedId) return mirror();
     const classification = await activePublicClassification(db).catch(() => null);
-    let request = db.from("scans").select("id,extension_id,version,decision,verdict,public_outcome,analysis_status,analysis_coverage,capability_assessment,scanned_at")
+    let request = db.from("scans").select("id,extension_id,version,decision,verdict,public_outcome,analysis_status,analysis_coverage,capability_assessment,risk_score,malware_score,scanned_at")
       .eq("extension_id", storedId)
       .in("scan_purpose", ["public_intelligence", "benchmark"])
       .eq("analysis_status", "complete")
@@ -735,6 +754,8 @@ async function fetchBadgeDecision(rawId: string, version: string | null): Promis
       analysis_status: String(row.analysis_status || "incomplete"),
       capability_assessment: objectValue(row.capability_assessment),
       analysis_coverage: objectValue(row.analysis_coverage),
+      risk_score: numberOrNull(row.risk_score),
+      malware_score: numberOrNull(row.malware_score),
       scanned_at: row.scanned_at ? String(row.scanned_at) : null,
     };
   } catch {
@@ -750,17 +771,23 @@ async function mirroredBadgeDecision(id: string, version: string | null): Promis
     .sort((left, right) => String(right.scan.scanned_at || "").localeCompare(String(left.scan.scanned_at || "")))[0];
   if (!scan) return { ...emptyBadgeDecision(true), extension_id: product.extension.id };
   const row = scan.scan;
+  return badgeDecisionFromScan(id, row, String(row.version || scan.version));
+}
+
+function badgeDecisionFromScan(id: string, row: Record<string, unknown>, fallbackVersion: string): BadgeDecision {
   const decision = normalizeDecision(row.decision);
   return {
     found: true,
-    extension_id: product.extension.id,
-    version: String(row.version || scan.version),
+    extension_id: String(row.extension_id || id),
+    version: String(row.version || fallbackVersion),
     decision: decision === "incomplete" ? null : decision,
     verdict: row.verdict ? String(row.verdict) : null,
     public_outcome: row.public_outcome ? String(row.public_outcome) : null,
     analysis_status: String(row.analysis_status || "incomplete"),
     capability_assessment: objectValue(row.capability_assessment),
     analysis_coverage: objectValue(row.analysis_coverage),
+    risk_score: numberOrNull(row.risk_score),
+    malware_score: numberOrNull(row.malware_score),
     scanned_at: row.scanned_at ? String(row.scanned_at) : null,
   };
 }
@@ -772,4 +799,9 @@ function emptyInventory(): PublicInventory {
 
 function emptyAnalysisHistory(): PublicAnalysisHistory {
   return { items: [], total: 0, complete: 0, pending: 0 };
+}
+
+function numberOrNull(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }

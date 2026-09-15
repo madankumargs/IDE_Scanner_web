@@ -78,6 +78,16 @@ describe("dispatchDeepScan", () => {
     expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps queued jobs retryable when workflow dispatch lacks permission", async () => {
+    process.env.GITHUB_ACTIONS_TOKEN = "test-token";
+    const { insert, update } = configureDb(true);
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+    await expect(dispatchDeepScan("job-1")).resolves.toBe(false);
+    expect(update).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenLastCalledWith(expect.objectContaining({ event_type: "dispatch_deferred", stage: "queued" }));
+  });
+
   it("retries a transient GitHub failure before accepting the dispatch", async () => {
     process.env.GITHUB_ACTIONS_TOKEN = "test-token";
     const { insert, update } = configureDb(true);

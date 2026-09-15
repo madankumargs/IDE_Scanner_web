@@ -13,7 +13,7 @@ type ApiKeyRow = {
   created_at: string;
 };
 
-export default function ApiKeysPanel({ teamId, getToken }: { teamId: string; getToken: () => Promise<string> }) {
+export default function ApiKeysPanel({ teamId, getAuthHeaders }: { teamId: string; getAuthHeaders: () => Promise<Record<string, string>> }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const [message, setMessage] = useState("");
@@ -27,13 +27,13 @@ export default function ApiKeysPanel({ teamId, getToken }: { teamId: string; get
   const load = useCallback(async () => {
     setState("loading"); setMessage("");
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/api-keys`, { headers: { Authorization: `Bearer ${token}` } });
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/api-keys`, { headers });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) { setMessage(String(body.error || "API keys could not be loaded.")); setState("error"); return; }
       setKeys(Array.isArray(body.api_keys) ? body.api_keys : []); setState("ready");
     } catch { setMessage("API keys could not be loaded."); setState("error"); }
-  }, [getToken, teamId]);
+  }, [getAuthHeaders, teamId]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
@@ -42,10 +42,10 @@ export default function ApiKeysPanel({ teamId, getToken }: { teamId: string; get
     if (!trimmed) { setCreateError("Give this key a label, e.g. \"CI pipeline\"."); return; }
     setCreating(true); setCreateError(""); setIssued(null); setCopied(false);
     try {
-      const token = await getToken();
+      const headers = await getAuthHeaders();
       const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/api-keys`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({ label: trimmed }),
       });
       const body = await response.json().catch(() => ({}));
@@ -60,10 +60,10 @@ export default function ApiKeysPanel({ teamId, getToken }: { teamId: string; get
   async function revokeKey(id: string) {
     setRevoking(id);
     try {
-      const token = await getToken();
+      const headers = await getAuthHeaders();
       const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/api-keys?key_id=${encodeURIComponent(id)}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
       });
       if (response.ok) void load();
     } finally {

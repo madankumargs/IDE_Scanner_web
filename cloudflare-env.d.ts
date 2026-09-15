@@ -9,4 +9,7 @@ interface D1Database {
 
 interface CloudflareEnv {
   ABSCISSA_REGISTRY: D1Database;
+  AUTH_EMAIL?: {
+    send(message: { to: string; from: string; subject: string; text: string; html?: string }): Promise<unknown>;
+  };
 }

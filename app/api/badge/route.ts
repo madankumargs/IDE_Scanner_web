@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 function tierSvg(decision: Awaited<ReturnType<typeof getBadgeDecision>>) {
   const info = deriveTrustTier(decision);
   const color = TIER_COLORS[info.tier] || TIER_COLORS.analyzed;
-  return svg(trustBadgeText(info, decision.version), color, `${info.label} (${decision.version || "latest"})`);
+  return svg(trustBadgeText(info, decision.version, decision.risk_score), color, `${info.label} (${decision.version || "latest"})`);
 }
 
 function svg(label: string, fill: string, ariaLabel: string) {

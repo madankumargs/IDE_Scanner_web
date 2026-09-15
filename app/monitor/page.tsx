@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import TeamWorkspace from "@/app/TeamWorkspace";
 import { browserDb } from "@/lib/supabase";
+import { browserAuthHeaders } from "@/lib/browserAuth";
 import styles from "./monitor.module.css";
 
 export default function MonitorPage() {
@@ -34,20 +35,11 @@ function MonitorPageContent() {
   >("loading");
 
   useEffect(() => {
-    if (!db) {
-      // No workspace connection is available at all. For a visitor that is
-      // indistinguishable from being signed out, so show the explanatory gate
-      // rather than an error page.
-      queueMicrotask(() => setState("signed-out"));
-      return;
-    }
     let active = true;
-    void db.auth
-      .getUser()
-      .then(({ data, error }) => {
+    void browserAuthHeaders(db)
+      .then((headers) => {
         if (!active) return;
-        if (error) setState("signed-out");
-        else setState(data.user ? "ready" : "signed-out");
+        setState(headers.Authorization ? "ready" : "signed-out");
       })
       .catch(() => active && setState("error"));
     return () => {

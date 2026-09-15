@@ -97,8 +97,8 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
   const active = await db.prepare("SELECT * FROM app_scan_jobs WHERE extension_id=? AND version=? AND profile='deep' AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1").bind(canonicalExtensionId, version).first<Row>();
   if (active) {
     await subscribeCloudflareJob(String(active.id), user.id);
-    if (String(active.status) === "queued") await dispatchCloudflareDeepScan(String(active.id), 120);
-    return withCloudflareReportUrl({ ...active, deduplicated: true });
+    const dispatched = String(active.status) === "queued" ? await dispatchCloudflareDeepScan(String(active.id), 120) : false;
+    return withCloudflareReportUrl({ ...active, deduplicated: true, dispatch: dispatched ? "started" : "scheduled" });
   }
   if (!force) {
     const complete = await db.prepare("SELECT scan_id FROM app_scan_reports WHERE extension_id=? AND version=? ORDER BY created_at DESC LIMIT 1").bind(canonicalExtensionId, version).first<Row>();
@@ -114,15 +114,16 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
   await db.prepare(`INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requested_by,requester_hash,scan_purpose,created_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, canonicalExtensionId, version, "deep", "queued", "queued", user.id, requesterHash, "user_request", createdAt, createdAt, createdAt).run();
   await subscribeCloudflareJob(id, user.id);
   await addCloudflareScanEvent(id, "queued", "created", { extension_id: canonicalExtensionId, version, requested_by: user.id });
+  let dispatched = false;
   try {
-    await dispatchCloudflareDeepScan(id);
+    dispatched = await dispatchCloudflareDeepScan(id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
     await db.prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(message, message, nowIso(), nowIso(), nowIso(), id).run();
     await addCloudflareScanEvent(id, "failed", "dispatch_failed", { error: message });
     throw new Error(message);
   }
-  return withCloudflareReportUrl({ id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started" });
+  return withCloudflareReportUrl({ id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: dispatched ? "dispatched" : "queued", dispatch: dispatched ? "started" : "scheduled" });
 }
 
 export class GuestTrialLimitError extends Error {
@@ -156,15 +157,16 @@ export async function queueCloudflareGuestDeepScan(extensionId: string, requeste
     db.prepare("INSERT INTO app_guest_scan_access(job_id,token_hash,trial_key,created_at) VALUES(?,?,?,?)").bind(id, tokenHash, trialKey, createdAt),
   ]);
   await addCloudflareScanEvent(id, "queued", "guest_trial_created", { extension_id: canonicalExtensionId, version });
+  let dispatched = false;
   try {
-    await dispatchCloudflareDeepScan(id);
+    dispatched = await dispatchCloudflareDeepScan(id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
     await db.prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(message, message, nowIso(), nowIso(), nowIso(), id).run();
     await addCloudflareScanEvent(id, "failed", "dispatch_failed", { error: message });
     throw new Error(message);
   }
-  return { id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started", trial_remaining: Math.max(0, trial.remaining - 1) };
+  return { id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: dispatched ? "dispatched" : "queued", dispatch: dispatched ? "started" : "scheduled", trial_remaining: Math.max(0, trial.remaining - 1) };
 }
 
 export async function dispatchCloudflareDeepScan(jobId: string, minimumIntervalSeconds = 0): Promise<boolean> {

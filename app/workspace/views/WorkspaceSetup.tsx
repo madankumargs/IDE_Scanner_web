@@ -45,13 +45,13 @@ function SetupError({ error }: { error: string }) {
 export default function WorkspaceSetup({
   team,
   email,
-  token,
+  getAuthHeaders,
   onSignOut,
   onComplete,
 }: {
   team: Team;
   email: string;
-  token: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
   onSignOut: () => Promise<void>;
   onComplete: () => Promise<void>;
 }) {
@@ -72,7 +72,7 @@ export default function WorkspaceSetup({
     setSaving(true);
     setError("");
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
       const productResponse = await fetch(
         `/api/extensions/${encodeURIComponent(selected.extension_id)}`,
       );
@@ -98,7 +98,7 @@ export default function WorkspaceSetup({
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
@@ -111,7 +111,7 @@ export default function WorkspaceSetup({
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              ...headers,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(payload),
@@ -146,13 +146,13 @@ export default function WorkspaceSetup({
     setSaving(true);
     setError("");
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
       const response = await fetch(
         `/api/teams/${encodeURIComponent(team.id)}/invites`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ role: inviteRole, expires_in_days: 7 }),
@@ -183,13 +183,13 @@ export default function WorkspaceSetup({
       setSaving(true);
       setError("");
       try {
-        const accessToken = await token();
+        const headers = await getAuthHeaders();
         const response = await fetch(
           `/api/teams/${encodeURIComponent(team.id)}/notification-channels`,
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              ...headers,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({

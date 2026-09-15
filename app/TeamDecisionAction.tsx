@@ -60,8 +60,8 @@ export default function TeamDecisionAction({ scanId, extensionId }: { scanId: st
     if (!teamId) return;
     setWatchState("saving");
     try {
-      const accessToken = await token();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/watchlist`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ extension_id: extensionId }) });
+      const headers = await token();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/watchlist`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ extension_id: extensionId }) });
       if (response.ok) {
         trackProductEvent({ name: "watch_created", source_route: window.location.pathname, scope: "team" });
         setWatchState("saved");

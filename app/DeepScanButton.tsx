@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle, ScanSearch } from "lucide-react";
 import Link from "next/link";
 import { trackProductEvent } from "@/lib/analyticsEvents";
 import { extensionPageModel } from "@/lib/extensionPageModel";
+import { browserAuthHeaders } from "@/lib/browserAuth";
+import { browserDb } from "@/lib/supabase";
 
 type ScanState =
   | "idle"
@@ -27,6 +30,7 @@ type ExistingJob = {
   status?: string;
   id?: string;
   error?: string;
+  dispatch?: string;
 } | null;
 
 async function fetchDeepScanHealth(): Promise<Health> {
@@ -56,13 +60,14 @@ async function fetchDeepScanHealth(): Promise<Health> {
 async function fetchExistingJob(
   extensionId: string,
   version: string,
+  headers: Record<string, string>,
 ): Promise<ExistingJob> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 2_000);
   try {
     const response = await fetch(
       `/api/deep-scans?extension_id=${encodeURIComponent(extensionId)}&version=${encodeURIComponent(version)}`,
-      { cache: "no-store", signal: controller.signal },
+      { cache: "no-store", headers, signal: controller.signal },
     );
     if (response.status === 204) return null;
     if (response.status === 401) return { auth_required: true };
@@ -84,6 +89,7 @@ export default function DeepScanButton({
   version: string;
   showReportLink?: boolean;
 }) {
+  const db = useMemo(() => browserDb(), []);
   const router = useRouter();
   const [state, setState] = useState<ScanState>("idle");
   const [health, setHealth] = useState<
@@ -102,10 +108,10 @@ export default function DeepScanButton({
 
   useEffect(() => {
     let active = true;
-    void Promise.allSettled([
+    void browserAuthHeaders(db).then((headers) => Promise.allSettled([
       fetchDeepScanHealth(),
-      fetchExistingJob(extensionId, version),
-    ]).then(([healthResult, jobResult]) => {
+      fetchExistingJob(extensionId, version, headers),
+    ])).then(([healthResult, jobResult]) => {
       if (!active) return;
       if (healthResult.status === "fulfilled") {
         const runner = healthResult.value;
@@ -147,7 +153,9 @@ export default function DeepScanButton({
         setState(nextState);
         setMessage(
           nextState === "queued"
-            ? "Starting the isolated analysis runner…"
+            ? job.dispatch === "scheduled"
+              ? "Queued for the next scheduled isolated analysis runner."
+              : "Starting the isolated analysis runner…"
             : "Analyzers are inspecting the exact artifact.",
         );
       } else if (job?.status === "failed") {
@@ -161,7 +169,7 @@ export default function DeepScanButton({
     return () => {
       active = false;
     };
-  }, [extensionId, version, showReportLink]);
+  }, [db, extensionId, version, showReportLink]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -174,9 +182,8 @@ export default function DeepScanButton({
       let response: Response;
       let body: { status?: string; report_url?: string; error?: string };
       try {
-        response = await fetch(`/api/deep-scans/${jobId}`, {
-          cache: "no-store",
-        });
+        const headers = await browserAuthHeaders(db);
+        response = await fetch(`/api/deep-scans/${jobId}`, { cache: "no-store", headers });
         body = await response.json().catch(() => ({}));
       } catch {
         consecutiveFailures += 1;
@@ -258,7 +265,7 @@ export default function DeepScanButton({
       }
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [jobId, router, extensionId, version]);
+  }, [db, jobId, router, extensionId, version]);
 
   async function queue() {
     if (signedOut && !guestTrialAvailable) {
@@ -283,11 +290,13 @@ export default function DeepScanButton({
       report_url?: string;
       id?: string;
       trial_remaining?: number;
+      dispatch?: string;
     };
     try {
+      const headers = await browserAuthHeaders(db);
       response = await fetch("/api/deep-scans", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({ extension_id: extensionId, version, force }),
       });
       body = await response.json().catch(() => ({}));
@@ -335,7 +344,9 @@ export default function DeepScanButton({
     setJobId(String(body.id));
     setState(body.status === "running" ? "running" : "queued");
     setMessage(
-      "Runner started. Preparing the exact published artifact for analysis.",
+      body.dispatch === "scheduled"
+        ? "Queued for the next scheduled isolated analysis runner."
+        : "Runner started. Preparing the exact published artifact for analysis.",
     );
   }
 

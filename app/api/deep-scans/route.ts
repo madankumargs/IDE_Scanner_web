@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
+import { authenticated } from "@/lib/auth";
 import { normalizeMarketplaceId } from "@/lib/marketplace";
 import { serviceDb } from "@/lib/supabase";
 import { serverDb } from "@/lib/supabaseServer";
 import { DeepScanUnavailableError, queueDeepScan } from "@/lib/deepScan";
 import { scanProgressColumns, scanProgressPayload } from "@/lib/scanProgress";
 import { cloudflareGuestTrialStatus, cloudflarePrivateAvailable, cloudflareScanProgress, getCloudflareGuestJobForRelease, GuestTrialLimitError, guestTrialToken, guestTrialCookie, queueCloudflareGuestDeepScan } from "@/lib/cloudflareDeepScan";
-import { newSessionToken, privateDb, userFromSession } from "@/lib/cloudflarePrivate";
+import { newSessionToken, privateDb } from "@/lib/cloudflarePrivate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function cloudflareAuthenticatedUser(request: Request) {
+  try {
+    return (await authenticated(request)).user;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -16,7 +25,7 @@ export async function GET(request: Request) {
       const url = new URL(request.url);
       const extensionId = normalizeMarketplaceId(url.searchParams.get("extension_id") || "");
       const version = (url.searchParams.get("version") || "").trim();
-      const user = await userFromSession(request);
+      const user = await cloudflareAuthenticatedUser(request);
       if (!user) {
         const guestJob = await getCloudflareGuestJobForRelease(extensionId, version, guestTrialToken(request));
         const trial = await cloudflareGuestTrialStatus(request);
@@ -82,7 +91,7 @@ export async function POST(request: Request) {
       force?: boolean;
     };
     if (cloudflarePrivateAvailable()) {
-      const user = await userFromSession(request);
+      const user = await cloudflareAuthenticatedUser(request);
       const extensionId = normalizeMarketplaceId(String(payload.extension_id || ""));
       if (!user) {
         const token = guestTrialToken(request) || newSessionToken();

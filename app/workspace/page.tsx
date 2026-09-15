@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ShieldAlert } from "lucide-react";
 import TeamWorkspace from "@/app/TeamWorkspace";
 import { browserDb } from "@/lib/supabase";
+import { browserAuthHeaders } from "@/lib/browserAuth";
 import { sampleAlerts, sampleDecisions, sampleWatches } from "@/app/workspace/sampleData";
 import styles from "./workspace.module.css";
 
@@ -21,14 +22,8 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void fetch("/api/auth/session", { cache: "no-store" })
-        .then(async (response) => {
-          const body = await response.json().catch(() => ({}));
-          if (body.user) return setState("ready");
-          if (!db) return setState("signed-out");
-          const result = await db.auth.getUser();
-          setState(result.data.user ? "ready" : "signed-out");
-        })
+      void browserAuthHeaders(db)
+        .then((headers) => setState(headers.Authorization ? "ready" : "signed-out"))
         .catch(() => setState("error"));
     }, 0);
     return () => window.clearTimeout(timer);

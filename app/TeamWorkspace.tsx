@@ -46,6 +46,7 @@ import NotificationSettings, {
 import BillingPanel from "@/app/workspace/BillingPanel";
 import TeamInventoryPanel from "@/app/workspace/TeamInventoryPanel";
 import { browserDb } from "@/lib/supabase";
+import { browserAuthHeaders } from "@/lib/browserAuth";
 import {
   groupDecisionQueue,
   type QueueDecision,
@@ -251,31 +252,12 @@ export default function TeamWorkspace(
     error: null,
   });
 
-  const token = useCallback(
-    async () => {
-      const response = await fetch("/api/auth/session", { cache: "no-store" });
-      const body = await response.json().catch(() => ({}));
-      if (response.ok && body.user) return "cloudflare-session";
-      try {
-        const accessToken = (await db?.auth.getSession())?.data.session?.access_token;
-        if (accessToken) return accessToken;
-      } catch {
-        // Supabase is an optional compatibility provider. A Cloudflare D1
-        // session must remain usable when that provider is unavailable.
-      }
-      // D1 sessions are carried by the HttpOnly gr_session cookie. The
-      // non-empty marker keeps existing mutation helpers from treating a
-      // valid Cloudflare session as signed out; the server ignores it and
-      // authenticates from the cookie.
-      return "";
-    },
-    [db],
-  );
+  const getAuthHeaders = useCallback(() => browserAuthHeaders(db), [db]);
   const loadTeams = useCallback(async () => {
     setState("loading");
     setError("");
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
       const cloudflareResponse = await fetch("/api/auth/session", { cache: "no-store" });
       const cloudflareSession = await cloudflareResponse.json().catch(() => ({}));
       let supabaseUser: { id?: string; email?: string } | null = null;
@@ -287,7 +269,7 @@ export default function TeamWorkspace(
         }
       }
       const response = await fetch("/api/teams", {
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        headers: headers.Authorization ? headers : undefined,
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok)
@@ -312,7 +294,7 @@ export default function TeamWorkspace(
       );
       setState("error");
     }
-  }, [db, token]);
+  }, [db, getAuthHeaders]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTeams(), 0);
@@ -329,8 +311,8 @@ export default function TeamWorkspace(
     setNotificationDeliveries([]);
     setDigestDeliveries([]);
     try {
-      const accessToken = await token();
-      const headers = { Authorization: `Bearer ${accessToken}` };
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const base = `/api/teams/${encodeURIComponent(activeTeamId)}`;
       const responses = await Promise.all([
         fetch(`${base}/alerts`, { headers }),
@@ -373,18 +355,18 @@ export default function TeamWorkspace(
     } catch {
       setDataState("error");
     }
-  }, [activeTeamId, token]);
+  }, [activeTeamId, getAuthHeaders]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);
   }, [loadWorkspace]);
 
   async function createTeam(name: string) {
-    const accessToken = await token();
+    const headers = await getAuthHeaders();
     const response = await fetch("/api/teams", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...headers,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ name }),
@@ -407,15 +389,15 @@ export default function TeamWorkspace(
   ) {
     setSaveState("saving");
     try {
-      const accessToken = await token();
-      if (!accessToken)
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization)
         throw new Error("Your session expired. Sign in again before retrying.");
       const response = await fetch(
         `/api/teams/${encodeURIComponent(activeTeamId)}/decisions`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -481,8 +463,8 @@ export default function TeamWorkspace(
       await fetch("/api/auth/logout", { method: "POST" });
     } else {
       try {
-        const accessToken = (await db?.auth.getSession())?.data.session?.access_token;
-        if (accessToken) await db?.auth.signOut();
+        const headers = await getAuthHeaders();
+        if (headers.Authorization && headers.Authorization !== "Bearer cloudflare-session") await db?.auth.signOut();
         else await fetch("/api/auth/logout", { method: "POST" });
       } catch {
         await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -493,8 +475,8 @@ export default function TeamWorkspace(
 
   async function mutateMember(memberId: string, role: string | null) {
     try {
-      const accessToken = await token();
-      if (!accessToken)
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization)
         throw new Error(
           "Your session expired. Sign in again before continuing.",
         );
@@ -503,7 +485,7 @@ export default function TeamWorkspace(
         {
           method: role ? "PATCH" : "DELETE",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ user_id: memberId, role }),
@@ -552,8 +534,8 @@ export default function TeamWorkspace(
 
   async function createMemberInvite(role: string) {
     try {
-      const accessToken = await token();
-      if (!accessToken)
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization)
         throw new Error(
           "Your session expired. Sign in again before continuing.",
         );
@@ -562,7 +544,7 @@ export default function TeamWorkspace(
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ role, expires_in_days: 7 }),
@@ -593,8 +575,8 @@ export default function TeamWorkspace(
     value: boolean | number,
   ) {
     try {
-      const accessToken = await token();
-      if (!accessToken)
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization)
         throw new Error(
           "Your session expired. Sign in again before continuing.",
         );
@@ -603,7 +585,7 @@ export default function TeamWorkspace(
         {
           method: "PATCH",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ [field]: value }),
@@ -629,13 +611,13 @@ export default function TeamWorkspace(
 
   async function createNotificationChannel(input: ChannelInput) {
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
       const response = await fetch(
         `/api/teams/${encodeURIComponent(activeTeamId)}/notification-channels`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(input),
@@ -666,12 +648,12 @@ export default function TeamWorkspace(
 
   async function deleteNotificationChannel(channelId: string) {
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
       const response = await fetch(
         `/api/teams/${encodeURIComponent(activeTeamId)}/notification-channels?channel_id=${encodeURIComponent(channelId)}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers,
         },
       );
       if (!response.ok) {
@@ -703,10 +685,12 @@ export default function TeamWorkspace(
 
   async function testNotificationChannel(channelId: string) {
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization)
+        throw new Error("Your session expired. Sign in again before continuing.");
       const response = await fetch(
         `/api/teams/${encodeURIComponent(activeTeamId)}/notification-channels/${encodeURIComponent(channelId)}/test`,
-        { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } },
+        { method: "POST", headers },
       );
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -780,7 +764,7 @@ export default function TeamWorkspace(
       <WorkspaceSetup
         team={activeTeam}
         email={userEmail}
-        token={token}
+        getAuthHeaders={getAuthHeaders}
         onSignOut={signOut}
         onComplete={async () => {
           window.localStorage.removeItem(`guardrails:setup:${activeTeam.id}`);
@@ -964,7 +948,7 @@ export default function TeamWorkspace(
               key={activeTeam.id}
               teamId={activeTeam.id}
               role={activeTeam.role}
-              getToken={token}
+              getAuthHeaders={getAuthHeaders}
             />
           ) : null}
           {view === "extensions" ? (
@@ -983,7 +967,7 @@ export default function TeamWorkspace(
               decisions={decisions}
               members={members}
               teamId={activeTeam.id}
-              getToken={token}
+              getAuthHeaders={getAuthHeaders}
               role={activeTeam.role}
             />
           ) : null}
@@ -994,7 +978,7 @@ export default function TeamWorkspace(
               currentUserId={userId}
               onMutateMember={mutateMember}
               onCreateInvite={createMemberInvite}
-              getToken={token}
+              getAuthHeaders={getAuthHeaders}
               notificationSettings={
                 <NotificationSettings
                   configured={notificationsConfigured}
@@ -1180,13 +1164,13 @@ function WorkspaceOnboarding({
 function WorkspaceSetup({
   team,
   email,
-  token,
+  getAuthHeaders,
   onSignOut,
   onComplete,
 }: {
   team: Team;
   email: string;
-  token: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
   onSignOut: () => Promise<void>;
   onComplete: () => Promise<void>;
 }) {
@@ -1207,7 +1191,8 @@ function WorkspaceSetup({
     setSaving(true);
     setError("");
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const productResponse = await fetch(
         `/api/extensions/${encodeURIComponent(selected.extension_id)}`,
       );
@@ -1233,7 +1218,7 @@ function WorkspaceSetup({
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
@@ -1246,7 +1231,7 @@ function WorkspaceSetup({
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              ...headers,
               "Content-Type": "application/json",
             },
             body: JSON.stringify(payload),
@@ -1281,13 +1266,14 @@ function WorkspaceSetup({
     setSaving(true);
     setError("");
     try {
-      const accessToken = await token();
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const response = await fetch(
         `/api/teams/${encodeURIComponent(team.id)}/invites`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ role: inviteRole, expires_in_days: 7 }),
@@ -1318,13 +1304,14 @@ function WorkspaceSetup({
       setSaving(true);
       setError("");
       try {
-        const accessToken = await token();
+        const headers = await getAuthHeaders();
+        if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
         const response = await fetch(
           `/api/teams/${encodeURIComponent(team.id)}/notification-channels`,
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${accessToken}`,
+              ...headers,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -2672,14 +2659,14 @@ function ActivityView({
   decisions,
   members,
   teamId,
-  getToken,
+  getAuthHeaders,
   role,
 }: {
   alerts: Alert[];
   decisions: QueueDecision[];
   members: Member[];
   teamId: string;
-  getToken: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
   role: string;
 }) {
   type AuditRow = {
@@ -2736,12 +2723,12 @@ function ActivityView({
   const loadAudit = useCallback(async () => {
     setAuditState("loading");
     try {
-      const accessToken = await getToken();
-      if (!accessToken) throw new Error("Your session expired. Sign in again.");
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const response = await fetch(
         `/api/teams/${teamId}/audit${auditQuery ? `?${auditQuery}` : ""}`,
         {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers,
           cache: "no-store",
         },
       );
@@ -2759,7 +2746,7 @@ function ActivityView({
       );
       setAuditState("error");
     }
-  }, [auditQuery, getToken, teamId]);
+  }, [auditQuery, getAuthHeaders, teamId]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadAudit(), 0);
     return () => window.clearTimeout(timer);
@@ -2767,13 +2754,13 @@ function ActivityView({
   async function downloadAudit(format: "json" | "csv") {
     setAuditMessage("");
     try {
-      const accessToken = await getToken();
-      if (!accessToken) throw new Error("Your session expired. Sign in again.");
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const query = new URLSearchParams(auditQuery);
       query.set("format", format);
       query.set("download", "1");
       const response = await fetch(`/api/teams/${teamId}/audit?${query}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers,
         cache: "no-store",
       });
       if (!response.ok) {
@@ -2973,7 +2960,7 @@ function SettingsView({
   onMutateMember,
   onCreateInvite,
   notificationSettings,
-  getToken,
+  getAuthHeaders,
 }: {
   team: Team;
   members: Member[];
@@ -2986,7 +2973,7 @@ function SettingsView({
     role: string,
   ) => Promise<{ ok: true; url: string } | { ok: false; error: string }>;
   notificationSettings: React.ReactNode;
-  getToken: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
 }) {
   const [section, setSection] = useState<
     "general" | "members" | "notifications"
@@ -3116,7 +3103,7 @@ function SettingsView({
                   <input value={roleName(team.role)} readOnly />
                 </label>
               </div>
-              <BillingPanel teamId={team.id} getToken={getToken} />
+              <BillingPanel teamId={team.id} getAuthHeaders={getAuthHeaders} />
               <div className={styles.settingBlock}>
                 <span>Access model</span>
                 <h2>Clear responsibility at every level</h2>

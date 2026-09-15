@@ -13,4 +13,9 @@ describe("Deep Scan product control", () => {
     expect(source).toContain('setState("error")');
     expect(source).toContain("Check your connection and try again");
   });
+
+  it("sends the Cloudflare/Supabase-compatible browser headers", () => {
+    expect(source).toContain("browserAuthHeaders");
+    expect(source).toContain("headers: { ...headers, \"Content-Type\": \"application/json\" }");
+  });
 });

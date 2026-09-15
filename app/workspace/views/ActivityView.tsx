@@ -21,14 +21,14 @@ export default function ActivityView({
   decisions,
   members,
   teamId,
-  getToken,
+  getAuthHeaders,
   role,
 }: {
   alerts: Alert[];
   decisions: QueueDecision[];
   members: Member[];
   teamId: string;
-  getToken: () => Promise<string>;
+  getAuthHeaders: () => Promise<Record<string, string>>;
   role: string;
 }) {
   type AuditRow = {
@@ -85,12 +85,12 @@ export default function ActivityView({
   const loadAudit = useCallback(async () => {
     setAuditState("loading");
     try {
-      const accessToken = await getToken();
-      if (!accessToken) throw new Error("Your session expired. Sign in again.");
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const response = await fetch(
         `/api/teams/${teamId}/audit${auditQuery ? `?${auditQuery}` : ""}`,
         {
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers,
           cache: "no-store",
         },
       );
@@ -108,7 +108,7 @@ export default function ActivityView({
       );
       setAuditState("error");
     }
-  }, [auditQuery, getToken, teamId]);
+  }, [auditQuery, getAuthHeaders, teamId]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadAudit(), 0);
     return () => window.clearTimeout(timer);
@@ -116,13 +116,13 @@ export default function ActivityView({
   async function downloadAudit(format: "json" | "csv") {
     setAuditMessage("");
     try {
-      const accessToken = await getToken();
-      if (!accessToken) throw new Error("Your session expired. Sign in again.");
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
       const query = new URLSearchParams(auditQuery);
       query.set("format", format);
       query.set("download", "1");
       const response = await fetch(`/api/teams/${teamId}/audit?${query}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers,
         cache: "no-store",
       });
       if (!response.ok) {

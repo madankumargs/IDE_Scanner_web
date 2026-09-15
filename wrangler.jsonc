@@ -10,7 +10,9 @@
   ],
   "workers_dev": true,
   "vars": {
-    "GITHUB_OAUTH_CLIENT_ID": "Ov23liWQ5kElxVniE4tx"
+    "GITHUB_OAUTH_CLIENT_ID": "Ov23liWQ5kElxVniE4tx",
+    "GOOGLE_OAUTH_CLIENT_ID": "539877495650-9nrcag73os1umpgdi03lc2j4f9qien4s.apps.googleusercontent.com",
+    "AUTH_EMAIL_FROM": "noreply@abscissa.dev"
   },
   "routes": [
     {
@@ -28,6 +30,13 @@
       "database_name": "abscissa-registry",
       "database_id": "00dc29ae-0815-4393-a915-d0cc07b36556",
       "migrations_dir": "d1/migrations"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "AUTH_EMAIL",
+      "remote": true,
+      "allowed_sender_addresses": ["noreply@abscissa.dev"]
     }
   ],
   "observability": {

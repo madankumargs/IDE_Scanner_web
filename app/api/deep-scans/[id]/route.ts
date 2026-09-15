@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
+import { authenticated } from "@/lib/auth";
 import { dispatchDeepScan } from "@/lib/deepScan";
 import { serviceDb } from "@/lib/supabase";
 import { serverDb } from "@/lib/supabaseServer";
 import { scanProgressColumns, scanProgressPayload } from "@/lib/scanProgress";
 import { cloudflareGuestTrialStatus, cloudflarePrivateAvailable, cloudflareScanProgress, getCloudflareGuestJob, guestTrialToken } from "@/lib/cloudflareDeepScan";
-import { privateDb, userFromSession } from "@/lib/cloudflarePrivate";
+import { privateDb } from "@/lib/cloudflarePrivate";
 
 export const dynamic = "force-dynamic";
+
+async function cloudflareAuthenticatedUser(request: Request) {
+  try {
+    return (await authenticated(request)).user;
+  } catch {
+    return null;
+  }
+}
 
 // A queued/running job only becomes terminal when the signed worker callback
 // lands. When that callback is lost the job would otherwise poll forever, so
@@ -19,7 +28,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   const { id } = await context.params;
   try {
     if (cloudflarePrivateAvailable()) {
-      const user = await userFromSession(request);
+      const user = await cloudflareAuthenticatedUser(request);
       if (!user) {
         const guestJob = await getCloudflareGuestJob(id, guestTrialToken(request));
         if (!guestJob) return NextResponse.json({ error: "This trial scan is unavailable. Sign in to view scans saved to a workspace." }, { status: 401 });

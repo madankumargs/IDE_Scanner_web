@@ -112,8 +112,8 @@ export function deriveTrustTier(scan: TrustTierInput): TrustTierInfo {
 }
 
 /** Badge SVG text, kept short enough for shields-style rendering. */
-export function trustBadgeText(info: TrustTierInfo, version?: string | null): string {
-  const suffix = version ? ` · v${version}` : "";
+export function trustBadgeText(info: TrustTierInfo, version?: string | null, riskScore?: number | null): string {
+  const suffix = `${riskScore !== null && riskScore !== undefined && Number.isFinite(Number(riskScore)) ? ` · risk ${Math.max(0, Math.min(100, Number(riskScore)))}/100` : ""}${version ? ` · v${version}` : ""}`;
   switch (info.tier) {
     case "verified":
       return `verified${suffix}`;
@@ -121,10 +121,12 @@ export function trustBadgeText(info: TrustTierInfo, version?: string | null): st
       return `analyzed${suffix}`;
     case "confirmed_risk":
       return `confirmed risk${suffix}`;
+    case "attention":
+      return `${info.label.toLowerCase()}${suffix}`;
     case "unanalyzed":
       return "analysis pending";
     default:
-      return info.label.toLowerCase();
+      return `${info.label.toLowerCase()}${suffix}`;
   }
 }
 

@@ -18,7 +18,7 @@ type BillingSummary = {
   auditExport: boolean;
 };
 
-export default function BillingPanel({ teamId, getToken }: { teamId: string; getToken: () => Promise<string> }) {
+export default function BillingPanel({ teamId, getAuthHeaders }: { teamId: string; getAuthHeaders: () => Promise<Record<string, string>> }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [summary, setSummary] = useState<BillingSummary | null>(null);
   const [message, setMessage] = useState("");
@@ -27,21 +27,21 @@ export default function BillingPanel({ teamId, getToken }: { teamId: string; get
   const load = useCallback(async () => {
     setState("loading"); setMessage("");
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/billing`, { headers: { Authorization: `Bearer ${token}` } });
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/billing`, { headers });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) { setMessage(String(body.error || "Plan and usage could not be loaded.")); setState("error"); return; }
       setSummary(body as BillingSummary); setState("ready");
     } catch { setMessage("Plan and usage could not be loaded."); setState("error"); }
-  }, [getToken, teamId]);
+  }, [getAuthHeaders, teamId]);
 
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   async function openBilling(kind: "checkout" | "portal") {
     setAction(kind); setMessage("");
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/billing/${kind}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/billing/${kind}`, { method: "POST", headers });
       const body = await response.json().catch(() => ({}));
       if (!response.ok || typeof body.url !== "string") { setMessage(String(body.error || "Billing could not be opened.")); setAction("idle"); return; }
       window.location.assign(body.url);

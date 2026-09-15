@@ -32,7 +32,7 @@ const example = JSON.stringify({
   ],
 }, null, 2);
 
-export default function TeamInventoryPanel({ teamId, role, getToken }: { teamId: string; role: string; getToken: () => Promise<string> }) {
+export default function TeamInventoryPanel({ teamId, role, getAuthHeaders }: { teamId: string; role: string; getAuthHeaders: () => Promise<Record<string, string>> }) {
   const [data, setData] = useState<InventoryPayload | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
@@ -45,15 +45,15 @@ export default function TeamInventoryPanel({ teamId, role, getToken }: { teamId:
   const load = useCallback(async () => {
     setState("loading"); setError("");
     try {
-      const token = await getToken();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/inventory`, { headers: { Authorization: `Bearer ${token}` } });
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/inventory`, { headers });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(body.error || "Inventory could not be loaded."));
       setData(body as InventoryPayload); setState("ready");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Inventory could not be loaded."); setState("error");
     }
-  }, [getToken, teamId]);
+  }, [getAuthHeaders, teamId]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   const uniqueItems = useMemo(() => {
@@ -67,8 +67,8 @@ export default function TeamInventoryPanel({ teamId, role, getToken }: { teamId:
     setSaving(true); setError(""); setNotice("");
     try {
       const parsed = JSON.parse(document);
-      const token = await getToken();
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/inventory`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(parsed) });
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/inventory`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(parsed) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(body.error || "Inventory could not be imported."));
       setNotice(`Imported ${Number(body.import?.extension_count || 0)} extensions.`); setImportOpen(false); setDocument(""); await load();
@@ -79,9 +79,9 @@ export default function TeamInventoryPanel({ teamId, role, getToken }: { teamId:
 
   async function monitorDiscovered() {
     setSaving(true); setError(""); setNotice("");
-    const token = await getToken();
+    const headers = await getAuthHeaders();
     const results = await Promise.allSettled(monitorable.map(async (item) => {
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/watchlist`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ extension_id: item.extension_id }) });
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/watchlist`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ extension_id: item.extension_id }) });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(String(body.error || `Could not monitor ${item.extension_id}.`)); }
     }));
     const completed = results.filter((result) => result.status === "fulfilled").length;
