@@ -498,13 +498,14 @@ export function deriveBlastRadius(
 export function validateIntelligenceNarrative(value: unknown, context: EvidenceIntelligenceContext): IntelligenceNarrativeDraft {
   const input = objectValue(value);
   const allowedRefs = new Set(context.evidence_refs);
+  const aliases = evidenceRefAliases(context);
   const headline = requiredText(input.headline, 300);
   const bottomLine = requiredText(input.bottom_line, 700);
-  const summaryRefs = validatedRefs(input.summary_evidence_refs, allowedRefs, 8, true);
-  const claims = validateClaims(input.claims, allowedRefs, 18, false);
-  const positiveSignals = validateClaims(input.positive_signals, allowedRefs, 6, false);
-  const unknowns = validateClaims(input.unknowns, allowedRefs, 8, true);
-  const verifyNext = validateActions(input.verify_next, allowedRefs, 6);
+  const summaryRefs = validatedRefs(input.summary_evidence_refs, allowedRefs, aliases, 8, true);
+  const claims = validateClaims(input.claims, allowedRefs, aliases, 18, false);
+  const positiveSignals = validateClaims(input.positive_signals, allowedRefs, aliases, 6, false);
+  const unknowns = validateClaims(input.unknowns, allowedRefs, aliases, 8, true);
+  const verifyNext = validateActions(input.verify_next, allowedRefs, aliases, 6);
   const allClaims = [...claims, ...positiveSignals, ...unknowns];
   if (new Set(allClaims.map((claim) => claim.claim_id)).size !== allClaims.length) throw new EvidenceIntelligenceValidationError("The intelligence report reused a claim identifier.");
   rejectOverclaim(`${headline}\n${bottomLine}`);
@@ -606,16 +607,16 @@ function levelForDimension(name: keyof BlastRadiusAssessment["dimensions"], entr
   return "moderate";
 }
 
-function validateClaims(value: unknown, allowedRefs: Set<string>, maxItems: number, allowEmpty: boolean): IntelligenceClaim[] {
+function validateClaims(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean): IntelligenceClaim[] {
   if (!Array.isArray(value) || value.length > maxItems) throw new EvidenceIntelligenceValidationError("The intelligence report claims were not a bounded array.");
   const result: IntelligenceClaim[] = [];
-  for (const [index, item] of value.entries()) {
+  for (const item of value) {
     const input = objectValue(item);
     const text = requiredText(input.text, 560);
     const section = input.section;
     const certainty = input.certainty;
     if (!isSection(section) || !isCertainty(certainty)) throw new EvidenceIntelligenceValidationError("The intelligence report contains an unsupported claim classification.");
-    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, 6, allowEmpty && certainty === "unknown");
+    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, allowEmpty && certainty === "unknown");
     if (!evidenceRefs.length && !(allowEmpty && certainty === "unknown")) throw new EvidenceIntelligenceValidationError("A material intelligence claim was not tied to evidence.");
     rejectOverclaim(text);
     result.push({ claim_id: requiredText(input.claim_id, 100), section, text, certainty, evidence_refs: evidenceRefs });
@@ -624,23 +625,41 @@ function validateClaims(value: unknown, allowedRefs: Set<string>, maxItems: numb
   return result;
 }
 
-function validateActions(value: unknown, allowedRefs: Set<string>, maxItems: number): IntelligenceAction[] {
+function validateActions(value: unknown, allowedRefs: Set<string>, aliases: Map<string, string>, maxItems: number): IntelligenceAction[] {
   if (!Array.isArray(value) || value.length > maxItems) throw new EvidenceIntelligenceValidationError("The verification plan was not a bounded array.");
   return value.map((item) => {
     const input = objectValue(item);
     const text = requiredText(input.text, 420);
-    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, 6, false);
+    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
     rejectOverclaim(text);
     return { text, evidence_refs: evidenceRefs };
   });
 }
 
-function validatedRefs(value: unknown, allowed: Set<string>, maxItems: number, allowEmpty: boolean): string[] {
+function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean): string[] {
   if (!Array.isArray(value) || value.length > maxItems || value.some((item) => typeof item !== "string")) throw new EvidenceIntelligenceValidationError("The intelligence report contained invalid evidence references.");
   const refs = value.map((item) => String(item));
   if (!allowEmpty && refs.length === 0) throw new EvidenceIntelligenceValidationError("The intelligence report omitted required evidence references.");
-  if (refs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError("The intelligence report referenced evidence outside the exact report.");
-  return uniqueStrings(refs);
+  const canonicalRefs = refs.map((ref) => aliases.get(ref) || ref);
+  if (canonicalRefs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError("The intelligence report referenced evidence outside the exact report.");
+  return uniqueStrings(canonicalRefs);
+}
+
+function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const add = (alias: string | undefined, refs: string[]) => {
+    if (alias && refs.length && !aliases.has(alias)) aliases.set(alias, refs[0]);
+  };
+  for (const fact of context.facts) add(fact.ref, fact.evidence_refs);
+  for (const entry of context.access_surface) {
+    add(entry.id, entry.evidence_refs);
+    add(`access.${entry.id}`, entry.evidence_refs);
+  }
+  for (const node of context.data_flow.nodes) add(node.id, node.evidence_refs);
+  for (const edge of context.data_flow.edges) add(edge.id, edge.evidence_refs);
+  for (const [name, dimension] of Object.entries(context.blast_radius.dimensions)) add(`blast_radius.${name}`, dimension.evidence_refs);
+  add("release_delta", context.release_delta.evidence_refs);
+  return aliases;
 }
 
 function rejectOverclaim(value: string): void {

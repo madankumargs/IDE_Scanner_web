@@ -84,6 +84,21 @@ describe("evidence intelligence output validation", () => {
     expect(narrative.claims).toHaveLength(2);
   });
 
+  it("canonicalizes model references to validated access-surface evidence", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    const narrative = validateIntelligenceNarrative({
+      headline: "Review the exact release",
+      bottom_line: "The release exposes a network access surface; the deterministic decision remains review.",
+      summary_evidence_refs: ["access.external_services"],
+      claims: [{ claim_id: "claim-1", section: "access_surface", text: "Outbound network requests were recorded by the scanner.", certainty: "observed", evidence_refs: ["external_services"] }],
+      positive_signals: [],
+      unknowns: [],
+      verify_next: [],
+    }, context);
+    expect(narrative.summary_evidence_refs).toEqual(["capability.network.1"]);
+    expect(narrative.claims[0].evidence_refs).toEqual(["capability.network.1"]);
+  });
+
   it("rejects a foreign evidence reference", () => {
     const context = compileEvidenceIntelligenceContext(product());
     expect(() => validateIntelligenceNarrative({
