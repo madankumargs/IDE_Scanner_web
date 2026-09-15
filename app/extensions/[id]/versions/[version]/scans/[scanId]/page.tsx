@@ -21,7 +21,7 @@ export default async function ImmutableScanPage({
   const [claims, extensionProduct, versionProduct] = await Promise.all([
     cloudflare ? cloudflareSessionActive() : serverDb().then((db) => db.auth.getClaims().then((result) => Boolean(result.data?.claims))).catch(() => false),
     getExtensionProduct(id),
-    getVersionScanProduct(id, version, scanId),
+    getVersionScanProduct(id, version, scanId, undefined, { skipCloudflareCatalog: true }),
   ]);
   if (!extensionProduct || !versionProduct?.scan) notFound();
   let data = null;

@@ -60,7 +60,7 @@ export async function POST(
   const audience = await readAudience(request);
   if (!audience) return errorResponse("Unsupported review audience.", 400);
 
-  const product = await getVersionScanProduct(extensionId, version, scanId, db);
+  const product = await getVersionScanProduct(extensionId, version, scanId, db, { skipCloudflareCatalog: true });
   const scan = product?.scan as Record<string, unknown> | null | undefined;
   if (!product || !scan || String(scan.id || "") !== scanId || String(scan.extension_id || "").toLowerCase() !== extensionId.toLowerCase() || String(scan.version || "") !== version) {
     return errorResponse("This exact report is not available.", 404);
