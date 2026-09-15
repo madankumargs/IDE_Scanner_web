@@ -323,7 +323,13 @@ export async function getVersionProduct(id: string, version: string, client?: Su
   return mirroredVersionProduct(id, version);
 }
 
-export async function getVersionScanProduct(id: string, version: string, scanId: string, client?: SupabaseClient): Promise<Record<string, unknown> | null> {
+export type VersionScanProductOptions = {
+  compact?: boolean;
+  includePreviews?: boolean;
+  skipCloudflareCatalog?: boolean;
+};
+
+export async function getVersionScanProduct(id: string, version: string, scanId: string, client?: SupabaseClient, options: VersionScanProductOptions = {}): Promise<Record<string, unknown> | null> {
   const cloudflareReport = await getCloudflareScanProduct(id, version, scanId).catch(() => null);
   if (cloudflareReport) return cloudflareReport;
   const cloudflareProduct = await getCloudflareRegistryProduct<{ versions?: Array<Record<string, unknown>>; scans?: Array<{ version?: string; scan?: Record<string, unknown>; findings?: Array<Record<string, unknown>>; files?: Array<Record<string, unknown>>; dependencies?: Array<Record<string, unknown>> }> }>(id);
@@ -331,14 +337,14 @@ export async function getVersionScanProduct(id: string, version: string, scanId:
     const scan = cloudflareProduct.scans?.find((item) => String(item.version || "") === version && String(item.scan?.id || "") === scanId);
     return scan ? { version: cloudflareProduct.versions?.find((item) => String(item.version || "") === version) || { extension_id: id, version }, scan: scan.scan, findings: scan.findings || [], files: scan.files || [], dependencies: scan.dependencies || [] } : null;
   }
-  if (await getCloudflareRegistryCatalogExtension<Record<string, unknown>>(id)) return null;
+  if (!options.skipCloudflareCatalog && await getCloudflareRegistryCatalogExtension<Record<string, unknown>>(id)) return null;
   const db = client || publicDb();
   if (!db) return null;
   try {
     const storedId = await resolveStoredExtensionId(db, id);
     if (storedId) {
       const { data: versionRow } = await db.from("extension_versions").select("*").eq("extension_id", storedId).eq("version", version).maybeSingle();
-      if (versionRow) return loadVersionScan(db, storedId, version, scanId, versionRow);
+      if (versionRow) return loadVersionScan(db, storedId, version, scanId, versionRow, options);
     }
   } catch {
     // Fall through to the read-only mirror.
@@ -346,13 +352,23 @@ export async function getVersionScanProduct(id: string, version: string, scanId:
   return mirroredScanProduct(id, version, scanId);
 }
 
-async function loadVersionScan(db: SupabaseClient, id: string, version: string, scanId: string, versionRow: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+async function loadVersionScan(db: SupabaseClient, id: string, version: string, scanId: string, versionRow: Record<string, unknown>, options: VersionScanProductOptions = {}): Promise<Record<string, unknown> | null> {
+  const scanSelect = options.compact
+    ? "id,extension_id,version,artifact_sha256,profile,schema_version,scanner_version,ruleset_version,analysis_status,decision,decision_reason,public_outcome,decision_basis,evidence_confidence,provenance_tier,expected_profile_id,scanner_build,severity,coverage_percent,capability_assessment,capabilities,security_dimensions,manifest,baseline_diff,scanned_at"
+    : "*";
+  const findingsSelect = options.compact
+    ? "id,rule_id,category,severity,confidence,evidence_class,actionability,summary,recommendation,file_refs"
+    : "*";
+  const filesSelect = options.compact ? "path,size_bytes,kind" : "path,sha256,size_bytes";
+  const previewsRequest = options.includePreviews === false
+    ? Promise.resolve({ data: [] as Array<Record<string, unknown>> })
+    : db.from("artifact_file_previews").select("path,content_sha256,truncated").eq("scan_id", scanId);
   const [scan, findings, files, dependencies, previews] = await Promise.all([
-    db.from("scans").select("*").eq("id", scanId).eq("extension_id", id).eq("version", version).maybeSingle(),
-    db.from("findings").select("*").eq("scan_id", scanId).order("severity"),
-    db.from("artifact_files").select("path,sha256,size_bytes").eq("scan_id", scanId).order("path").limit(5000),
+    db.from("scans").select(scanSelect).eq("id", scanId).eq("extension_id", id).eq("version", version).maybeSingle(),
+    db.from("findings").select(findingsSelect).eq("scan_id", scanId).order("severity"),
+    db.from("artifact_files").select(filesSelect).eq("scan_id", scanId).order("path").limit(5000),
     db.from("dependencies").select("name,version,ecosystem,relationship,advisories").eq("scan_id", scanId).order("relationship").order("name"),
-    db.from("artifact_file_previews").select("path,content_sha256,truncated").eq("scan_id", scanId),
+    previewsRequest,
   ]);
   if (!scan.data) return null;
   const available = new Map((previews.data || []).map((item) => [String(item.path), item]));

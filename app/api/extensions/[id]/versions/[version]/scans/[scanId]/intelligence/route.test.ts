@@ -74,7 +74,7 @@ describe("evidence intelligence route", () => {
     expect(response.status).toBe(200);
     expect(body.identity).toMatchObject({ extension_id: "publisher.extension", version: "1.2.3", scan_id: "scan-1" });
     expect(body.deterministic.decision).toBe("review");
-    expect(mockedProduct).toHaveBeenCalledWith("publisher.extension", "1.2.3", "scan-1", expect.anything());
+    expect(mockedProduct).toHaveBeenCalledWith("publisher.extension", "1.2.3", "scan-1", expect.anything(), { compact: true, includePreviews: false, skipCloudflareCatalog: true });
     expect(mockedIntelligence).toHaveBeenCalledWith(expect.objectContaining({ identity: expect.objectContaining({ scan_id: "scan-1" }) }), "engineer", "standard");
     expect(JSON.stringify(body)).not.toContain("client-controlled");
     expect(response.headers.get("cache-control")).toBe("private, no-store");

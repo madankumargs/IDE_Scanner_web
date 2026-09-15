@@ -66,7 +66,7 @@ export async function POST(
     });
   }
 
-  const product = await getVersionScanProduct(extensionId, version, scanId, db);
+  const product = await getVersionScanProduct(extensionId, version, scanId, db, { compact: true, includePreviews: false, skipCloudflareCatalog: true });
   const scan = product?.scan as Record<string, unknown> | null | undefined;
   if (!product || !scan || String(scan.id || "") !== scanId || String(scan.extension_id || "").toLowerCase() !== extensionId.toLowerCase() || String(scan.version || "") !== version) {
     return errorResponse("This exact report is not available.", 404);
