@@ -407,7 +407,8 @@ export function verifyEvidenceIntelligenceTicket(ticket: EvidenceIntelligenceTic
   if (createHash("sha256").update(ticket.serialized).digest("hex") !== ticket.context_digest.toLowerCase()) return null;
   try {
     const context = JSON.parse(ticket.serialized) as EvidenceIntelligenceContext;
-    return { ...context, serialized: ticket.serialized, context_digest: ticket.context_digest.toLowerCase() };
+    const evidenceRefs = Array.isArray(context.evidence) ? context.evidence.map((reference) => reference.ref).filter((ref): ref is string => typeof ref === "string") : [];
+    return { ...context, serialized: ticket.serialized, context_digest: ticket.context_digest.toLowerCase(), evidence_refs: evidenceRefs };
   } catch {
     return null;
   }

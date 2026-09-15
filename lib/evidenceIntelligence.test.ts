@@ -170,7 +170,7 @@ describe("signed context ticket", () => {
     try {
       const context = compileEvidenceIntelligenceContext(product());
       const ticket = signEvidenceIntelligenceContext(context);
-      expect(verifyEvidenceIntelligenceTicket(ticket)).toMatchObject({ context_digest: context.context_digest, identity: context.identity });
+      expect(verifyEvidenceIntelligenceTicket(ticket)).toMatchObject({ context_digest: context.context_digest, identity: context.identity, evidence_refs: context.evidence_refs });
       expect(verifyEvidenceIntelligenceTicket({ ...ticket, serialized: `${ticket.serialized} ` })).toBeNull();
     } finally {
       if (previous === undefined) delete process.env.SARVAM_API_KEY;
