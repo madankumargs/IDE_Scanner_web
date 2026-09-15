@@ -72,7 +72,7 @@ export async function getPublicationHealth(): Promise<PublicationHealth> {
 
 async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
   const db = privateDb();
-  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const [reports, jobs, deliveries, runner] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS count, MAX(created_at) AS newest_scan_at FROM app_scan_reports").first<Record<string, unknown>>(),
     db.prepare("SELECT status, COUNT(*) AS count FROM app_scan_jobs WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
