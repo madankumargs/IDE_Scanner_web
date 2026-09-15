@@ -34,7 +34,7 @@ import RawEvidenceSection from "@/app/dossier/RawEvidenceSection";
 import AlertsSection from "@/app/dossier/AlertsSection";
 import ChangesSection from "@/app/dossier/ChangesSection";
 import OverviewSection from "@/app/dossier/OverviewSection";
-import EvidenceReviewBrief from "@/app/EvidenceReviewBrief";
+import EvidenceIntelligenceReport from "@/app/EvidenceIntelligenceReport";
 import { benchmarkValidation } from "@/lib/benchmarkLookup";
 import {
   coveragePresentation,
@@ -201,7 +201,7 @@ export default function AnalysisReport({ data, signedIn = false }: Props & { sig
         <span>{String(extension.registry || "Registry not reported")}</span>
         <span>Version {version}</span>
       </div>
-      <EvidenceReviewBrief
+      <EvidenceIntelligenceReport
         extensionId={id}
         version={version}
         scanId={String(scan.id || "")}

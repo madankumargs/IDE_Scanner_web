@@ -45,9 +45,11 @@ The secret key and workflow token are server-only. Never expose them through `NE
 
 The site-wide Feedback button stores private submissions in `feedback_submissions` and sends a plain-text notification through Resend. Apply the latest Supabase migration before enabling it in production. `FEEDBACK_TO_EMAIL` is optional when the company inbox is `hello@abscissa.dev`; set it explicitly for another inbox. If Resend is temporarily unavailable, the submission remains stored and is marked for operator follow-up.
 
-### Sarvam evidence briefs
+### Sarvam evidence intelligence
 
-The immutable report includes an optional signed-in **Evidence Review Brief**. It sends only a bounded projection of deterministic report facts to Sarvam; it does not send source previews, README content, canonical reports, or raw advisory payloads. The model output is schema-validated, evidence references are checked against the submitted findings, and the model cannot write or change a GuardRails decision.
+The immutable report includes an optional signed-in **Evidence Intelligence** report. It compiles the complete available structured evidence for the exact artifact into an evidence graph, computes the access surface and potential blast-radius dimensions deterministically, and asks Sarvam only for a cited, calibrated interpretation. It does not send source previews, README content, canonical reports, credentials, or raw advisory payloads. The model output is schema-validated, every material claim is checked against exact-report evidence references, and the model cannot write or change a GuardRails decision.
+
+The report presents the release identity, what the extension can access, evidence-backed data-flow visuals, a confidentiality/integrity/availability/network/persistence/supply-chain matrix, release changes when comparable evidence exists, explicit unknowns, and verification steps. Visuals are rendered by the application from validated data; the model never supplies HTML or SVG.
 
 Configure the integration with a server-only secret after rotating any key that has been exposed:
 
@@ -57,6 +59,8 @@ SARVAM_REASONING_MODEL=sarvam-105b # optional allowlisted override
 ```
 
 The default is `sarvam-105b`. `deepseekv4-flash`, `glm5.2`, `glm5.3`, `glm5.3-flash`, and `gemma4` are allowlisted for experiments through Sarvam's `/v2` endpoint, but they may require beta access for the specific key. Reasoning traces returned by beta models are intentionally discarded; only the validated brief is shown. The endpoint requires authentication, limits each user/release to five requests per ten minutes per runtime instance, uses a 20-second timeout, and returns `private, no-store` responses.
+
+The intelligence endpoint is `POST /api/extensions/:id/versions/:version/scans/:scanId/intelligence` and accepts only a review audience and `standard` depth. It uses the shared D1 `app_ai_usage` window for production limiting (three requests per user per ten minutes), with the operator kill switch `SARVAM_INTELLIGENCE_REPORT_ENABLED=false`. Deep review is intentionally not exposed until a separate shared credit/quota policy is enabled.
 
 Configure Supabase Auth with site URL `https://abscissa.dev` and redirect URLs `https://abscissa.dev/auth/callback` and `http://localhost:8765/auth/callback`. Google and GitHub OAuth use callback `https://PROJECT.supabase.co/auth/v1/callback`. Enable the corresponding production UI with `NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true` and `NEXT_PUBLIC_GITHUB_AUTH_ENABLED=true` only after its provider is configured in Supabase.
 
