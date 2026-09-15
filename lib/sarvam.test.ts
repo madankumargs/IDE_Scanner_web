@@ -94,5 +94,40 @@ describe("Sarvam evidence boundary", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.response_format.type).toBe("json_schema");
     expect(body.max_tokens).toBe(900);
+    expect(body.reasoning_effort).toBeNull();
+    expect(body.extra_body).toBeUndefined();
+  });
+
+  it("turns off thinking for v2 reasoning models with structured output", async () => {
+    process.env.SARVAM_API_KEY = "test-key";
+    process.env.SARVAM_REASONING_MODEL = "deepseekv4-flash";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            headline: "Review the release",
+            what_changed: [],
+            why_it_matters: [],
+            verify_next: [],
+            uncertainties: [],
+            evidence_refs: [],
+          }),
+        },
+      }],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createEvidenceReviewBrief({
+      extensionId: "publisher.extension",
+      version: "1.2.3",
+      scanId: "scan-1",
+      scan: { decision: "allow" },
+      findings: [],
+      dependencies: [],
+    }, "engineer");
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.extra_body).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+    expect(body.reasoning_effort).toBeUndefined();
   });
 });

@@ -176,6 +176,11 @@ export async function createEvidenceReviewBrief(
 
   const model = selectedSarvamModel();
   const context = buildReviewEvidence(evidence);
+  const structuredOutputControls = model === "sarvam-105b"
+    ? { reasoning_effort: null }
+    : model === "gemma4"
+      ? {}
+      : { extra_body: { chat_template_kwargs: { enable_thinking: false } } };
   const response = await fetch(`${SARVAM_ORIGIN}${SARVAM_REASONING_MODELS[model].endpoint}`, {
     method: "POST",
     headers: {
@@ -187,6 +192,7 @@ export async function createEvidenceReviewBrief(
       model,
       temperature: 0.1,
       max_tokens: 900,
+      ...structuredOutputControls,
       messages: [
         {
           role: "system",
