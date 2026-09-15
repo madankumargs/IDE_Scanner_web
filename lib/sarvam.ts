@@ -134,7 +134,9 @@ const INTELLIGENCE_RESPONSE_SCHEMA = {
 } as const;
 
 export function selectedSarvamModel(): SarvamReasoningModel {
-  const configured = process.env.SARVAM_REASONING_MODEL?.trim() || "sarvam-105b";
+  // Keep the flagship model available as an explicit override, but use the
+  // lower-latency global model for the interactive report path by default.
+  const configured = process.env.SARVAM_REASONING_MODEL?.trim() || "glm5.3-flash";
   if (!(configured in SARVAM_REASONING_MODELS)) {
     throw new SarvamConfigurationError("SARVAM_REASONING_MODEL is not allowlisted.");
   }

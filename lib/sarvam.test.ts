@@ -57,13 +57,14 @@ describe("Sarvam evidence boundary", () => {
 
   it("allows only configured reasoning models", () => {
     delete process.env.SARVAM_REASONING_MODEL;
-    expect(selectedSarvamModel()).toBe("sarvam-105b");
+    expect(selectedSarvamModel()).toBe("glm5.3-flash");
     process.env.SARVAM_REASONING_MODEL = "not-a-model";
     expect(() => selectedSarvamModel()).toThrow(SarvamConfigurationError);
   });
 
   it("uses structured output and discards any separate reasoning trace", async () => {
     process.env.SARVAM_API_KEY = "test-key";
+    process.env.SARVAM_REASONING_MODEL = "sarvam-105b";
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{
         message: {
@@ -135,6 +136,7 @@ describe("Sarvam evidence boundary", () => {
 
   it("generates only a cited, structured intelligence report", async () => {
     process.env.SARVAM_API_KEY = "test-key";
+    process.env.SARVAM_REASONING_MODEL = "sarvam-105b";
     const context = compileEvidenceIntelligenceContext({
       version: "1.2.3",
       scan: { id: "scan-1", extension_id: "publisher.extension", version: "1.2.3", artifact_sha256: "a".repeat(64), analysis_status: "complete", decision: "review", coverage_percent: 100, capabilities: { network: true } },
