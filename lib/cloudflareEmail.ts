@@ -26,7 +26,7 @@ export function cloudflareEmail(): EmailBinding | null {
 }
 
 export function authEmailFrom(): string {
-  return runtimeEnv("AUTH_EMAIL_FROM").trim() || "noreply@abscissa.dev";
+  return runtimeEnv("AUTH_EMAIL_FROM").trim() || "hello@abscissa.dev";
 }
 
 export async function sendAuthCode(email: string, code: string): Promise<void> {
