@@ -470,41 +470,26 @@ async function readStructuredResponse(response: Response): Promise<{ payload: un
     return { payload, content: extractMessageContent(payload) };
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const raw = await response.text();
   let content = "";
   let finishReason: string | null = null;
   let model: string | null = null;
   let choices = 0;
 
-  const consume = (chunk: string) => {
-    buffer += chunk;
-    const events = buffer.split(/\r?\n\r?\n/);
-    buffer = events.pop() || "";
-    for (const event of events) {
-      const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-      if (!data || data === "[DONE]") continue;
-      let payload: Record<string, unknown>;
-      try { payload = JSON.parse(data) as Record<string, unknown>; }
-      catch { continue; }
-      if (typeof payload.model === "string") model = payload.model.slice(0, 80);
-      const streamChoices = Array.isArray(payload.choices) ? payload.choices : [];
-      choices = Math.max(choices, streamChoices.length);
-      const first = objectValue(streamChoices[0]);
-      if (typeof first.finish_reason === "string") finishReason = first.finish_reason.slice(0, 40);
-      const delta = objectValue(first.delta);
-      if (typeof delta.content === "string") content += delta.content;
-    }
-  };
-
-  while (true) {
-    const result = await reader.read();
-    if (result.done) break;
-    consume(decoder.decode(result.value, { stream: true }));
+  for (const event of raw.split(/\r?\n\r?\n/)) {
+    const data = event.split(/\r?\n/).find((line) => line.startsWith("data:"))?.slice(5).trimStart() || "";
+    if (!data || data === "[DONE]") continue;
+    let payload: Record<string, unknown>;
+    try { payload = JSON.parse(data) as Record<string, unknown>; }
+    catch { continue; }
+    if (typeof payload.model === "string") model = payload.model.slice(0, 80);
+    const streamChoices = Array.isArray(payload.choices) ? payload.choices : [];
+    choices = Math.max(choices, streamChoices.length);
+    const first = objectValue(streamChoices[0]);
+    if (typeof first.finish_reason === "string") finishReason = first.finish_reason.slice(0, 40);
+    const delta = objectValue(first.delta);
+    if (typeof delta.content === "string") content += delta.content;
   }
-  consume(decoder.decode());
-  if (buffer.trim()) consume("\n\n");
   return {
     payload: { model, choices: Array.from({ length: choices }, (_, index) => ({ index, finish_reason: finishReason, message: { content } })) },
     content: content.trim(),
