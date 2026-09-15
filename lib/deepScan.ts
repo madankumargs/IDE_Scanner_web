@@ -74,8 +74,9 @@ export async function queueDeepScan(extensionId: string, requestedVersion: strin
   }
   await subscribeToJob(String(job.data.id), requestedBy);
   await db.from("scan_job_events").insert({ job_id: job.data.id, stage: "queued", event_type: "created", detail: { extension_id: canonicalExtensionId, version, requested_by: requestedBy } });
+  let dispatched = false;
   try {
-    const dispatched = await dispatchDeepScan(String(job.data.id));
+    dispatched = await dispatchDeepScan(String(job.data.id));
   } catch (error) {
     const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
     await db.from("scan_jobs").update({ status: "failed", lifecycle_stage: "failed", error: message, callback_error: message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(), last_event_at: new Date().toISOString() }).eq("id", job.data.id);
