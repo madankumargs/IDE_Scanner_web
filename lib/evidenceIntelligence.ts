@@ -648,7 +648,11 @@ function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string
   const refs = value.map((item) => String(item));
   if (!allowEmpty && refs.length === 0) throw new EvidenceIntelligenceValidationError("The intelligence report omitted required evidence references.");
   const canonicalRefs = refs.map((ref) => aliases.get(ref) || aliases.get(ref.replace(/\.\d+$/, "")) || ref);
-  if (canonicalRefs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError("The intelligence report referenced evidence outside the exact report.");
+  const invalidRef = canonicalRefs.find((ref) => !allowed.has(ref));
+  if (invalidRef) {
+    const diagnosticRef = invalidRef.replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 120) || "empty";
+    throw new EvidenceIntelligenceValidationError(`The intelligence report referenced evidence outside the exact report (ref=${diagnosticRef}).`);
+  }
   return uniqueStrings(canonicalRefs);
 }
 
