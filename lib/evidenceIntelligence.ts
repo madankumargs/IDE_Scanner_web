@@ -703,8 +703,15 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
   };
   for (const [alias, ref] of Object.entries(scanAliases)) addVariants(alias, [ref]);
   for (const reference of context.evidence) {
-    addVariants(reference.ref.replace(/\.\d+$/, ""), [reference.ref]);
+    const unindexedRef = reference.ref.replace(/\.\d+$/, "");
+    addVariants(unindexedRef, [reference.ref]);
     addVariants(reference.ref, [reference.ref]);
+    const [family, ...parts] = unindexedRef.split(".");
+    if (family && parts.length) {
+      const tail = parts.join(".");
+      addVariants(tail, [reference.ref]);
+      if (family === "capability") addVariants(`access.${tail}`, [reference.ref]);
+    }
     const label = slug(reference.label).replaceAll("-", "_");
     addVariants(label, [reference.ref]);
     addVariants(`${reference.section}.${label}`, [reference.ref]);
