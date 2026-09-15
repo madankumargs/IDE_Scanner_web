@@ -502,10 +502,10 @@ export function validateIntelligenceNarrative(value: unknown, context: EvidenceI
   const headline = requiredText(input.headline, 300);
   const bottomLine = requiredText(input.bottom_line, 700);
   const summaryRefs = validatedRefs(input.summary_evidence_refs, allowedRefs, aliases, 8, true);
-  const claims = validateClaims(input.claims, allowedRefs, aliases, 18, false);
-  const positiveSignals = validateClaims(input.positive_signals, allowedRefs, aliases, 6, false);
-  const unknowns = validateClaims(input.unknowns, allowedRefs, aliases, 8, true);
-  const verifyNext = validateActions(input.verify_next, allowedRefs, aliases, 6);
+  const claims = validateClaims(input.claims, allowedRefs, aliases, 10, false);
+  const positiveSignals = validateClaims(input.positive_signals, allowedRefs, aliases, 4, false);
+  const unknowns = validateClaims(input.unknowns, allowedRefs, aliases, 6, true);
+  const verifyNext = validateActions(input.verify_next, allowedRefs, aliases, 4);
   const allClaims = [...claims, ...positiveSignals, ...unknowns];
   if (new Set(allClaims.map((claim) => claim.claim_id)).size !== allClaims.length) throw new EvidenceIntelligenceValidationError("The intelligence report reused a claim identifier.");
   rejectOverclaim(`${headline}\n${bottomLine}`);

@@ -168,7 +168,7 @@ describe("Sarvam evidence boundary", () => {
     expect(result.report.deterministic.decision_unchanged).toBe(true);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.response_format.json_schema.name).toBe("guardrails_security_intelligence_report");
-    expect(body.max_tokens).toBe(2600);
+    expect(body.max_tokens).toBe(3000);
     expect(body.reasoning_effort).toBeNull();
     expect(body.messages[1].content).toContain("BEGIN_UNTRUSTED_EVIDENCE_CONTEXT");
     expect(body.messages[1].content).not.toContain("canonical_report");

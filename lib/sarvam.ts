@@ -126,10 +126,10 @@ const INTELLIGENCE_RESPONSE_SCHEMA = {
     headline: { type: "string" },
     bottom_line: { type: "string" },
     summary_evidence_refs: { type: "array", items: { type: "string" }, maxItems: 8 },
-    claims: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, minItems: 1, maxItems: 18 },
-    positive_signals: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, maxItems: 6 },
-    unknowns: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, maxItems: 8 },
-    verify_next: { type: "array", items: INTELLIGENCE_ACTION_SCHEMA, maxItems: 6 },
+    claims: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, minItems: 1, maxItems: 10 },
+    positive_signals: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, maxItems: 4 },
+    unknowns: { type: "array", items: INTELLIGENCE_CLAIM_SCHEMA, maxItems: 6 },
+    verify_next: { type: "array", items: INTELLIGENCE_ACTION_SCHEMA, maxItems: 4 },
   },
   required: ["headline", "bottom_line", "summary_evidence_refs", "claims", "positive_signals", "unknowns", "verify_next"],
 } as const;
@@ -351,7 +351,7 @@ export async function createEvidenceIntelligenceReport(
     body: JSON.stringify({
       model,
       temperature: 0.05,
-      max_tokens: 2_600,
+      max_tokens: 3_000,
       stream: false,
       ...structuredOutputControls,
       messages: [
@@ -366,6 +366,7 @@ export async function createEvidenceIntelligenceReport(
             "Use observed only for facts directly represented by evidence. Use bounded_inference for carefully qualified consequences. Use unknown for missing, unassessed, or low-confidence information.",
             "Every summary reference, claim, positive signal, unknown, and verification action must use only the exact ref values supplied in the evidence catalog. Fact refs and object IDs are not valid evidence refs unless the same string also appears in that catalog. Never invent refs.",
             "Use a globally unique claim_id across claims, positive_signals, and unknowns.",
+            "Keep the report compact: prefer 4-8 total claims, at most 4 unknowns, and at most 4 verification actions.",
             "Do not emit HTML, Markdown tables, SVG, CSS, links, code, chain-of-thought, or hidden reasoning. Return only JSON matching the supplied schema.",
           ].join("\n"),
         },
