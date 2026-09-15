@@ -76,8 +76,8 @@ export default function PublicSecuritySummary({
         <article>
           <span>Scan date</span>
           <strong>
-            {scanned && scan?.created_at
-              ? new Date(String(scan.created_at)).toLocaleDateString()
+            {scanned && (scan?.created_at || scan?.scanned_at)
+              ? new Date(String(scan.created_at || scan.scanned_at)).toLocaleDateString()
               : "—"}
           </strong>
         </article>

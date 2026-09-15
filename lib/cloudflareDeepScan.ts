@@ -279,12 +279,45 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
     malware_score: Number(detail.malware_score || 0),
     coverage_percent: Number(coverage.coverage_percent || 0),
     provider_coverage: jsonObject(coverage.providers),
+    created_at: String(row.created_at || metadata.created_at || nowIso()),
     scanned_at: String(metadata.created_at || row.created_at || nowIso()),
   };
   const findings = array(detail.findings).map((item, index) => { const value = jsonObject(item); return { id: `${String(value.finding_id || value.rule_id || "finding")}-${index}`, rule_id: String(value.rule_id || "unknown"), category: String(value.category || "unknown"), severity: String(value.effective_severity || value.severity || "INFO"), confidence: Number(value.confidence || 0), evidence_class: String(value.evidence_class || "weak"), actionability: String(value.actionability || "contextual"), summary: String(value.evidence_summary || "Scanner evidence"), recommendation: String(value.recommendation || ""), file_refs: Array.isArray(value.file_refs) ? value.file_refs : [], evidence: jsonObject(value.evidence) }; });
   const files = array(inventory.files).map((item) => { const value = jsonObject(item); return { path: String(value.path || ""), sha256: String(value.sha256 || ""), size_bytes: Number(value.size_bytes || 0), kind: String(value.kind || "file") }; }).filter((item) => item.path);
   const dependencies = array(detail.dependency_inventory).map((item) => { const value = jsonObject(item); return { name: String(value.name || ""), version: String(value.version || "unknown"), ecosystem: String(value.ecosystem || "npm"), relationship: String(value.relationship || "transitive"), advisories: Array.isArray(value.advisories) ? value.advisories : [] }; }).filter((item) => item.name);
   return { version: { extension_id: extensionId, version, latest_scan_id: scanId, scan_state: report.analysis_status }, scan: report, findings, files, dependencies };
+}
+
+export async function getCloudflareScanSummaries(extensionId: string): Promise<Row[]> {
+  if (!cloudflarePrivateAvailable()) return [];
+  const rows = await privateDb().prepare(`
+    SELECT
+      report.scan_id AS id,
+      report.extension_id,
+      report.version,
+      report.artifact_sha256,
+      report.created_at,
+      json_extract(extension.value, '$.analysis_status') AS analysis_status,
+      json_extract(extension.value, '$.decision') AS decision,
+      json_extract(extension.value, '$.decision_reason') AS decision_reason,
+      json_extract(extension.value, '$.public_outcome') AS public_outcome,
+      json_extract(extension.value, '$.decision_basis') AS decision_basis,
+      json_extract(extension.value, '$.evidence_confidence') AS evidence_confidence,
+      json_extract(extension.value, '$.coverage_percent') AS coverage_percent,
+      json_extract(extension.value, '$.risk_score') AS risk_score,
+      json_extract(extension.value, '$.malware_score') AS malware_score,
+      json_extract(extension.value, '$.scanner_build') AS scanner_build,
+      json_extract(extension.value, '$.ruleset_version') AS ruleset_version,
+      json_extract(extension.value, '$.capability_assessment') AS capability_assessment
+    FROM app_scan_reports report
+    JOIN json_each(report.report_json, '$.extensions') extension ON true
+    WHERE lower(report.extension_id)=lower(?)
+    ORDER BY report.created_at DESC
+  `).bind(extensionId).all<Row>();
+  return rows.results.map((row) => ({
+    ...row,
+    capability_assessment: parseJson(row.capability_assessment),
+  }));
 }
 
 export async function getCloudflareLatestScanProduct(extensionId: string, version: string): Promise<Row | null> {
