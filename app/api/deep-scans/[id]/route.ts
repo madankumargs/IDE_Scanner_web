@@ -3,7 +3,7 @@ import { dispatchDeepScan } from "@/lib/deepScan";
 import { serviceDb } from "@/lib/supabase";
 import { serverDb } from "@/lib/supabaseServer";
 import { scanProgressColumns, scanProgressPayload } from "@/lib/scanProgress";
-import { cloudflarePrivateAvailable, cloudflareScanProgress } from "@/lib/cloudflareDeepScan";
+import { cloudflareGuestTrialStatus, cloudflarePrivateAvailable, cloudflareScanProgress, getCloudflareGuestJob, guestTrialToken } from "@/lib/cloudflareDeepScan";
 import { privateDb, userFromSession } from "@/lib/cloudflarePrivate";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     if (cloudflarePrivateAvailable()) {
       const user = await userFromSession(request);
-      if (!user) return NextResponse.json({ error: "Sign in to view scan progress." }, { status: 401 });
+      if (!user) {
+        const guestJob = await getCloudflareGuestJob(id, guestTrialToken(request));
+        if (!guestJob) return NextResponse.json({ error: "This trial scan is unavailable. Sign in to view scans saved to a workspace." }, { status: 401 });
+        const trial = await cloudflareGuestTrialStatus(request);
+        return NextResponse.json({ ...(await cloudflareScanProgress(guestJob)), guest_trial_available: trial.available, guest_trial_remaining: trial.remaining, guest_trial_limit: trial.limit, guest_trial_window_days: trial.window_days });
+      }
       const db = privateDb();
       const subscription = await db.prepare("SELECT job_id FROM app_scan_job_subscribers WHERE job_id=? AND user_id=?").bind(id, user.id).first<Record<string, unknown>>();
       if (!subscription) return NextResponse.json({ error: "Scan job not found." }, { status: 404 });

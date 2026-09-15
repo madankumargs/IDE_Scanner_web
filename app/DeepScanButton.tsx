@@ -20,6 +20,9 @@ type Health = {
 };
 type ExistingJob = {
   auth_required?: boolean;
+  guest_trial_available?: boolean;
+  guest_trial_remaining?: number;
+  guest_trial_limit?: number;
   report_url?: string;
   status?: string;
   id?: string;
@@ -94,6 +97,8 @@ export default function DeepScanButton({
   const [jobId, setJobId] = useState("");
   const [reportUrl, setReportUrl] = useState("");
   const [signedOut, setSignedOut] = useState(false);
+  const [guestTrialAvailable, setGuestTrialAvailable] = useState(false);
+  const [guestTrialRemaining, setGuestTrialRemaining] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -115,6 +120,14 @@ export default function DeepScanButton({
         setHealth("network_unavailable");
       }
       const job = jobResult.status === "fulfilled" ? jobResult.value : null;
+      if (job?.auth_required) {
+        setSignedOut(true);
+        setGuestTrialAvailable(false);
+      } else if (job?.guest_trial_available) {
+        setSignedOut(false);
+        setGuestTrialAvailable(true);
+        setGuestTrialRemaining(Number(job.guest_trial_remaining || 0));
+      }
       if (job?.auth_required) setSignedOut(true);
       else if (job?.report_url) {
         const terminal =
@@ -248,7 +261,7 @@ export default function DeepScanButton({
   }, [jobId, router, extensionId, version]);
 
   async function queue() {
-    if (signedOut) {
+    if (signedOut && !guestTrialAvailable) {
       trackProductEvent({
         name: "workspace_signup_started",
         source_route: window.location.pathname,
@@ -269,6 +282,7 @@ export default function DeepScanButton({
       status?: string;
       report_url?: string;
       id?: string;
+      trial_remaining?: number;
     };
     try {
       response = await fetch("/api/deep-scans", {
@@ -339,7 +353,7 @@ export default function DeepScanButton({
           ["loading", "queued", "running"].includes(state)
         }
       >
-        {signedOut ? (
+        {signedOut && !guestTrialAvailable ? (
           <>
             Create free workspace to Deep Scan <ScanSearch size={16} />
           </>
@@ -369,10 +383,9 @@ export default function DeepScanButton({
           </>
         )}
       </button>
-      {signedOut ? (
+      {guestTrialAvailable && !signedOut ? (
         <span className="actionNotice" role="status">
-          Free workspaces save exact-version reports, monitoring, and your
-          review queue.
+          {guestTrialRemaining || 5} free Deep Scan{guestTrialRemaining === 1 ? "" : "s"} without sign-in. Sign in to save history and monitor releases.
         </span>
       ) : null}
       {showReportLink && reportUrl ? (

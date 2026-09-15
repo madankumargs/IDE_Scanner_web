@@ -26,7 +26,7 @@ const plans = [
     tableSuffix: "Free forever",
     later: "",
     description:
-      "Know what an extension does before you install it. No account needed for public reports.",
+      "Know what an extension does before you install it. Start with five Deep Scan trials without creating an account.",
     action: "Open the registry",
     href: "/registry",
     external: false,
@@ -34,6 +34,7 @@ const plans = [
     badge: "",
     features: [
       "Per-version public reports",
+      "Five no-account Deep Scan trials per 30 days",
       "Permission Passport and release diff",
       "Local analysis with the GuardRails CLI",
       "Personal watchlist for up to 3 extensions",
@@ -97,6 +98,7 @@ const comparison: Array<{
     group: "Scanning and evidence",
     rows: [
       ["Per-version public reports", true, true, true],
+      ["No-account Deep Scan trial", "5 / 30 days", "5 / 30 days", "5 / 30 days"],
       ["Permission Passport and capability diff", true, true, true],
       ["GuardRails CLI local inventory", true, true, true],
       ["Guided human review of a release", "Launch period", true, true],

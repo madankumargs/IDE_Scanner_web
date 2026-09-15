@@ -2,13 +2,16 @@ import "server-only";
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { privateDb, newId, nowIso, type AppAuthUser } from "@/lib/cloudflarePrivate";
+import { parseCookies, privateDb, newId, nowIso, sessionHash, type AppAuthUser } from "@/lib/cloudflarePrivate";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 import { resolveMarketplaceExtension } from "@/lib/marketplace";
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
 
 type Row = Record<string, unknown>;
 type Bundle = { metadata?: Row; extensions?: Row | Row[] };
+const GUEST_TRIAL_LIMIT = 5;
+const GUEST_TRIAL_WINDOW_DAYS = 30;
+const GUEST_TRIAL_COOKIE = "gr_trial";
 export type CloudflareCanonicalJobInput = {
   extension_id: string;
   version: string;
@@ -19,6 +22,35 @@ export type CloudflareCanonicalJobInput = {
 
 export function cloudflarePrivateAvailable(): boolean {
   try { privateDb(); return true; } catch { return false; }
+}
+
+export type GuestTrialStatus = { available: boolean; remaining: number; limit: number; window_days: number };
+
+export function guestTrialToken(request: Request): string {
+  return parseCookies(request.headers.get("cookie") || "")[GUEST_TRIAL_COOKIE] || "";
+}
+
+export function guestTrialCookie(token: string, maxAge = GUEST_TRIAL_WINDOW_DAYS * 24 * 60 * 60): string {
+  return `${GUEST_TRIAL_COOKIE}=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+}
+
+export async function cloudflareGuestTrialStatus(request: Request): Promise<GuestTrialStatus> {
+  const db = privateDb();
+  const trialKey = requesterHash(request);
+  const row = await db.prepare("SELECT scan_count,window_started_at FROM app_guest_scan_trials WHERE trial_key=? LIMIT 1").bind(trialKey).first<Row>();
+  const expired = !row || !withinGuestTrialWindow(String(row.window_started_at || ""));
+  const used = expired ? 0 : Number(row?.scan_count || 0);
+  return { available: used < GUEST_TRIAL_LIMIT, remaining: Math.max(0, GUEST_TRIAL_LIMIT - used), limit: GUEST_TRIAL_LIMIT, window_days: GUEST_TRIAL_WINDOW_DAYS };
+}
+
+export async function getCloudflareGuestJob(jobId: string, token: string): Promise<Row | null> {
+  if (!token) return null;
+  return privateDb().prepare("SELECT j.* FROM app_scan_jobs j JOIN app_guest_scan_access a ON a.job_id=j.id WHERE j.id=? AND a.token_hash=? LIMIT 1").bind(jobId, sessionHash(token)).first<Row>();
+}
+
+export async function getCloudflareGuestJobForRelease(extensionId: string, version: string, token: string): Promise<Row | null> {
+  if (!token) return null;
+  return privateDb().prepare("SELECT j.* FROM app_scan_jobs j JOIN app_guest_scan_access a ON a.job_id=j.id WHERE j.extension_id=? AND j.version=? AND a.token_hash=? ORDER BY j.created_at DESC LIMIT 1").bind(extensionId, version, sessionHash(token)).first<Row>();
 }
 
 export async function enqueueCloudflareCanonicalJobs(jobs: readonly CloudflareCanonicalJobInput[]): Promise<Row[]> {
@@ -91,6 +123,48 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
     throw new Error(message);
   }
   return withCloudflareReportUrl({ id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started" });
+}
+
+export class GuestTrialLimitError extends Error {
+  constructor() {
+    super("Your 5-scan free trial is used up. Sign in with GitHub to keep scanning and save your workspace history.");
+    this.name = "GuestTrialLimitError";
+  }
+}
+
+export async function queueCloudflareGuestDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request, trialToken: string, force = false): Promise<Row> {
+  if (!trialToken) throw new Error("A trial session is required.");
+  const db = privateDb();
+  const trialKey = requesterHash(request);
+  const trial = await cloudflareGuestTrialStatus(request);
+  const catalog = await getCloudflareRegistryCatalogExtension<{ id?: string; latest_version?: string }>(extensionId);
+  const marketplace = catalog ? null : await resolveMarketplaceExtension(extensionId);
+  const canonicalExtensionId = String(catalog?.id || marketplace?.extension_id || extensionId);
+  const version = requestedVersion || String(catalog?.latest_version || marketplace?.version || "");
+  if (!version) throw new Error("No published version is available for this extension.");
+  const complete = !force ? await db.prepare("SELECT scan_id FROM app_scan_reports WHERE extension_id=? AND version=? ORDER BY created_at DESC LIMIT 1").bind(canonicalExtensionId, version).first<Row>() : null;
+  if (complete?.scan_id) return withCloudflareReportUrl({ status: "complete", scan_id: String(complete.scan_id), reused: true, extension_id: canonicalExtensionId, version, trial_remaining: trial.remaining });
+  if (!trial.available) throw new GuestTrialLimitError();
+  const tokenHash = sessionHash(trialToken);
+  const active = await db.prepare("SELECT j.* FROM app_scan_jobs j WHERE j.extension_id=? AND j.version=? AND j.profile='deep' AND j.status IN ('queued','running') AND EXISTS (SELECT 1 FROM app_guest_scan_access a WHERE a.job_id=j.id AND a.token_hash=?) ORDER BY j.created_at DESC LIMIT 1").bind(canonicalExtensionId, version, tokenHash).first<Row>();
+  if (active) return withCloudflareReportUrl({ ...active, deduplicated: true, trial_remaining: trial.remaining });
+  const id = newId();
+  const createdAt = nowIso();
+  await consumeGuestTrial(trialKey, createdAt);
+  await db.batch([
+    db.prepare("INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requester_hash,scan_purpose,created_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(id, canonicalExtensionId, version, "deep", "queued", "queued", trialKey, "guest_trial", createdAt, createdAt, createdAt),
+    db.prepare("INSERT INTO app_guest_scan_access(job_id,token_hash,trial_key,created_at) VALUES(?,?,?,?)").bind(id, tokenHash, trialKey, createdAt),
+  ]);
+  await addCloudflareScanEvent(id, "queued", "guest_trial_created", { extension_id: canonicalExtensionId, version });
+  try {
+    await dispatchCloudflareDeepScan(id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
+    await db.prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(message, message, nowIso(), nowIso(), nowIso(), id).run();
+    await addCloudflareScanEvent(id, "failed", "dispatch_failed", { error: message });
+    throw new Error(message);
+  }
+  return { id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started", trial_remaining: Math.max(0, trial.remaining - 1) };
 }
 
 export async function dispatchCloudflareDeepScan(jobId: string, minimumIntervalSeconds = 0): Promise<boolean> {
@@ -281,3 +355,25 @@ function singleExtension(value: Bundle["extensions"]): Row | null {
 function jsonObject(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 function parseJson(value: unknown): unknown { try { return JSON.parse(String(value || "{}")); } catch { return {}; } }
+
+function requesterHash(request: Request): string {
+  const raw = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  return createHash("sha256").update(`${runtimeEnv("SCAN_RATE_LIMIT_SECRET") || "ide-scanner"}:${raw}`).digest("hex");
+}
+
+function withinGuestTrialWindow(start: string): boolean {
+  const timestamp = Date.parse(start);
+  return Number.isFinite(timestamp) && Date.now() - timestamp < GUEST_TRIAL_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
+
+async function consumeGuestTrial(trialKey: string, now: string): Promise<void> {
+  const db = privateDb();
+  const existing = await db.prepare("SELECT scan_count,window_started_at FROM app_guest_scan_trials WHERE trial_key=? LIMIT 1").bind(trialKey).first<Row>();
+  if (!existing || !withinGuestTrialWindow(String(existing.window_started_at || ""))) {
+    await db.prepare("INSERT INTO app_guest_scan_trials(trial_key,scan_count,window_started_at,last_scan_at,created_at) VALUES(?,?,?,?,?) ON CONFLICT(trial_key) DO UPDATE SET scan_count=1,window_started_at=excluded.window_started_at,last_scan_at=excluded.last_scan_at").bind(trialKey, 1, now, now, now).run();
+    return;
+  }
+  const update = await db.prepare("UPDATE app_guest_scan_trials SET scan_count=scan_count+1,last_scan_at=? WHERE trial_key=? AND scan_count<?").bind(now, trialKey, GUEST_TRIAL_LIMIT).run();
+  const changes = Number(update.meta?.changes || 0);
+  if (changes === 0) throw new GuestTrialLimitError();
+}

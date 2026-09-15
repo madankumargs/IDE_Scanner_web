@@ -15,7 +15,7 @@ const questions = [
   },
   {
     q: "What does it cost?",
-    a: "Scanning is free. Monitoring is $19/month and Teams is $99/month when billing switches on — early customers keep those launch terms, annual billing takes two months off, and every paid plan carries a 30-day money-back guarantee.",
+    a: "Public reports are free forever, and anyone can try five Deep Scans every 30 days without creating an account. Monitoring is $19/month and Teams is $99/month when billing switches on — early customers keep those launch terms, annual billing takes two months off, and every paid plan carries a 30-day money-back guarantee.",
   },
 ] as const;
 
