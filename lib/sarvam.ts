@@ -247,19 +247,31 @@ export async function createEvidenceReviewBrief(
   });
 
   if (!response.ok) {
+    console.warn("[sarvam-evidence-brief] provider rejected request", { status: response.status });
     throw new SarvamProviderError(response.status);
   }
   const payload = await response.json().catch(() => null);
   const content = extractMessageContent(payload);
-  if (!content) throw new SarvamOutputError();
+  if (!content) {
+    console.warn("[sarvam-evidence-brief] empty structured output", providerPayloadShape(response.status, payload));
+    throw new SarvamOutputError();
+  }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
+    console.warn("[sarvam-evidence-brief] non-json structured output", providerPayloadShape(response.status, payload));
     throw new SarvamOutputError();
   }
-  return { brief: parseEvidenceReviewBrief(parsed, context.evidenceRefs), model };
+  try {
+    return { brief: parseEvidenceReviewBrief(parsed, context.evidenceRefs), model };
+  } catch (error) {
+    if (error instanceof SarvamOutputError) {
+      console.warn("[sarvam-evidence-brief] schema validation failed", providerPayloadShape(response.status, payload));
+    }
+    throw error;
+  }
 }
 
 export function parseEvidenceReviewBrief(
@@ -288,6 +300,24 @@ function extractMessageContent(payload: unknown): string {
   const first = objectValue(choices[0]);
   const message = objectValue(first.message);
   return typeof message.content === "string" ? message.content.trim() : "";
+}
+
+function providerPayloadShape(status: number, payload: unknown): Record<string, unknown> {
+  const root = objectValue(payload);
+  const choices = Array.isArray(root.choices) ? root.choices : [];
+  const first = objectValue(choices[0]);
+  const message = objectValue(first.message);
+  const content = message.content;
+  return {
+    status,
+    model: typeof root.model === "string" ? root.model.slice(0, 80) : null,
+    choices: choices.length,
+    finish_reason: typeof first.finish_reason === "string" ? first.finish_reason.slice(0, 40) : null,
+    content_type: content === null ? "null" : typeof content,
+    content_length: typeof content === "string" ? content.length : null,
+    has_reasoning_content: typeof message.reasoning_content === "string" && message.reasoning_content.length > 0,
+    has_refusal: typeof message.refusal === "string" && message.refusal.length > 0,
+  };
 }
 
 function safeText(value: unknown, max: number): string {
