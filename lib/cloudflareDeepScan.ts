@@ -177,8 +177,17 @@ export async function dispatchCloudflareDeepScan(jobId: string, minimumIntervalS
   if (minimumIntervalSeconds > 0 && Number(job.dispatch_count || 0) > 0 && Date.now() - last < minimumIntervalSeconds * 1000) return false;
   const owner = runtimeEnv("GITHUB_REPO_OWNER") || "preethamak";
   const repository = runtimeEnv("GITHUB_SCANNER_REPO") || "IDE_Scanner";
-  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/actions/workflows/deep-scan.yml/dispatches`, { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" }, body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }), cache: "no-store", signal: AbortSignal.timeout(8_000) });
-  if (!response.ok) throw new Error(`Deep Scan dispatch failed (${response.status}).`);
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/actions/workflows/deep-scan.yml/dispatches`, { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json", "User-Agent": "guardrails-web" }, body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }), cache: "no-store", signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) {
+    // The workflow also runs on a five-minute schedule. A token that can read
+    // the repository but cannot dispatch workflows returns 401/403 here; the
+    // queued job must stay retryable so the scheduled runner can claim it.
+    if (response.status === 401 || response.status === 403) {
+      await addCloudflareScanEvent(jobId, "queued", "dispatch_deferred", { error: `GitHub workflow dispatch unavailable (${response.status}).`, repository: `${owner}/${repository}` });
+      return false;
+    }
+    throw new Error(`Deep Scan dispatch failed (${response.status}).`);
+  }
   const now = nowIso();
   await db.prepare("UPDATE app_scan_jobs SET dispatch_count=dispatch_count+1,lifecycle_stage='dispatched',updated_at=?,last_event_at=? WHERE id=?").bind(now, now, jobId).run();
   await addCloudflareScanEvent(jobId, "dispatched", "dispatch_accepted", { repository: `${owner}/${repository}` });
