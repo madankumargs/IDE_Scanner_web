@@ -4,7 +4,7 @@ import { getPublicRegistryProduct, getPublicRegistrySnapshot } from "@/lib/publi
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
 import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { cloudflarePrivateAvailable, getCloudflareLatestScanProduct, getCloudflareScanProduct } from "@/lib/cloudflareDeepScan";
+import { cloudflarePrivateAvailable, getCloudflareLatestScanProduct, getCloudflareScanProduct, getCloudflareScanSummary } from "@/lib/cloudflareDeepScan";
 
 const cachedVersions=unstable_cache(async(id:string)=>listMarketplaceVersions(id),["registry-versions-v2"],{revalidate:21600,tags:["registry-versions"]});
 const MAX_RENDERED_VERSION_HISTORY = 120;
@@ -191,8 +191,8 @@ export async function getExtensionProduct(id: string, client?: SupabaseClient): 
   const cloudflareProduct = await getCloudflareRegistryProduct<{ extension: CatalogExtension; versions: Array<Record<string, unknown>>; scan: Record<string, unknown> | null }>(id);
   if (cloudflareProduct?.extension) {
     const latestVersion = String(cloudflareProduct.extension.latest_version || cloudflareProduct.versions.find((item) => item.is_latest)?.version || "");
-    const latestD1Scan = latestVersion && cloudflarePrivateAvailable()
-      ? await getCloudflareLatestScanProduct(id, latestVersion).catch(() => null)
+    const latestD1Scan = cloudflarePrivateAvailable()
+      ? await getCloudflareScanSummary(id, latestVersion).catch(() => null)
       : null;
     if (!latestD1Scan?.scan) return cloudflareProduct;
     const scan = latestD1Scan.scan as Record<string, unknown>;

@@ -297,6 +297,40 @@ export async function getCloudflareLatestScanProduct(extensionId: string, versio
   return row?.scan_id ? getCloudflareScanProduct(extensionId, version, String(row.scan_id)) : null;
 }
 
+export async function getCloudflareScanSummary(extensionId: string, version: string): Promise<Row | null> {
+  if (!cloudflarePrivateAvailable()) return null;
+  const row = await privateDb().prepare(`
+    SELECT
+      report.scan_id AS id,
+      report.extension_id,
+      report.version,
+      report.artifact_sha256,
+      report.created_at,
+      json_extract(report.report_json, '$.metadata.created_at') AS scanned_at,
+      json_extract(extension.value, '$.analysis_status') AS analysis_status,
+      json_extract(extension.value, '$.decision') AS decision,
+      json_extract(extension.value, '$.decision_reason') AS decision_reason,
+      json_extract(extension.value, '$.public_outcome') AS public_outcome,
+      json_extract(extension.value, '$.decision_basis') AS decision_basis,
+      json_extract(extension.value, '$.evidence_confidence') AS evidence_confidence,
+      json_extract(extension.value, '$.coverage_percent.coverage_percent') AS coverage_percent,
+      json_extract(extension.value, '$.risk_score') AS risk_score,
+      json_extract(extension.value, '$.malware_score') AS malware_score,
+      json_extract(extension.value, '$.scanner_build') AS scanner_build,
+      json_extract(extension.value, '$.ruleset_version') AS ruleset_version,
+      json_extract(extension.value, '$.capability_assessment') AS capability_assessment
+    FROM app_scan_reports report
+    JOIN json_each(report.report_json, '$.extensions') extension
+      ON extension.key = 'extensions/' || report.extension_id || '@' || report.version || '.json'
+    WHERE lower(report.extension_id)=lower(?)
+      AND report.version=?
+    ORDER BY report.created_at DESC
+    LIMIT 1
+  `).bind(extensionId, version).first<Row>();
+  if (!row) return null;
+  return { ...row, capability_assessment: parseJson(row.capability_assessment) };
+}
+
 export async function getCloudflareSourcePreview(extensionId: string, version: string, scanId: string | null, path: string): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
   const row = await privateDb().prepare(`
