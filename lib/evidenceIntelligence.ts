@@ -313,6 +313,7 @@ export function compileEvidenceIntelligenceContext(product: RecordValue): Eviden
   addEvidence({ ref: "scan.inventory", kind: "scan", label: "Report inventory", detail: `${findings.length} findings · ${files.length} files · ${dependencies.length} dependencies`, section: "overview" });
 
   const coverageBoundaries = deriveCoverageBoundaries(scan, product, findings, files);
+  addEvidence({ ref: "scan.coverage_boundaries", kind: "coverage", label: "Coverage boundaries", detail: coverageBoundaries.join(" ").slice(0, MAX_STRING), section: "coverage" });
   const releaseDelta = deriveReleaseDelta(scan, version, addEvidence);
   const omittedFields = [
     findings.length > MAX_FINDINGS ? `${findings.length - MAX_FINDINGS} findings beyond the context limit` : "",
