@@ -9,7 +9,6 @@ import {
 } from "@/lib/productData";
 import { rankRelatedExtensions } from "@/lib/relatedExtensions";
 import alternativesStyles from "@/app/extensions/alternatives.module.css";
-import { serverDb } from "@/lib/supabaseServer";
 import DeepScanButton from "@/app/DeepScanButton";
 import WatchExtension from "@/app/WatchExtension";
 import ExtensionIcon from "@/app/ExtensionIcon";
@@ -21,7 +20,9 @@ import { buildPermissionPassport } from "@/lib/permissionPassport";
 import type { ReportFile } from "@/lib/reportContract";
 import { extensionPageModel, scanDecision } from "@/lib/extensionPageModel";
 
-export const dynamic = "force-dynamic";
+// Public extension profiles are safe to serve from ISR. User-specific scan
+// actions and reports remain behind their own authenticated API/page routes.
+export const revalidate = 300;
 
 export async function generateMetadata({
   params,
@@ -29,8 +30,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const db = await serverDb();
-  const product = await getExtensionProduct(decodeURIComponent(id), db);
+  const product = await getExtensionProduct(decodeURIComponent(id));
   if (!product) return { title: "Extension not found" };
   const name = product.extension.display_name || product.extension.id;
   const publisher = product.extension.publisher;
@@ -47,8 +47,7 @@ export default async function ExtensionPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const db = await serverDb();
-  const product = await getExtensionProduct(decodeURIComponent(id), db);
+  const product = await getExtensionProduct(decodeURIComponent(id));
   if (!product) notFound();
   const latest =
     product.versions.find((item) => item.is_latest) || product.versions[0];
@@ -58,7 +57,7 @@ export default async function ExtensionPage({
   const versionProduct =
     version === "unknown"
       ? null
-      : await getVersionProduct(product.extension.id, version, db);
+      : await getVersionProduct(product.extension.id, version);
   const scan =
     (versionProduct?.scan as Record<string, unknown> | null | undefined) ||
     product.scan;

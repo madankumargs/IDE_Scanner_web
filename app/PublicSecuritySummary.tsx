@@ -84,11 +84,11 @@ export default function PublicSecuritySummary({
       </section>
       <section className="summaryBody">
         <div>
-          <span className="kicker">What this means</span>
+          <span className="kicker">Decision context</span>
           <h1>
             {scanned
-              ? "The key information before you install."
-              : "Read the publisher details before you install."}
+              ? "Use this completed analysis before you install."
+              : "Read the published evidence before you install."}
           </h1>
           <p>
             {scanned

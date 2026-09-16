@@ -30,6 +30,8 @@ describe("workspace audit product", () => {
       expect(route).toContain(table);
     }
     expect(route).not.toContain("target_encrypted");
+    expect(route).toContain('"badge"');
+    expect(route).toContain('rawAction.startsWith("team_badge_")');
   });
 
   it("uses a durable trigger-backed audit store that removes channel secrets", () => {

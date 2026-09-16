@@ -44,6 +44,7 @@ describe("workspace audit route authorization", () => {
       "utf8",
     );
     expect(source).toContain('role === "analyst" || role === "viewer"');
+    expect(source).toContain('"badge"');
     expect(source).toContain('return mapping[String(value)] || "unknown"');
     expect(source).toContain('.order("id", { ascending: false })');
   });

@@ -15,6 +15,7 @@ export type TeamAuditEvent = {
     | "watchlist"
     | "channel"
     | "preference"
+    | "badge"
     | "unknown";
   object_id: string;
   extension_id: string | null;

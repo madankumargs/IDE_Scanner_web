@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CircleAlert, RefreshCw, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Bell, CircleAlert, RefreshCw, ShieldCheck } from "lucide-react";
 import type { QueueDecision } from "@/lib/teamDecisionQueue";
 import type { Alert, Member } from "@/app/workspace/types";
 import {
@@ -146,7 +146,7 @@ export default function ActivityView({
     <>
       <PageTitle
         eyebrow="Audit-ready activity"
-        title="A living security record."
+        title="Every release decision, owner, and delivery event."
         copy="Release events and decisions stay visible to everyone with workspace access."
       />
       <section
@@ -165,6 +165,7 @@ export default function ActivityView({
               <option value="monitoring">Monitoring</option>
               <option value="notification">Notifications</option>
               <option value="digest">Weekly digests</option>
+              <option value="badge">Badges</option>
             </select>
           </label>
           <label>
@@ -286,7 +287,7 @@ export default function ActivityView({
         {auditEvents.map((event) => (
           <article key={`${event.object_type}:${event.event_id}`}>
             <span>
-              {event.object_type === "decision" ? <ShieldCheck /> : <Bell />}
+              {event.object_type === "decision" ? <ShieldCheck /> : event.object_type === "badge" ? <BadgeCheck /> : <Bell />}
             </span>
             <div>
               <strong>{humanize(event.action)}</strong>

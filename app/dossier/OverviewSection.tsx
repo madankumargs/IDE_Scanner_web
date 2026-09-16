@@ -18,7 +18,7 @@ export default function OverviewSection({ decision, scan, actionableGroups, note
   const canonicalReason = String(scan.decision_reason || decisionExplanation(decision));
   const gaugeBand = decision === "block" ? "high" : decision === "review" ? "mid" : decision === "allow" ? "low" : "info";
   return <>
-    <DossierSectionHead eyebrow="Security brief" title={decisionHeadline(decision)} detail={detailFor(decision, canonicalReason)} />
+    <DossierSectionHead eyebrow="Decision context" title={decisionHeadline(decision)} detail={detailFor(decision, canonicalReason)} />
     <DecisionSummary decision={decision} scan={scan} />
     <ol className="reportTrace" aria-label="Decision trace">
       <TraceStep number="1" title="Artifact bound" detail="Extension, version, hash, and scan identity fixed" />

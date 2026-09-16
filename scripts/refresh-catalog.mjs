@@ -167,6 +167,13 @@ async function notifyWatchersOfRelease(extensionId, version) {
   const events = watches.map((watch) => ({ team_id: watch.team_id, extension_id: extensionId, baseline_scan_id: watch.baseline_scan_id, baseline_version: watch.baseline_version, target_version: version, state: "release_detected", materiality: "analysis_unavailable", dedupe_key: `release:${extensionId}@${version}` }));
   const eventWrite = await db.from("team_release_events").upsert(events, { onConflict: "team_id,dedupe_key", ignoreDuplicates: true });
   if (eventWrite.error) throw eventWrite.error;
+  const observedAt = new Date().toISOString();
+  const watchUpdate = await db.from("team_watchlist_items")
+    .update({ last_observed_version: version, last_event_at: observedAt })
+    .eq("extension_id", extensionId)
+    .eq("monitoring_state", "monitoring")
+    .in("team_id", watches.map((watch) => watch.team_id));
+  if (watchUpdate.error) throw watchUpdate.error;
   const alerts = watches.map((watch) => ({
     team_id: watch.team_id,
     extension_id: extensionId,

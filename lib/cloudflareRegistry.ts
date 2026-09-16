@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { unstable_cache } from "next/cache";
 
 type RegistryChunk = { payload: string };
 type RegistryCatalogEntry = Record<string, unknown>;
@@ -30,10 +31,19 @@ async function readChunks(
   }
 }
 
+// Registry chunks are immutable between publication imports. Persisting the
+// assembled read in OpenNext's incremental cache avoids reparsing the entire
+// catalog on every public page request.
+const readChunksCached = unstable_cache(
+  async (query: string, value: string) => readChunks(query, value),
+  ["cloudflare-registry-chunks-v1"],
+  { revalidate: 300, tags: ["registry-catalog"] },
+);
+
 export async function getCloudflareRegistrySection<T>(
   section: string,
 ): Promise<T | null> {
-  const payload = await readChunks(
+  const payload = await readChunksCached(
     "SELECT payload FROM registry_section_chunks WHERE section = ? ORDER BY chunk_index",
     section,
   );
@@ -48,13 +58,17 @@ export async function getCloudflareRegistrySection<T>(
 export async function getCloudflareRegistryProduct<T>(
   extensionId: string,
 ): Promise<T | null> {
-  const payload = await readChunks(
+  const payload = await readChunksCached(
+    "SELECT payload FROM registry_product_chunks WHERE extension_id = ? ORDER BY chunk_index",
+    extensionId,
+  );
+  const fallbackPayload = payload || await readChunksCached(
     "SELECT payload FROM registry_product_chunks WHERE lower(extension_id) = lower(?) ORDER BY chunk_index",
     extensionId,
   );
-  if (!payload) return null;
+  if (!fallbackPayload) return null;
   try {
-    return JSON.parse(payload) as T;
+    return JSON.parse(fallbackPayload) as T;
   } catch {
     return null;
   }

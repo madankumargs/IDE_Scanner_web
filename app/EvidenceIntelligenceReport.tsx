@@ -98,7 +98,7 @@ export default function EvidenceIntelligenceReport({
           <p className={styles.goalHint}>{REVIEW_GOALS.find((goal) => goal.value === reviewGoal)?.description}</p>
           <button type="button" onClick={() => void generate()} disabled={state === "loading"}>
             {state === "loading" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <BrainCircuit aria-hidden="true" />}
-            {state === "loading" ? "Reading exact evidence…" : report ? "Generate again" : "Generate reviewer guide"}
+            {state === "loading" ? "Reading exact evidence…" : report ? "Regenerate from exact report" : "Generate reviewer guide"}
           </button>
           <details className={styles.dataDisclosure}><summary>What leaves Abscissa?</summary><p>Only bounded, redacted report facts: identity, decision metadata, capabilities, finding summaries, file references, dependency names and advisory counts, coverage, and normalized impact inputs. Raw source, README text, credentials, advisory payloads, and hidden reasoning are excluded.</p></details>
         </div>

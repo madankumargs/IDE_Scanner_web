@@ -518,7 +518,7 @@ export default function NotificationSettings({
             <header>
               <div>
                 <span>Weekly security digest</span>
-                <h2>One useful reason to come back.</h2>
+                <h2>A weekly queue of release changes.</h2>
                 <p>
                   Every week, GuardRails summarizes release changes,
                   high-priority evidence, decisions, and the queue that still

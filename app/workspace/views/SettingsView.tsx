@@ -177,7 +177,7 @@ export default function SettingsView({
               <BillingPanel teamId={team.id} getAuthHeaders={getAuthHeaders} />
               <div className={styles.settingBlock}>
                 <span>Access model</span>
-                <h2>Clear responsibility at every level</h2>
+                <h2>Who can change a release decision</h2>
                 <div className={styles.roleGuide}>
                   {roles.map((role) => (
                     <article key={role.id}>

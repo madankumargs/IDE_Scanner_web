@@ -73,9 +73,9 @@ export default function SecurityPage() {
             <em>visible boundaries.</em>
           </h1>
           <p>
-            GuardRails analyzes privileged developer tooling. The product should
-            make it easy to see what is isolated, what is retained, and where a
-            result stops being a guarantee.
+            GuardRails analyzes privileged developer tooling. This page records
+            the boundaries a reviewer needs to check: what runs, what is
+            retained, and where an analysis result stops being a guarantee.
           </p>
           <div className={styles.actions}>
             <Link href="/settings">

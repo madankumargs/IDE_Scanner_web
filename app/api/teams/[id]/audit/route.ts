@@ -50,7 +50,7 @@ export async function GET(request: Request, context: Context) {
     if (provider === "cloudflare") {
       const workspace = await getWorkspaceState(id);
       const events = filterTeamAuditEvents(workspace.audit as TeamAuditEvent[], filters);
-      const visibleEvents = role === "analyst" || role === "viewer" ? events.filter((event) => ["decision", "monitoring"].includes(event.object_type)) : events;
+      const visibleEvents = role === "analyst" || role === "viewer" ? events.filter((event) => ["decision", "monitoring", "badge"].includes(event.object_type)) : events;
       const manifest = auditManifest(id, visibleEvents);
       if (format === "csv") return new Response(teamAuditCsv(visibleEvents), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="guardrails-audit-${id}.csv"`, "X-GuardRails-SHA256": manifest.sha256, "Cache-Control": "private, no-store" } });
       return NextResponse.json({ manifest, events: visibleEvents }, { headers: { "Cache-Control": "private, no-store" } });
@@ -146,7 +146,7 @@ export async function GET(request: Request, context: Context) {
     const visibleEvents =
       role === "analyst" || role === "viewer"
         ? events.filter((event) =>
-            ["decision", "monitoring"].includes(event.object_type),
+            ["decision", "monitoring", "badge"].includes(event.object_type),
           )
         : events;
     const manifest = auditManifest(id, visibleEvents);
@@ -197,11 +197,14 @@ function normalizeEvents(
   const events: TeamAuditEvent[] = [];
   for (const event of sources.domainEvents) {
     const objectType = domainObjectType(event.object_type);
+    const rawAction = String(event.action);
     events.push({
       event_id: String(event.id),
       workspace_id: workspaceId,
       actor_id: text(event.actor_id),
-      action: `${objectType}_${String(event.action)}`,
+      action: rawAction.startsWith("team_badge_")
+        ? rawAction
+        : `${objectType}_${rawAction}`,
       object_type: objectType,
       object_id: String(event.object_id),
       extension_id: text(event.extension_id),
@@ -331,6 +334,7 @@ function domainObjectType(value: unknown): TeamAuditEvent["object_type"] {
     team_notification_channels: "channel",
     team_monitoring_preferences: "preference",
     team_monitoring_alerts: "monitoring",
+    badge: "badge",
   };
   return mapping[String(value)] || "unknown";
 }

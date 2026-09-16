@@ -1,19 +1,16 @@
 import { notFound } from "next/navigation";
 import PublicSecuritySummary from "@/app/PublicSecuritySummary";
 import { getExtensionProduct, getVersionProduct } from "@/lib/productData";
-import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
-import { cloudflareSessionActive } from "@/lib/cloudflareSession";
-import { serverDb } from "@/lib/supabaseServer";
 
-export const dynamic = "force-dynamic";
+// This is a public, exact-release summary. Keep it on ISR so a burst of
+// visitors does not make every request repeat the D1 and registry work.
+export const revalidate = 300;
 
 export default async function VersionPage({ params }: { params: Promise<{ id: string; version: string }> }) {
   const route = await params;
   const id = decodeURIComponent(route.id);
   const version = decodeURIComponent(route.version);
-  const cloudflare = cloudflarePrivateAvailable();
-  const [signedIn, extensionProduct, versionProduct] = await Promise.all([
-    cloudflare ? cloudflareSessionActive() : serverDb().then((db) => db.auth.getClaims().then((result) => Boolean(result.data?.claims))).catch(() => false),
+  const [extensionProduct, versionProduct] = await Promise.all([
     getExtensionProduct(id),
     getVersionProduct(id, version),
   ]);
@@ -26,5 +23,8 @@ export default async function VersionPage({ params }: { params: Promise<{ id: st
       ? { ...item, latest_scan_id: scan.id, scan_state: scan.analysis_status, decision: scan.decision, coverage_percent: scan.coverage_percent, scanned_at: scan.scanned_at || scan.created_at }
       : item)
     : extensionProduct.versions;
-  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={signedIn}/>;
+  // Authentication is intentionally resolved by the full-analysis route. A
+  // public summary must remain cacheable and must not vary its HTML by a
+  // session cookie.
+  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={false}/>;
 }

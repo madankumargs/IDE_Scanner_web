@@ -85,7 +85,7 @@ export default function ReportsPage() {
             <Link href="/scan">
               <Import /> Import a report <ArrowRight />
             </Link>
-            <Link href="/registry">Explore public reports</Link>
+            <Link href="/registry">Browse the public registry</Link>
           </div>
         </div>
         <div

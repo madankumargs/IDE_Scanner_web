@@ -20,7 +20,7 @@ export const SARVAM_REASONING_MODELS = {
   "sarvam-105b": {
     endpoint: "/v1/chat/completions",
     label: "Sarvam 105B",
-    use: "Primary security reasoning and structured reviewer briefs",
+    use: "Primary security reasoning and structured reviewer guides",
   },
   "deepseekv4-flash": {
     endpoint: "/v2/chat/completions",
@@ -50,8 +50,10 @@ export const SARVAM_REASONING_MODELS = {
 } as const;
 
 export type SarvamReasoningModel = keyof typeof SARVAM_REASONING_MODELS;
+/** @deprecated Use IntelligenceReviewGoal with the validated reviewer guide. */
 export type ReviewAudience = "security_lead" | "engineer" | "publisher";
 
+/** @deprecated The essay-shaped response is retained only for old imports. */
 export type EvidenceReviewBrief = {
   headline: string;
   what_changed: string[];
@@ -61,6 +63,7 @@ export type EvidenceReviewBrief = {
   evidence_refs: string[];
 };
 
+/** @deprecated Use EvidenceIntelligenceContext instead. */
 export type ReviewEvidenceInput = {
   extensionId: string;
   version: string;
@@ -90,7 +93,7 @@ export class SarvamProviderError extends Error {
 }
 
 export class SarvamOutputError extends Error {
-  constructor(message = "Sarvam returned an unsupported review brief.") {
+  constructor(message = "Sarvam returned an unsupported reviewer guide.") {
     super(message);
     this.name = "SarvamOutputError";
   }

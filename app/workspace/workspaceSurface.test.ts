@@ -45,7 +45,7 @@ describe("GuardRails workspace product surface", () => {
 
   it("gives first-time users a guided activation step", () => {
     expect(workspace).toContain("Step 1 of 3");
-    expect(workspace).toContain("Build your security workspace.");
+    expect(workspace).toContain("Set up your first release review.");
     expect(workspace).toContain("Exact release baselines");
   });
 
@@ -93,10 +93,12 @@ describe("GuardRails workspace product surface", () => {
       "setDecisions([])",
       "setMembers([])",
       "setWatchItems([])",
+      "setBadgeItems([])",
     ]) {
       expect(workspace).toContain(reset);
     }
     expect(workspace).toContain('setDataState("error")');
+    expect(workspace).toContain("responses.slice(0, 6)");
   });
 
   it("has explicit decision persistence feedback", () => {

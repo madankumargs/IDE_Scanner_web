@@ -159,7 +159,7 @@ export const solutions = {
     title: "Give autonomous tools",
     emphasis: "clear, limited access.",
     intro:
-      "Explore the permission model for files, commands, network destinations, secrets, tools, and delegation before the native runtime is built.",
+      "Model requests for files, commands, network destinations, secrets, tools, and delegation before a native runtime is built.",
     icon: Bot,
     promise: "Capability before execution",
     outcomes: [
@@ -198,7 +198,7 @@ export const solutions = {
           "Record allow, deny, or prompt with a stable reason and policy version.",
       },
     ],
-    cta: "Explore the GuardRails permission prototype.",
+    cta: "Inspect the GuardRails permission prototype.",
     href: "/ide",
   },
 } satisfies Record<string, Solution>;

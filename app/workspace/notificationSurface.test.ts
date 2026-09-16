@@ -20,7 +20,7 @@ describe("workspace notifications product surface", () => {
   it("provides a real notification center rather than an inert bell", () => {
     expect(workspace).toContain("<NotificationCenter");
     expect(workspace).toContain("aria-expanded={notificationOpen}");
-    expect(center).toContain("What changed, in one place.");
+    expect(center).toContain("Release changes awaiting your team.");
     expect(center).toContain("Delivery needs attention");
   });
 
@@ -56,7 +56,7 @@ describe("workspace notifications product surface", () => {
   it("offers a real weekly Slack and email digest schedule with a live preview", () => {
     for (const copy of [
       "Weekly security digest",
-      "One useful reason to come back.",
+      "A weekly queue of release changes.",
       "Next digest preview",
       "Delivery day",
       "Time (UTC)",

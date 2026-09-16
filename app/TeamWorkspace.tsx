@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArrowRight,
+  BadgeCheck,
   Bell,
   Blocks,
   CheckCircle2,
@@ -45,6 +46,7 @@ import NotificationSettings, {
 } from "@/app/workspace/NotificationSettings";
 import BillingPanel from "@/app/workspace/BillingPanel";
 import TeamInventoryPanel from "@/app/workspace/TeamInventoryPanel";
+import BadgeStudioView from "@/app/workspace/views/BadgeStudioView";
 import { browserDb } from "@/lib/supabase";
 import { browserAuthHeaders } from "@/lib/browserAuth";
 import {
@@ -93,6 +95,12 @@ type WatchItem = {
     | Array<{ display_name?: string }>
     | null;
 };
+type BadgeItem = {
+  extension_id: string;
+  status?: string;
+  version?: string;
+  risk_score?: number | null;
+};
 type MonitoringHealth = {
   status: "healthy" | "degraded" | "unknown";
   last_checked_at: string | null;
@@ -117,6 +125,7 @@ type View =
   | "inventory"
   | "inbox"
   | "extensions"
+  | "badges"
   | "decisions"
   | "activity"
   | "settings";
@@ -126,6 +135,7 @@ const nav = [
   ["inventory", "Inventory", Laptop],
   ["inbox", "Review inbox", Inbox],
   ["extensions", "Extensions", Blocks],
+  ["badges", "Badges", BadgeCheck],
   ["decisions", "Decisions", ShieldCheck],
   ["activity", "Activity", Activity],
 ] as const;
@@ -224,6 +234,7 @@ export default function TeamWorkspace(
   const [decisions, setDecisions] = useState<QueueDecision[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [watchItems, setWatchItems] = useState<WatchItem[]>([]);
+  const [badgeItems, setBadgeItems] = useState<BadgeItem[]>([]);
   const [notificationChannels, setNotificationChannels] = useState<
     NotificationChannel[]
   >([]);
@@ -307,6 +318,7 @@ export default function TeamWorkspace(
     setDecisions([]);
     setMembers([]);
     setWatchItems([]);
+    setBadgeItems([]);
     setNotificationChannels([]);
     setNotificationDeliveries([]);
     setDigestDeliveries([]);
@@ -321,11 +333,12 @@ export default function TeamWorkspace(
         fetch(`${base}/watchlist`, { headers }),
         fetch(`${base}/notification-channels`, { headers }),
         fetch(`${base}/monitoring-preferences`, { headers }),
+        fetch(`${base}/badges`, { headers }),
       ]);
       const bodies = await Promise.all(
         responses.map((response) => response.json().catch(() => ({}))),
       );
-      if (responses.some((response) => !response.ok))
+      if (responses.slice(0, 6).some((response) => !response.ok))
         throw new Error("Some workspace data could not be refreshed.");
       setAlerts(Array.isArray(bodies[0].alerts) ? bodies[0].alerts : []);
       setDecisions(
@@ -351,6 +364,9 @@ export default function TeamWorkspace(
         ...defaultNotificationPreferences,
         ...bodies[5],
       });
+      // Badge Studio is an additive feature. A pending Supabase/D1 migration
+      // must not blank the rest of an existing workspace during rollout.
+      setBadgeItems(responses[6].ok && Array.isArray(bodies[6]?.badges) ? bodies[6].badges : []);
       setDataState("ready");
     } catch {
       setDataState("error");
@@ -905,6 +921,7 @@ export default function TeamWorkspace(
               decisions={sampleMode ? sampleDecisions : openDecisions}
               alerts={sampleMode ? sampleAlerts : alerts}
               watches={sampleMode ? sampleWatches : watchItems}
+              badges={sampleMode ? [] : badgeItems}
               health={
                 sampleMode
                   ? {
@@ -954,8 +971,19 @@ export default function TeamWorkspace(
           {view === "extensions" ? (
             <ExtensionsView
               watches={watchItems}
+              badges={badgeItems}
               health={monitoringHealth}
               onRefresh={loadWorkspace}
+            />
+          ) : null}
+          {view === "badges" ? (
+            <BadgeStudioView
+              key={activeTeam.id}
+              teamId={activeTeam.id}
+              role={activeTeam.role}
+              watches={watchItems}
+              initialExtension={props.initialExtension}
+              getAuthHeaders={getAuthHeaders}
             />
           ) : null}
           {view === "decisions" ? (
@@ -1122,10 +1150,10 @@ function WorkspaceOnboarding({
         <div className={styles.onboardingIcon}>
           <ShieldCheck />
         </div>
-        <h1>Build your security workspace.</h1>
+        <h1>Set up your first release review.</h1>
         <p>
-          Start with a name. Next, GuardRails will help you monitor your first
-          extension and invite your team.
+          Name the workspace, anchor the first exact extension release you want
+          to monitor, and invite the person who will review changes.
         </p>
         <form onSubmit={submit}>
           <label>
@@ -1370,7 +1398,7 @@ function WorkspaceSetup({
       <div className={styles.setupLayout}>
         <aside>
           <span>Workspace setup</span>
-          <h2>Start with real protection.</h2>
+          <h2>Anchor your first release baseline.</h2>
           <ol>
             {labels.map((label, index) => (
               <li
@@ -1687,6 +1715,7 @@ function Overview({
   decisions,
   alerts,
   watches,
+  badges,
   health,
   overdue,
   failed,
@@ -1699,6 +1728,7 @@ function Overview({
   decisions: QueueDecision[];
   alerts: Alert[];
   watches: WatchItem[];
+  badges: Array<{ extension_id?: string; status?: string }>;
   health: MonitoringHealth;
   overdue: number;
   failed: number;
@@ -1707,6 +1737,20 @@ function Overview({
   onSample: (value: boolean) => void;
   onNavigate: (view: View) => void;
 }) {
+  const watchedExtensions = new Set(
+    watches.map((watch) => watch.extension_id.toLowerCase()),
+  );
+  const badgeExtensions = new Set(
+    badges
+      .filter((badge) => ["ready", "stale"].includes(badge.status || ""))
+      .map((badge) => String(badge.extension_id || "").toLowerCase())
+      .filter(Boolean),
+  );
+  const coveredExtensions = [...watchedExtensions].filter((extensionId) =>
+    badgeExtensions.has(extensionId),
+  ).length;
+  const staleBadge = badges.some((badge) => badge.status === "stale");
+  const uncoveredExtensions = Math.max(0, watchedExtensions.size - coveredExtensions);
   return (
     <>
       {sampleMode ? (
@@ -1782,6 +1826,13 @@ function Overview({
             failed ? "Delivery needs attention" : "Monitoring is operational"
           }
           tone={failed ? "red" : "green"}
+        />
+        <Metric
+          label="Badge coverage"
+          value={`${coveredExtensions}/${watchedExtensions.size}`}
+          detail={staleBadge ? "A release needs refresh" : uncoveredExtensions ? `${uncoveredExtensions} watched release${uncoveredExtensions === 1 ? " needs" : "s need"} a badge` : "Every watched release is covered"}
+          tone={staleBadge || uncoveredExtensions ? "amber" : "green"}
+          onClick={sampleMode ? undefined : () => onNavigate("badges")}
         />
       </section>
       <div className={styles.overviewGrid}>
@@ -2496,10 +2547,12 @@ function DecisionReceiptView({ receipt }: { receipt: DecisionReceipt }) {
 }
 function ExtensionsView({
   watches,
+  badges,
   health,
   onRefresh,
 }: {
   watches: WatchItem[];
+  badges: BadgeItem[];
   health: MonitoringHealth;
   onRefresh: () => Promise<void>;
 }) {
@@ -2512,6 +2565,9 @@ function ExtensionsView({
         item.monitoring_state || "baseline_pending",
       ),
   ).length;
+  const badgeByExtension = new Map(
+    badges.map((badge) => [badge.extension_id.toLowerCase(), badge]),
+  );
   return (
     <>
       <PageTitle
@@ -2575,6 +2631,7 @@ function ExtensionsView({
           <span>Extension</span>
           <span>Baseline</span>
           <span>Monitoring state</span>
+          <span>Badge</span>
           <span>Last event</span>
         </header>
         {watches.map((item) => (
@@ -2591,6 +2648,11 @@ function ExtensionsView({
               <i />
               {humanize(item.monitoring_state || "baseline pending")}
             </span>
+            <small>
+              {badgeByExtension.has(item.extension_id.toLowerCase())
+                ? `Badge · ${humanize(badgeByExtension.get(item.extension_id.toLowerCase())?.status || "ready")}`
+                : "No badge yet"}
+            </small>
             <time>
               {formatWorkspaceTime(item.last_event_at || item.created_at)}
             </time>
@@ -2784,7 +2846,7 @@ function ActivityView({
     <>
       <PageTitle
         eyebrow="Audit-ready activity"
-        title="A living security record."
+        title="Every release decision, owner, and delivery event."
         copy="Release events and decisions stay visible to everyone with workspace access."
       />
       <section
@@ -3106,7 +3168,7 @@ function SettingsView({
               <BillingPanel teamId={team.id} getAuthHeaders={getAuthHeaders} />
               <div className={styles.settingBlock}>
                 <span>Access model</span>
-                <h2>Clear responsibility at every level</h2>
+                <h2>Who can change a release decision</h2>
                 <div className={styles.roleGuide}>
                   {roles.map((role) => (
                     <article key={role.id}>

@@ -47,10 +47,10 @@ export default function WorkspaceOnboarding({
         <div className={styles.onboardingIcon}>
           <ShieldCheck />
         </div>
-        <h1>Build your security workspace.</h1>
+        <h1>Set up your first release review.</h1>
         <p>
-          Start with a name. Next, GuardRails will help you monitor your first
-          extension and invite your team.
+          Name the workspace, anchor the first exact extension release you want
+          to monitor, and invite the person who will review changes.
         </p>
         <form onSubmit={submit}>
           <label>

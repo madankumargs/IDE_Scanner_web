@@ -13,7 +13,13 @@ export type ProductEvent =
   | (BaseEvent & { name: "watch_created"; scope: "personal" | "team" })
   | (BaseEvent & { name: "decision_created"; decision: "allow" | "review" | "block" | "exception" })
   | (BaseEvent & { name: "alert_delivered"; channel: "slack" | "email" | "webhook" | "jira" })
-  | (BaseEvent & { name: "alert_acknowledged"; scope: "personal" | "team" });
+  | (BaseEvent & { name: "alert_acknowledged"; scope: "personal" | "team" })
+  | (BaseEvent & { name: "team_badge_studio_opened"; badge_count: number })
+  | (BaseEvent & { name: "team_badge_scan_requested"; mode: "exact_release" })
+  | (BaseEvent & { name: "team_badge_created"; mode: "exact_release" })
+  | (BaseEvent & { name: "team_badge_copied"; format: "markdown" | "html" })
+  | (BaseEvent & { name: "team_badge_report_opened"; mode: "exact_release" })
+  | (BaseEvent & { name: "team_badge_refresh_intent"; mode: "exact_release" });
 
 /**
  * Product events intentionally exclude extension IDs, report content, artifact hashes,

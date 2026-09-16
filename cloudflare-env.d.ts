@@ -1,6 +1,8 @@
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   all<T = unknown>(): Promise<{ results: T[] }>;
+  first<T = unknown>(): Promise<T | null>;
+  run<T = unknown>(): Promise<T>;
 }
 
 interface D1Database {

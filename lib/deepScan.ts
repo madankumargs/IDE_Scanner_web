@@ -12,9 +12,18 @@ export class DeepScanUnavailableError extends Error {
   }
 }
 
-export async function queueDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request, requestedBy: string, force = false): Promise<Record<string, unknown>> {
+export type DeepScanPurpose = "user_request" | "team_badge";
+
+export async function queueDeepScan(
+  extensionId: string,
+  requestedVersion: string | undefined,
+  request: Request,
+  requestedBy: string,
+  force = false,
+  scanPurpose: DeepScanPurpose = "user_request",
+): Promise<Record<string, unknown>> {
   if (cloudflarePrivateAvailable()) {
-    return queueCloudflareDeepScan(extensionId, requestedVersion, request, { id: requestedBy, email: "", display_name: "", provider: "github", provider_subject: requestedBy, user_metadata: {}, app_metadata: { provider: "github" } }, force);
+    return queueCloudflareDeepScan(extensionId, requestedVersion, request, { id: requestedBy, email: "", display_name: "", provider: "github", provider_subject: requestedBy, user_metadata: {}, app_metadata: { provider: "github" } }, force, scanPurpose);
   }
   const health = await getDeepScanHealth();
   if (!health.accepting_requests) throw new DeepScanUnavailableError("Deep Scan is not configured to accept requests.");
@@ -61,7 +70,7 @@ export async function queueDeepScan(extensionId: string, requestedVersion: strin
   // The workflow binds this job to its actual github.sha in the atomic claim.
   // Predicting main here creates a race when the branch advances before the
   // dispatched workflow starts.
-  const job = await db.from("scan_jobs").insert({ extension_id: canonicalExtensionId, version, profile: "deep", requester_hash: requesterHash, requested_by: requestedBy, scan_purpose: "user_request", status: "queued", expected_scanner_build: null, claim_protocol: 2 }).select("*").single();
+  const job = await db.from("scan_jobs").insert({ extension_id: canonicalExtensionId, version, profile: "deep", requester_hash: requesterHash, requested_by: requestedBy, scan_purpose: scanPurpose, status: "queued", expected_scanner_build: null, claim_protocol: 2 }).select("*").single();
   if (job.error) {
     const concurrent = await db.from("scan_jobs").select("*").eq("extension_id", canonicalExtensionId).eq("version", version).eq("profile", "deep").in("status", ["queued", "running"]).maybeSingle();
     if (concurrent.data) {
@@ -73,7 +82,7 @@ export async function queueDeepScan(extensionId: string, requestedVersion: strin
     throw job.error;
   }
   await subscribeToJob(String(job.data.id), requestedBy);
-  await db.from("scan_job_events").insert({ job_id: job.data.id, stage: "queued", event_type: "created", detail: { extension_id: canonicalExtensionId, version, requested_by: requestedBy } });
+  await db.from("scan_job_events").insert({ job_id: job.data.id, stage: "queued", event_type: "created", detail: { extension_id: canonicalExtensionId, version, requested_by: requestedBy, scan_purpose: scanPurpose } });
   let dispatched = false;
   try {
     dispatched = await dispatchDeepScan(String(job.data.id));

@@ -48,7 +48,7 @@ export default function NotificationCenter({
       <header>
         <div>
           <span>Workspace notifications</span>
-          <h2 id="notification-center-title">What changed, in one place.</h2>
+          <h2 id="notification-center-title">Release changes awaiting your team.</h2>
         </div>
         <button onClick={onClose} aria-label="Close notifications">
           <X />

@@ -147,7 +147,7 @@ export default function IntegrationsPage() {
       </section>
       <section className={styles.cta}>
         <div>
-          <small>Get started</small>
+          <small>Connect a delivery path</small>
           <h2>Inspect an extension today.</h2>
           <p>
             Open a public per-version report, then connect notifications to

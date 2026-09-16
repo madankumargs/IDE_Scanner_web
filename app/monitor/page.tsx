@@ -164,8 +164,8 @@ function MonitorGate({ extension }: { extension: string }) {
           <footer>
             <BellRing />
             <span>
-              <strong>One useful notification</strong>
-              <small>Not another generic activity feed</small>
+              <strong>One release delta</strong>
+              <small>Permission change with evidence attached</small>
             </span>
           </footer>
         </div>

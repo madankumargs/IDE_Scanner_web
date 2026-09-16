@@ -248,7 +248,7 @@ export default function WorkspaceSetup({
       <div className={styles.setupLayout}>
         <aside>
           <span>Workspace setup</span>
-          <h2>Start with real protection.</h2>
+          <h2>Anchor your first release baseline.</h2>
           <ol>
             {labels.map((label, index) => (
               <li

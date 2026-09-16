@@ -137,7 +137,7 @@ export default function ResearchPage() {
           </p>
         </div>
         <Link href="/registry">
-          Explore the registry <ArrowRight />
+          Open the Extension Registry <ArrowRight />
         </Link>
       </section>
     </main>

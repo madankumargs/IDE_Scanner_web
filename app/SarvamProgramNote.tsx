@@ -9,19 +9,20 @@ export default function SarvamProgramNote() {
       </div>
       <div className={styles.content}>
         <p className={styles.eyebrow}>Sarvam AI Startup Program</p>
-        <h2 id="sarvam-heading">Make security findings easier to understand.</h2>
+        <h2 id="sarvam-heading">Turn an exact release report into a reviewer guide.</h2>
         <p>
-          GuardRails has been accepted into Sarvam AI&apos;s Startup Program. We&apos;re
-          exploring Sarvam APIs for clear, localized summaries of structured
-          extension-security findings.
+          GuardRails has been accepted into Sarvam AI&apos;s Startup Program. We&apos;re exploring Sarvam APIs for a bounded interpretation layer across three review jobs:
+          decide whether to install, investigate a flagged release, or prepare
+          a publisher response.
         </p>
         <p className={styles.disclosure}>
-          The program supports our product exploration; GuardRails decisions still
-          come from exact artifacts, published evidence, and version-specific analysis.
+          Each guide cites exact report evidence. The deterministic decision remains authoritative. It stays grounded in exact artifacts, published evidence, and version-specific analysis. If the report cannot establish a
+          trigger → action → target chain, the guide says that chain is
+          unavailable; if generation fails, the report remains usable.
         </p>
         <div className={styles.links}>
           <a href="https://indus.sarvam.ai" target="_blank" rel="noreferrer">
-            Explore Sarvam Indus <ArrowUpRight />
+            Open Sarvam Indus <ArrowUpRight />
           </a>
           <a href="https://docs.sarvam.ai" target="_blank" rel="noreferrer">
             Read the API docs <ArrowUpRight />
@@ -30,8 +31,8 @@ export default function SarvamProgramNote() {
       </div>
       <aside className={styles.meta} aria-label="Sarvam AI program status">
         <span>Program relationship</span>
-        <strong>Exploring localized explanations</strong>
-        <small>For structured findings and developer-facing summaries.</small>
+        <strong>Evidence-cited reviewer guides</strong>
+        <small>Install decision · flagged-release investigation · publisher response.</small>
       </aside>
     </section>
   );

@@ -57,8 +57,8 @@ export default function SolutionPage({ solution }: { solution: Solution }) {
       </section>
       <section>
         <header className={styles.sectionHead}>
-          <span>Built for the role</span>
-          <h2>Less noise. More decision context.</h2>
+          <span>Evidence for this role</span>
+          <h2>The release question stays visible.</h2>
         </header>
         <div className={styles.outcomes}>
           {solution.outcomes.map(({ icon: OutcomeIcon, title, detail }) => (
@@ -72,17 +72,17 @@ export default function SolutionPage({ solution }: { solution: Solution }) {
       </section>
       <section className={styles.cta}>
         <div>
-          <small>Start with a real workflow</small>
+          <small>Choose the next review surface</small>
           <h2>{solution.cta}</h2>
           <p>
-            Use the working product surface now; no future runtime capability is
-            presented as already shipped.
+            Open the product surface for this job. The exact release, its
+            evidence, and the limits of the conclusion stay attached.
           </p>
         </div>
         {solution.callCta ? (
           <div className={styles.ctaActions}>
             <Link href={solution.href}>
-              Get started <ArrowRight />
+              Open the workflow <ArrowRight />
             </Link>
             <a href="mailto:hello@abscissa.dev?subject=Intro%20call%20(20%20min)">
               {solution.callCta} <ArrowRight />
@@ -90,7 +90,7 @@ export default function SolutionPage({ solution }: { solution: Solution }) {
           </div>
         ) : (
           <Link href={solution.href}>
-            Get started <ArrowRight />
+            Open the workflow <ArrowRight />
           </Link>
         )}
       </section>

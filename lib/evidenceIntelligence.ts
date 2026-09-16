@@ -694,18 +694,19 @@ export function buildDeterministicReviewFallback(
     ? [...context.release_delta.added.map((item, index) => ({ change_id: `added-${index + 1}`, text: `Added: ${item}`, evidence_refs: ["scan.baseline"] })), ...context.release_delta.removed.map((item, index) => ({ change_id: `removed-${index + 1}`, text: `Removed: ${item}`, evidence_refs: ["scan.baseline"] }))].slice(0, REVIEWER_GUIDE_LIMITS.release_changes)
     : [];
   const fallbackOwner: ReviewerGuideAction["owner"] = reviewGoal === "publisher_response" ? "publisher" : "security_team";
+  const primaryActionOwner: ReviewerGuideAction["owner"] = reviewGoal === "publisher_response" ? "publisher" : "you";
   const nextActions: ReviewerGuideAction[] = [
     {
       action_id: "fallback-artifact-check",
-      owner: reviewGoal === "publisher_response" ? "publisher" : "you",
-      priority: "now",
+      owner: primaryActionOwner,
+      priority: "now" as const,
       text: decision === "allow" ? "Compare the published artifact hash with this exact report before approval." : "Do not approve or install this exact version while the deterministic result is unresolved.",
       evidence_refs: uniqueStrings(["scan.decision", "scan.provenance"]),
     },
     {
       action_id: "fallback-rationale-review",
       owner: fallbackOwner,
-      priority: "next",
+      priority: "next" as const,
       text: reviewGoal === "publisher_response" ? "Explain or remediate the behavior named in the decision rationale, then submit a new artifact for review." : "Open the cited decision rationale and verify it against the exact report evidence.",
       evidence_refs: ["scan.reason"],
     },
@@ -1130,8 +1131,4 @@ function uniqueStrings(values: string[]): string[] {
 
 function isCertainty(value: unknown): value is EvidenceCertainty {
   return value === "observed" || value === "bounded_inference" || value === "unknown";
-}
-
-function isSection(value: unknown): value is IntelligenceSection {
-  return value === "decision" || value === "access_surface" || value === "data_flow" || value === "blast_radius" || value === "release_delta" || value === "context";
 }

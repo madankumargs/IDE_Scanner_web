@@ -2,7 +2,7 @@
 goal: Replace generic AI explanations with concise reviewer guidance for exact extension releases
 version: 2.0
 date_created: 2026-09-15
-last_updated: 2026-09-15
+last_updated: 2026-09-16
 owner: GuardRails
 status: In Progress
 tags: [feature, ai, security-review, ux, sarvam]
@@ -82,7 +82,20 @@ The current report repeats deterministic scan facts in long AI-written sections.
 | TASK-015 | Extend `/home/akprajwal/VScode/ide-scanner-web/lib/sarvam.test.ts` with schema fixtures for all three review goals, duplicate-conclusion rejection, causal-chain omission, length caps, and hidden reasoning exclusion. | Yes | 2026-09-15 |
 | TASK-016 | Extend `/home/akprajwal/VScode/ide-scanner-web/app/api/extensions/[id]/versions/[version]/scans/[scanId]/intelligence/route.test.ts` with invalid review-goal, signed-ticket, auth, same-origin, body-size, kill-switch, rate-limit, and provider-failure cases. | Yes | 2026-09-15 |
 | TASK-017 | Add or update `/home/akprajwal/VScode/ide-scanner-web/app/evidenceIntelligenceSurface.test.ts` to assert that the default view has one primary takeaway, no generic essay headings, visible citations, accessible certainty labels, and deterministic fallback copy. | Yes | 2026-09-15 |
-| TASK-018 | Run focused Vitest tests, `npx tsc --noEmit`, ESLint, production build, and authenticated in-app browser checks for all three review goals; verify that generated copy is concise, references exact evidence, and does not alter the deterministic decision. | In progress | 2026-09-15 |
+| TASK-018 | Run focused Vitest tests, `npx tsc --noEmit`, ESLint, production build, and authenticated in-app browser checks for all three review goals; verify that generated copy is concise, references exact evidence, and does not alter the deterministic decision. | In progress | 2026-09-16 |
+
+### Implementation Phase 5
+
+- GOAL-005: Make every user-facing surface describe the same evidence-first review workflow.
+
+| Task | Description | Completed | Date |
+|------|-------------|-----------|------|
+| TASK-019 | Audit public marketing, trust, registry, workspace, monitoring, and report-library copy for generic AI framing or claims that no longer match the reviewer-guide contract. Replace confirmed cases with release-, evidence-, ownership-, and boundary-specific language. | Yes | 2026-09-16 |
+| TASK-020 | Align the Sarvam program note and About page with the shipped reviewer-guide behavior: three review jobs, exact evidence citations, deterministic decisions, causal-chain refusal, and usable fallback behavior. | Yes | 2026-09-16 |
+| TASK-021 | Add `/home/akprajwal/VScode/ide-scanner-web/app/genericCopySurface.test.ts` as a copy regression check for retired generic phrases and required reviewer-guide language on audited surfaces. | Yes | 2026-09-16 |
+| TASK-022 | Retire the unused essay-shaped `/brief` endpoint and compatibility component with an explicit 410 migration response to `/intelligence`, so a second unvalidated AI contract cannot remain reachable. | Yes | 2026-09-16 |
+
+**Verification note (2026-09-16):** The final combined workspace passes 129 Vitest files / 523 tests, TypeScript, ESLint, `git diff --check`, the Next production build, the Cloudflare/OpenNext build, and `wrangler deploy --dry-run` (451 assets packaged; D1, Worker, email, and asset bindings resolved). Commit/push is pending because `.git` and `.git/index` are read-only in the managed workspace. Actual Cloudflare publish is pending because the saved Wrangler authentication expired and no `CLOUDFLARE_API_TOKEN` is available. Authenticated in-app browser verification is also pending because that browser backend is unavailable in this session; the connected Chrome surface was not substituted.
 
 ## 3. Alternatives
 

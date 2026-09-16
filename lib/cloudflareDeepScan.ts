@@ -87,7 +87,7 @@ export async function enqueueCloudflareCanonicalJobs(jobs: readonly CloudflareCa
   return queued;
 }
 
-export async function queueCloudflareDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request, user: AppAuthUser, force = false): Promise<Row> {
+export async function queueCloudflareDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request, user: AppAuthUser, force = false, scanPurpose: "user_request" | "team_badge" = "user_request"): Promise<Row> {
   const db = privateDb();
   const catalog = await getCloudflareRegistryCatalogExtension<{ id?: string; latest_version?: string }>(extensionId);
   const marketplace = catalog ? null : await resolveMarketplaceExtension(extensionId);
@@ -111,7 +111,7 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
   const createdAt = nowIso();
   const requester = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const requesterHash = createHash("sha256").update(`${runtimeEnv("SCAN_RATE_LIMIT_SECRET") || "ide-scanner"}:${requester}`).digest("hex");
-  await db.prepare(`INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requested_by,requester_hash,scan_purpose,created_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, canonicalExtensionId, version, "deep", "queued", "queued", user.id, requesterHash, "user_request", createdAt, createdAt, createdAt).run();
+  await db.prepare(`INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requested_by,requester_hash,scan_purpose,created_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, canonicalExtensionId, version, "deep", "queued", "queued", user.id, requesterHash, scanPurpose, createdAt, createdAt, createdAt).run();
   await subscribeCloudflareJob(id, user.id);
   await addCloudflareScanEvent(id, "queued", "created", { extension_id: canonicalExtensionId, version, requested_by: user.id });
   let dispatched = false;

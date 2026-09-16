@@ -46,7 +46,7 @@ function WorkspaceGate() {
   const clineAlert = sampleAlerts[0];
   const eslintWatch = sampleWatches[2];
   return <main className={styles.gate}>
-    <section className={styles.gateCopy}><span><i/> GuardRails workspace</span><h1>Every extension decision in one trusted place.</h1><p>Monitor exact releases, route meaningful changes to an owner, and keep the evidence behind every decision.</p><div className={styles.stateActions}><Link href="/account?next=/workspace">Create your workspace <ArrowRight/></Link><Link href="/registry">Explore public reports</Link></div><small>No credit card required · Public reports stay open</small></section>
+    <section className={styles.gateCopy}><span><i/> GuardRails workspace</span><h1>Keep every release decision beside its evidence.</h1><p>Monitor exact versions, route meaningful changes to an owner, and preserve the rationale behind each decision.</p><div className={styles.stateActions}><Link href="/account?next=/workspace">Create your workspace <ArrowRight/></Link><Link href="/registry">Browse public reports</Link></div><small>No credit card required · Public reports stay open</small></section>
     <section className={styles.gatePreview} aria-label="Example workspace preview">
       <header><span>Example workspace</span><em>Sample data</em></header>
       <div className={styles.previewMetrics}>

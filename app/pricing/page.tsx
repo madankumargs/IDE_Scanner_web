@@ -294,7 +294,7 @@ export default function PricingPage() {
 
       <section className={styles.cta}>
         <div>
-          <small>Get started</small>
+          <small>Choose your review path</small>
           <h2>Inspect an extension first.</h2>
           <p>
             Public reports require no account. Want to talk it through? Ask for a
