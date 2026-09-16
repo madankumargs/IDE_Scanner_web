@@ -14,6 +14,9 @@ rewrites the old result.
 4. Verify both migration stores are current before deploying the Worker.
 5. Check the signed-out boundaries: `/api/auth/session`, `/api/team-badges/<token>`,
    and `/api/team-badge-wall/<slug>`.
+6. Confirm `/api/deep-scans/health` reports `ready` after the next worker poll.
+   The health signal is a runner heartbeat, so an empty queue is healthy and does
+   not need a completed scan to stay green.
 
 ## Pause and rollback
 
@@ -38,6 +41,11 @@ retryable failure.
 Weekly digests are opt-in (`weekly_digest=true`) and follow each workspace’s UTC
 weekday/hour preferences. They are only generated for enabled channels and are
 recorded in the workspace digest history.
+
+Deep Scan runner heartbeats are written when the worker claims the queue, even
+when no job is available. A stale heartbeat means the worker schedule or runner
+credentials need attention; it does not reject new signed-in requests, which
+remain queued for the next successful poll.
 
 ## Privacy boundary
 

@@ -1,5 +1,6 @@
 import { serviceDb } from "@/lib/supabase";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
+import { getCloudflareRunnerHeartbeat } from "@/lib/cloudflareRunnerStatus";
 import { privateDb } from "@/lib/cloudflarePrivate";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 
@@ -13,8 +14,7 @@ export async function getDeepScanHealth(): Promise<DeepScanHealth> {
   if (cloudflarePrivateAvailable()) {
     if (!runtimeEnv("GITHUB_ACTIONS_TOKEN")) return { accepting_requests: false, status: "configuration_unavailable", last_seen_at: null };
     try {
-      const latest = await privateDb().prepare("SELECT completed_at FROM app_scan_jobs WHERE status='complete' ORDER BY completed_at DESC LIMIT 1").first<{ completed_at?: unknown }>();
-      const lastSeen = latest?.completed_at ? String(latest.completed_at) : null;
+      const lastSeen = await getCloudflareRunnerHeartbeat(privateDb());
       const recent = lastSeen ? Date.now() - new Date(lastSeen).getTime() < 12 * 60_000 : false;
       return { accepting_requests: true, status: recent ? "ready" : "runner_delayed", last_seen_at: lastSeen };
     } catch {

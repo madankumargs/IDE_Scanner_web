@@ -29,7 +29,7 @@ The feature is considered released only when every gate below has an evidence li
 | Gate | Required evidence | Current state |
 | --- | --- | --- |
 | Repository checks | `npm test`, `npx tsc --noEmit`, lint, and `npm run cf:build` pass | Final gate is run after the provider-delivery hardening; public corpus remains required |
-| D1 rollout | `npx wrangler d1 migrations apply abscissa-registry --remote` completes, including `0008_team_badges.sql`, `0009_team_badge_operational_fields.sql`, and `0010_notification_delivery_keys.sql` | Applied remotely; migration list and live `PRAGMA table_info` verification are up to date |
+| D1 rollout | `npx wrangler d1 migrations apply abscissa-registry --remote` completes, including `0008_team_badges.sql`, `0009_team_badge_operational_fields.sql`, `0010_notification_delivery_keys.sql`, and `0011_scan_runner_status.sql` | Applied remotely; migration list and live `PRAGMA table_info` verification are up to date |
 | Supabase compatibility rollout | Linked Supabase project applies the team badge schema and additive operational-field migration | Applied to linked project `kmdujtabqaxgoeltbxpq`; dry-run reports remote database up to date |
 | Worker rollout | `npx wrangler deploy --config wrangler.jsonc` succeeds and the deployed version exposes the `ABSCISSA_REGISTRY` binding | Final production deploy evidence is recorded after the release commit |
 | Authenticated smoke | Cloudflare session: workspace → Badge Studio → create/reuse → poll → copy/report; repeat with Supabase session | Cloudflare/Supabase compatibility, role, reuse, and fallback routes are covered by focused tests; live agent-browser had no reusable signed-in session, so an operator-owned authenticated pass remains the final evidence item. |

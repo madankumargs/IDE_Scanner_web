@@ -6,6 +6,7 @@ import { parseCookies, privateDb, newId, nowIso, sessionHash, type AppAuthUser }
 import { runtimeEnv } from "@/lib/runtimeEnv";
 import { resolveMarketplaceExtension } from "@/lib/marketplace";
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
+import { markCloudflareRunnerClaimed, markCloudflareRunnerCompleted, markCloudflareRunnerError, recordCloudflareRunnerHeartbeat } from "@/lib/cloudflareRunnerStatus";
 
 type Row = Record<string, unknown>;
 type Bundle = { metadata?: Row; extensions?: Row | Row[] };
@@ -209,6 +210,10 @@ export async function cloudflareScanProgress(job: Row): Promise<Row> {
 
 export async function claimCloudflareJob(input: { runnerId: string; jobId: string | null; githubRunId: number | null; githubSha: string }): Promise<Row | null> {
   const db = privateDb();
+  const heartbeatAt = nowIso();
+  // This is intentionally before the queue lookup: an empty queue is still a
+  // successful worker invocation and must keep the health signal fresh.
+  await recordCloudflareRunnerHeartbeat(db, input.runnerId, heartbeatAt);
   const where = input.jobId
     ? "id=? AND status='queued' AND (expected_scanner_build IS NULL OR lower(expected_scanner_build)=lower(?))"
     : "status='queued' AND (expected_scanner_build IS NULL OR lower(expected_scanner_build)=lower(?))";
@@ -217,6 +222,7 @@ export async function claimCloudflareJob(input: { runnerId: string; jobId: strin
   if (!job) return null;
   const now = nowIso();
   await db.prepare("UPDATE app_scan_jobs SET status='running',lifecycle_stage='running',expected_scanner_build=COALESCE(expected_scanner_build,?),runner_id=?,github_run_id=?,attempt_count=attempt_count+1,started_at=COALESCE(started_at,?),updated_at=?,last_event_at=? WHERE id=? AND status='queued'").bind(input.githubSha, input.runnerId, input.githubRunId, now, now, now, String(job.id)).run();
+  await markCloudflareRunnerClaimed(db, now);
   const updated = await db.prepare("SELECT * FROM app_scan_jobs WHERE id=?").bind(String(job.id)).first<Row>();
   await addCloudflareScanEvent(String(job.id), "running", "claimed", { runner_id: input.runnerId, scanner_build: input.githubSha });
   return updated;
@@ -262,6 +268,10 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
     if (replayed?.scan_id) return String(replayed.scan_id);
     throw error;
   }
+  // Observability must never turn a durably published scan into a retryable
+  // callback failure. The report and job transition above are the source of
+  // truth; runner status is best-effort metadata.
+  try { await markCloudflareRunnerCompleted(db, now); } catch { /* preserve the successful callback */ }
   return scanId;
 }
 
@@ -387,7 +397,9 @@ export async function getCloudflareSourcePreview(extensionId: string, version: s
 
 export async function failCloudflareScan(jobId: string, error: string): Promise<void> {
   const now = nowIso();
-  await privateDb().prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(error.slice(0, 2000), error.slice(0, 2000), now, now, now, jobId).run();
+  const db = privateDb();
+  await db.prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(error.slice(0, 2000), error.slice(0, 2000), now, now, now, jobId).run();
+  try { await markCloudflareRunnerError(db, error, now); } catch { /* preserve the terminal job state */ }
   await addCloudflareScanEvent(jobId, "failed", "worker_failed", { error: error.slice(0, 2000) });
 }
 
