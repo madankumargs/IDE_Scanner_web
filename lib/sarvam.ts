@@ -203,7 +203,8 @@ const INTELLIGENCE_RESPONSE_SCHEMA = {
 } as const;
 
 function buildIntelligenceResponseSchema(evidenceRefs: string[]) {
-  const refsField = { type: "array", items: { type: "string", enum: evidenceRefs }, maxItems: 6 };
+  const refsField = { type: "array", items: { type: "string", enum: evidenceRefs }, minItems: 1, maxItems: 6 };
+  const optionalRefsField = { type: "array", items: { type: "string", enum: evidenceRefs }, maxItems: 6 };
   return {
     ...INTELLIGENCE_RESPONSE_SCHEMA,
     properties: {
@@ -211,7 +212,7 @@ function buildIntelligenceResponseSchema(evidenceRefs: string[]) {
       primary_takeaway: { ...INTELLIGENCE_PRIMARY_SCHEMA, properties: { ...INTELLIGENCE_PRIMARY_SCHEMA.properties, evidence_refs: refsField } },
       event_chain: {
         ...INTELLIGENCE_RESPONSE_SCHEMA.properties.event_chain,
-        properties: { ...INTELLIGENCE_RESPONSE_SCHEMA.properties.event_chain.properties, evidence_refs: refsField, steps: { type: "array", items: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA, properties: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 4 } },
+        properties: { ...INTELLIGENCE_RESPONSE_SCHEMA.properties.event_chain.properties, evidence_refs: optionalRefsField, steps: { type: "array", items: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA, properties: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 4 } },
       },
       scenarios: { type: "array", items: { ...INTELLIGENCE_SCENARIO_SCHEMA, properties: { ...INTELLIGENCE_SCENARIO_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
       release_changes: { type: "array", items: { ...INTELLIGENCE_CHANGE_SCHEMA, properties: { ...INTELLIGENCE_CHANGE_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
