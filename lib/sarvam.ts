@@ -504,7 +504,11 @@ export async function createEvidenceIntelligenceReport(
     };
   } catch (error) {
     if (error instanceof EvidenceIntelligenceValidationError) {
-      console.warn("[sarvam-evidence-intelligence] validation failed", { ...providerPayloadShape(response.status, payload), validation_error: error.message.slice(0, 160) });
+      console.warn("[sarvam-evidence-intelligence] validation failed", {
+        ...providerPayloadShape(response.status, payload),
+        validation_error: error.message.slice(0, 160),
+        validation_site: error.stack?.split("\n")[1]?.trim().slice(0, 180),
+      });
       throw new SarvamOutputError(error.message);
     }
     throw error;
