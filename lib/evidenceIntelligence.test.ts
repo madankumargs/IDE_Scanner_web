@@ -131,6 +131,16 @@ describe("evidence intelligence output validation", () => {
     expect(reviewerGuide.scenarios[0].evidence_refs).toEqual(["capability.network.1"]);
   });
 
+  it("canonicalizes bounded model aliases for report ordinals and blast dimensions", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    const reviewerGuide = validateReviewerGuide(guide({
+      primary_takeaway: { ...guide().primary_takeaway, evidence_refs: ["finding-1"] },
+      scenarios: [{ ...guide().scenarios[0], evidence_refs: ["blast_radius.network"] }],
+    }), context);
+    expect(reviewerGuide.primary_takeaway.evidence_refs).toEqual(["finding.finding-1.1"]);
+    expect(reviewerGuide.scenarios[0].evidence_refs).toEqual(["blast.network"]);
+  });
+
   it("rejects a foreign evidence reference", () => {
     const context = compileEvidenceIntelligenceContext(product());
     expect(() => validateReviewerGuide(guide({ primary_takeaway: { ...guide().primary_takeaway, evidence_refs: ["finding.unknown"] } }), context)).toThrow(EvidenceIntelligenceValidationError);

@@ -975,7 +975,13 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
   }
   for (const node of context.data_flow.nodes) addVariants(node.id, node.evidence_refs);
   for (const edge of context.data_flow.edges) addVariants(edge.id, edge.evidence_refs);
-  for (const [name, dimension] of Object.entries(context.blast_radius.dimensions)) addVariants(`blast_radius.${name}`, dimension.evidence_refs);
+  for (const name of Object.keys(context.blast_radius.dimensions)) {
+    const exactRef = `blast.${name}`;
+    if (context.evidence.some((reference) => reference.ref === exactRef)) {
+      addVariants(`blast_radius.${name}`, [exactRef]);
+      addVariants(exactRef, [exactRef]);
+    }
+  }
   addVariants("release_delta", context.release_delta.evidence_refs);
   const scanAliases: Record<string, string> = {
     artifact: "scan.provenance",
@@ -998,7 +1004,14 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
     inventory: "scan.inventory",
   };
   for (const [alias, ref] of Object.entries(scanAliases)) addVariants(alias, [ref]);
+  const kindOrdinals = new Map<EvidenceReference["kind"], number>();
   for (const reference of context.evidence) {
+    const ordinal = (kindOrdinals.get(reference.kind) || 0) + 1;
+    kindOrdinals.set(reference.kind, ordinal);
+    if (reference.kind === "finding" || reference.kind === "file" || reference.kind === "dependency" || reference.kind === "capability") {
+      addVariants(`${reference.kind}-${ordinal}`, [reference.ref]);
+      addVariants(`${reference.kind}_${ordinal}`, [reference.ref]);
+    }
     const unindexedRef = reference.ref.replace(/\.\d+$/, "");
     addVariants(unindexedRef, [reference.ref]);
     addVariants(reference.ref, [reference.ref]);
