@@ -1036,7 +1036,8 @@ function rejectOverclaim(value: string): void {
   const securityTerms = /\b(?:malware|malicious(?:\s+intent|\s+behavior)?|compromis(?:e|ed|ing)|credential\s+theft|steal(?:s|ing)?\s+credentials?|exfiltrat(?:e|es|ed|ing|ion)|backdoor|ransomware|trojan)\b/i;
   const explicitNegation = /\b(?:not|no|never|without|cannot|can't|doesn't|does\s+not|isn't|is\s+not|wasn't|was\s+not|unconfirmed|unproven|unsupported|unknown|unclear)\b/i;
   for (const sentence of value.split(/[.!?;\n]+/)) {
-    if (securityTerms.test(sentence) && !explicitNegation.test(sentence)) throw new EvidenceIntelligenceValidationError("The intelligence report used an unsupported security assertion.");
+    const match = sentence.match(securityTerms);
+    if (match && !explicitNegation.test(sentence)) throw new EvidenceIntelligenceValidationError(`The intelligence report used an unsupported security assertion (${match[0].toLowerCase()}).`);
   }
 }
 
