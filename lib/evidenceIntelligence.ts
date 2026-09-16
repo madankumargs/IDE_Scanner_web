@@ -1016,7 +1016,17 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
 }
 
 function rejectOverclaim(value: string): void {
-  if (/\b(?:malicious intent|is malware|will exfiltrate|remote compromise|definitely compromised|certainly compromised|steal(?:s|ing)? credentials|backdoor)\b/i.test(value)) throw new EvidenceIntelligenceValidationError("The intelligence report used an unsupported security assertion.");
+  // Models often repeat the product's required uncertainty boundary (for
+  // example, "does not establish malicious intent"). Reject affirmative
+  // security conclusions, but do not mistake those explicit negations for
+  // an overclaim.
+  const affirmativePatterns = [
+    /\b(?:is|was|contains|constitutes|indicates|demonstrates|proves|confirms)\s+(?:malware|malicious intent|a backdoor|remote compromise)\b/i,
+    /\b(?:will|does|can|could|may)\s+(?:be used to\s+)?(?:exfiltrate|steal(?:s|ing)? credentials|remotely compromise)\b/i,
+    /\b(?:definitely|certainly)\s+(?:compromised|malicious)\b/i,
+    /\b(?:malicious intent|remote compromise|a backdoor)\s+(?:is|was)\s+(?:established|confirmed|proven)\b/i,
+  ];
+  if (affirmativePatterns.some((pattern) => pattern.test(value))) throw new EvidenceIntelligenceValidationError("The intelligence report used an unsupported security assertion.");
 }
 
 function rejectDecisionMutation(value: string, deterministicDecision: string): void {

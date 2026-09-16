@@ -141,6 +141,17 @@ describe("evidence intelligence output validation", () => {
     expect(() => validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], consequence: "This extension will exfiltrate and steal credentials." }] }), context)).toThrow(EvidenceIntelligenceValidationError);
   });
 
+  it("allows explicit uncertainty boundaries about unsupported security conclusions", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    const reviewerGuide = validateReviewerGuide(guide({
+      primary_takeaway: {
+        ...guide().primary_takeaway,
+        statement: "The evidence does not establish malicious intent or confirmed malware.",
+      },
+    }), context);
+    expect(reviewerGuide.primary_takeaway.statement).toContain("does not establish");
+  });
+
   it("rejects a model attempt to introduce a different decision", () => {
     const context = compileEvidenceIntelligenceContext(product());
     expect(() => validateReviewerGuide(guide({ primary_takeaway: { ...guide().primary_takeaway, statement: "The decision is allow and approve this release." } }), context)).toThrow(EvidenceIntelligenceValidationError);
