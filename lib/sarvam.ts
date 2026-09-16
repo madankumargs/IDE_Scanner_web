@@ -202,6 +202,25 @@ const INTELLIGENCE_RESPONSE_SCHEMA = {
   required: ["primary_takeaway", "event_chain", "scenarios", "release_changes", "next_actions", "unknowns"],
 } as const;
 
+function buildIntelligenceResponseSchema(evidenceRefs: string[]) {
+  const refsField = { type: "array", items: { type: "string", enum: evidenceRefs }, maxItems: 6 };
+  return {
+    ...INTELLIGENCE_RESPONSE_SCHEMA,
+    properties: {
+      ...INTELLIGENCE_RESPONSE_SCHEMA.properties,
+      primary_takeaway: { ...INTELLIGENCE_PRIMARY_SCHEMA, properties: { ...INTELLIGENCE_PRIMARY_SCHEMA.properties, evidence_refs: refsField } },
+      event_chain: {
+        ...INTELLIGENCE_RESPONSE_SCHEMA.properties.event_chain,
+        properties: { ...INTELLIGENCE_RESPONSE_SCHEMA.properties.event_chain.properties, evidence_refs: refsField, steps: { type: "array", items: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA, properties: { ...INTELLIGENCE_CHAIN_STEP_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 4 } },
+      },
+      scenarios: { type: "array", items: { ...INTELLIGENCE_SCENARIO_SCHEMA, properties: { ...INTELLIGENCE_SCENARIO_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
+      release_changes: { type: "array", items: { ...INTELLIGENCE_CHANGE_SCHEMA, properties: { ...INTELLIGENCE_CHANGE_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
+      next_actions: { type: "array", items: { ...INTELLIGENCE_ACTION_SCHEMA, properties: { ...INTELLIGENCE_ACTION_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
+      unknowns: { type: "array", items: { ...INTELLIGENCE_UNKNOWN_SCHEMA, properties: { ...INTELLIGENCE_UNKNOWN_SCHEMA.properties, evidence_refs: refsField } }, maxItems: 3 },
+    },
+  };
+}
+
 export function selectedSarvamModel(): SarvamReasoningModel {
   // The flagship endpoint is available on standard keys. Beta v2 models stay
   // allowlisted for operators who have explicitly enabled them.
@@ -465,7 +484,7 @@ export async function createEvidenceIntelligenceReport(
         json_schema: {
           name: "guardrails_security_intelligence_report",
           strict: true,
-          schema: INTELLIGENCE_RESPONSE_SCHEMA,
+          schema: buildIntelligenceResponseSchema(context.evidence.map((reference) => reference.ref)),
         },
       },
     }),
