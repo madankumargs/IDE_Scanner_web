@@ -35,6 +35,7 @@ export async function reconcileCloudflareBadgeHealth(
     if (!watchlist.length) continue;
     const releaseEvents = array(state.release_events);
     const audit = array(state.audit);
+    const alerts = array(state.alerts);
     let changed = false;
 
     for (const watch of watchlist) {
@@ -46,6 +47,18 @@ export async function reconcileCloudflareBadgeHealth(
       watch.last_observed_version = latestVersion;
       watch.last_event_at = now;
       changed = true;
+
+      const badgeRows = await db
+        .prepare("SELECT id,extension_id,version,status FROM app_team_badges WHERE team_id=? AND extension_id=? AND status IN ('ready','stale')")
+        .bind(team.team_id, extensionId)
+        .all<Record<string, unknown>>();
+      for (const badge of badgeRows.results) {
+        if (String(badge.status) !== "ready" || String(badge.version) === latestVersion) continue;
+        await db
+          .prepare("UPDATE app_team_badges SET status='stale',updated_at=? WHERE id=? AND team_id=? AND status='ready'")
+          .bind(now, String(badge.id), team.team_id)
+          .run();
+      }
 
       const alreadyQueued = releaseEvents.some((event) =>
         stringValue(event.extension_id).toLowerCase() === extensionId.toLowerCase()
@@ -82,6 +95,46 @@ export async function reconcileCloudflareBadgeHealth(
         receipt_id: randomUUID(),
         occurred_at: now,
       });
+      const alertId = randomUUID();
+      const alert = {
+        id: alertId,
+        team_id: team.team_id,
+        extension_id: extensionId,
+        version: latestVersion,
+        kind: "release_detected",
+        severity: "INFORMATIONAL",
+        state: "unread",
+        title: `New release detected: ${extensionId}@${latestVersion}`,
+        summary: "A watched release changed. Refresh the exact badge after reviewing its new report.",
+        metadata: { release_event: true, baseline_version: observedVersion, badge_refresh_recommended: true },
+        dedupe_key: `release:${extensionId}@${latestVersion}`,
+        created_at: now,
+      };
+      const preferences = jsonObject(state.preferences);
+      if (preferences.release_alerts !== false) {
+        const existingAlert = alerts.some((item) => String(item.dedupe_key) === alert.dedupe_key);
+        if (!existingAlert) alerts.unshift(alert);
+        for (const channel of array(state.channels)) {
+          if (channel.enabled === false || !stringValue(channel.target)) continue;
+          const payload = {
+            provider: String(channel.kind || "generic_webhook"),
+            event: "guardrails.badge_refresh_recommended",
+            team_id: team.team_id,
+            extension_id: extensionId,
+            baseline_version: observedVersion,
+            target_version: latestVersion,
+            message: alert.summary,
+            badge_refresh_recommended: true,
+          };
+          const deliveryKey = `badge-release:${team.team_id}:${extensionId}:${latestVersion}:${String(channel.id)}`;
+          const existingDelivery = await db.prepare("SELECT id FROM app_notification_deliveries WHERE team_id=? AND (delivery_key=? OR payload_json LIKE ?) LIMIT 1")
+            .bind(team.team_id, deliveryKey, `%${deliveryKey}%`).first<Record<string, unknown>>();
+          if (!existingDelivery) {
+            await db.prepare("INSERT OR IGNORE INTO app_notification_deliveries(id,team_id,kind,target,payload_json,status,attempts,next_attempt_at,created_at,delivery_key) VALUES(?,?,?,?,?,?,?,?,?,?)")
+              .bind(randomUUID(), team.team_id, String(channel.kind || "generic_webhook"), String(channel.target), JSON.stringify({ ...payload, delivery_key: deliveryKey }), "pending", 0, now, now, deliveryKey).run();
+          }
+        }
+      }
       releasesDetected += 1;
     }
 
@@ -89,6 +142,7 @@ export async function reconcileCloudflareBadgeHealth(
     teamsChanged += 1;
     state.watchlist = watchlist;
     state.release_events = releaseEvents.slice(0, 200);
+    state.alerts = alerts.slice(0, 200);
     state.audit = audit.slice(0, 500);
     await db
       .prepare("UPDATE app_team_state SET state_json=?,updated_at=? WHERE team_id=?")
@@ -127,6 +181,12 @@ function parseState(value: string): JsonObject {
   } catch {
     return {};
   }
+}
+
+function jsonObject(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : {};
 }
 
 function array(value: unknown): JsonObject[] {

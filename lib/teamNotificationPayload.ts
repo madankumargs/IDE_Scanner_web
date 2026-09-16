@@ -5,10 +5,12 @@ type Alert = Record<string, unknown>;
 export function genericWebhookMessage(alert: Alert) {
   const site = process.env.NEXT_PUBLIC_SITE_URL || "https://abscissa.dev";
   const extensionId = String(alert.extension_id || ""); const version = String(alert.version || "");
+  const metadata = alert.metadata && typeof alert.metadata === "object" && !Array.isArray(alert.metadata) ? alert.metadata as Record<string, unknown> : {};
   return {
     event: "guardrails.monitoring_alert",
     alert: { id: String(alert.id || ""), kind: String(alert.kind || ""), severity: alert.severity || "INFORMATIONAL", title: String(alert.title || ""), summary: String(alert.summary || ""), created_at: String(alert.created_at || "") },
     artifact: { extension_id: extensionId, version, report_url: `${site}/extensions/${encodeURIComponent(extensionId)}/versions/${encodeURIComponent(version)}` },
+    badge: { refresh_recommended: metadata.badge_refresh_recommended === true, baseline_version: typeof metadata.baseline_version === "string" ? metadata.baseline_version : null },
   };
 }
 

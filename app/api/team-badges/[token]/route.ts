@@ -19,10 +19,11 @@ export async function GET(_request: Request, context: Context) {
         .prepare("SELECT * FROM app_team_badges WHERE public_token=? AND visibility='public' AND status IN ('ready','stale') AND revoked_at IS NULL LIMIT 1")
         .bind(token)
         .first<Record<string, unknown>>();
-      if (!badge) return notFound();
-      const product = await getCloudflareScanProduct(String(badge.extension_id), String(badge.version), String(badge.scan_id || ""));
-      const scan = product?.scan && typeof product.scan === "object" ? product.scan as Record<string, unknown> : null;
-      return scan ? renderTrustBadgeSvg(scan) : notFound();
+      if (badge) {
+        const product = await getCloudflareScanProduct(String(badge.extension_id), String(badge.version), String(badge.scan_id || ""));
+        const scan = product?.scan && typeof product.scan === "object" ? product.scan as Record<string, unknown> : null;
+        if (scan) return renderTrustBadgeSvg(scan);
+      }
     }
 
     const db = serviceDb();

@@ -33,6 +33,7 @@ export type TeamBadge = {
   coverage_percent: number | null;
   risk_score: number | null;
   malware_score: number | null;
+  capability_assessment: Record<string, unknown> | null;
   scanned_at: string | null;
   last_error: string | null;
   created_by: string;
@@ -118,6 +119,7 @@ export function teamBadgeFromScan(
     coverage_percent: coveragePercent,
     risk_score: boundedScore(scan.risk_score),
     malware_score: boundedScore(scan.malware_score),
+    capability_assessment: objectOrNull(scan.capability_assessment),
     scanned_at: stringOrNull(scan.scanned_at || scan.created_at),
     last_error: base.last_error || null,
     created_by: base.created_by,
@@ -156,6 +158,7 @@ export function normalizeTeamBadge(value: unknown): TeamBadge | null {
     coverage_percent: numberValue(row.coverage_percent),
     risk_score: boundedScore(row.risk_score),
     malware_score: boundedScore(row.malware_score),
+    capability_assessment: objectOrNull(row.capability_assessment),
     scanned_at: stringOrNull(row.scanned_at),
     last_error: stringOrNull(row.last_error),
     created_by: stringValue(row.created_by),
@@ -204,6 +207,12 @@ function numberValue(value: unknown): number | null {
 function boundedScore(value: unknown): number | null {
   const result = numberValue(value);
   return result === null ? null : Math.max(0, Math.min(100, result));
+}
+
+function objectOrNull(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function teamTrustTier(value: unknown): TrustTier | null {

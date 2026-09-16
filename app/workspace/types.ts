@@ -62,6 +62,7 @@ export type View =
   | "inventory"
   | "inbox"
   | "extensions"
+  | "badges"
   | "decisions"
   | "activity"
   | "settings";

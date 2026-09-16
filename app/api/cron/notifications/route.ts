@@ -20,6 +20,8 @@ import { deliverWeeklyTeamDigests } from "@/lib/teamDigest";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb, nowIso } from "@/lib/cloudflarePrivate";
 import { runtimeEnv } from "@/lib/runtimeEnv";
+import { queueCloudflareTeamDigests } from "@/lib/cloudflareTeamDigest";
+import { cloudflareNotificationProvider, cloudflareNotificationRequest } from "@/lib/cloudflareNotificationDelivery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,13 +38,16 @@ export async function POST(request: Request) {
   if (cloudflarePrivateAvailable()) {
     const db = privateDb();
     const now = nowIso();
+    const digest = await queueCloudflareTeamDigests(db, now);
     const pending = await db.prepare("SELECT id,kind,target,payload_json,attempts FROM app_notification_deliveries WHERE status IN ('pending','failed') AND next_attempt_at<=? ORDER BY created_at LIMIT 50").bind(now).all<Record<string, unknown>>();
     let sent = 0; let failed = 0;
     for (const row of pending.results) {
       const attempts = Number(row.attempts || 0) + 1;
       try {
         const payload = JSON.parse(String(row.payload_json || "{}"));
-        const response = await fetch(String(row.target), { method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "GuardRails-Notification-Delivery/1.0" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12_000) });
+        const provider = cloudflareNotificationProvider(String(row.kind || "generic_webhook"), String(row.target), payload);
+        const delivery = cloudflareNotificationRequest(provider, String(row.target), payload);
+        const response = await fetch(delivery.destination, { method: "POST", redirect: "error", headers: { "Content-Type": "application/json", "User-Agent": "GuardRails-Notification-Delivery/1.0", ...delivery.headers }, body: JSON.stringify(delivery.payload), signal: AbortSignal.timeout(12_000) });
         if (!response.ok) throw new Error(`Notification endpoint returned ${response.status}`);
         await db.prepare("UPDATE app_notification_deliveries SET status='sent',attempts=?,delivered_at=?,last_error=NULL WHERE id=?").bind(attempts, nowIso(), String(row.id)).run();
         sent += 1;
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
         failed += 1;
       }
     }
-    return NextResponse.json({ attempted: pending.results.length, sent, failed, skipped: 0, storage: "cloudflare_d1" });
+    return NextResponse.json({ attempted: pending.results.length, sent, failed, skipped: 0, queued_digests: digest.queued, storage: "cloudflare_d1" });
   }
   const db = serviceDb();
   const now = new Date().toISOString();

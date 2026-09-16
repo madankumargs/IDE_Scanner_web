@@ -17,10 +17,12 @@ import styles from "@/app/workspace/teamWorkspace.module.css";
 
 export default function ExtensionsView({
   watches,
+  badges,
   health,
   onRefresh,
 }: {
   watches: WatchItem[];
+  badges: Array<{ extension_id: string; version?: string; status?: string }>;
   health: MonitoringHealth;
   onRefresh: () => Promise<void>;
 }) {
@@ -96,7 +98,8 @@ export default function ExtensionsView({
           <span>Extension</span>
           <span>Baseline</span>
           <span>Monitoring state</span>
-          <span>Last event</span>
+            <span>Last event</span>
+            <span>Badge</span>
         </header>
         {watches.map((item) => (
           <article key={item.extension_id}>
@@ -115,6 +118,9 @@ export default function ExtensionsView({
             <time>
               {formatWorkspaceTime(item.last_event_at || item.created_at)}
             </time>
+            <span className={badges.find((badge) => badge.extension_id.toLowerCase() === item.extension_id.toLowerCase())?.status === "ready" ? styles.statusGood : styles.statusWarn}>
+              <i /> {badgeLabel(badges.find((badge) => badge.extension_id.toLowerCase() === item.extension_id.toLowerCase())?.status)}
+            </span>
           </article>
         ))}
         {!watches.length ? (
@@ -134,3 +140,5 @@ export default function ExtensionsView({
     </>
   );
 }
+
+function badgeLabel(status?: string) { return status === "ready" ? "Ready" : status === "stale" ? "Refresh" : status === "pending" ? "Scanning" : status === "failed" ? "Retry" : "Not covered"; }

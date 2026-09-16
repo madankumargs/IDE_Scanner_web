@@ -980,6 +980,7 @@ export default function TeamWorkspace(
             <BadgeStudioView
               key={activeTeam.id}
               teamId={activeTeam.id}
+              teamSlug={activeTeam.slug}
               role={activeTeam.role}
               watches={watchItems}
               initialExtension={props.initialExtension}
@@ -2740,6 +2741,7 @@ function ActivityView({
     actor_id: string | null;
     risk_level: string | null;
     rationale: string | null;
+    resulting_state: Record<string, unknown> | null;
     occurred_at: string;
   };
   const [auditEvents, setAuditEvents] = useState<AuditRow[]>([]);
@@ -2865,6 +2867,7 @@ function ActivityView({
               <option value="monitoring">Monitoring</option>
               <option value="notification">Notifications</option>
               <option value="digest">Weekly digests</option>
+              <option value="badge">Badges</option>
             </select>
           </label>
           <label>
@@ -2986,7 +2989,7 @@ function ActivityView({
         {auditEvents.map((event) => (
           <article key={`${event.object_type}:${event.event_id}`}>
             <span>
-              {event.object_type === "decision" ? <ShieldCheck /> : <Bell />}
+              {event.object_type === "decision" ? <ShieldCheck /> : event.object_type === "badge" ? <BadgeCheck /> : <Bell />}
             </span>
             <div>
               <strong>{humanize(event.action)}</strong>
@@ -2998,6 +3001,9 @@ function ActivityView({
                   ? `${event.extension_id}${event.version ? `@${event.version}` : ""}`
                   : `Receipt ${event.event_id}`}
               </small>
+              {event.object_type === "badge" && event.resulting_state ? (
+                <small>{badgeActivity(event.resulting_state)}</small>
+              ) : null}
             </div>
             <time dateTime={event.occurred_at}>
               {formatWorkspaceTime(event.occurred_at)}
@@ -3014,6 +3020,13 @@ function ActivityView({
       </section>
     </>
   );
+}
+
+function badgeActivity(state: Record<string, unknown>) {
+  const status = typeof state.status === "string" ? state.status : "";
+  const risk = typeof state.risk_score === "number" ? ` · risk ${state.risk_score.toFixed(2)}` : "";
+  const recommendation = state.refresh_recommended === true ? " · refresh recommended" : "";
+  return `${status ? humanize(status) : "Badge state recorded"}${risk}${recommendation}`;
 }
 function SettingsView({
   team,

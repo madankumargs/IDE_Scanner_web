@@ -5,6 +5,7 @@ import { LoaderCircle, ScanSearch, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { browserAuthHeaders } from "@/lib/browserAuth";
 import { browserDb } from "@/lib/supabase";
+import { badgeHtml, badgeMarkdown } from "@/lib/badgeSnippets";
 
 type AuthState = "checking" | "signed-in" | "signed-out";
 type ScanState = "idle" | "loading" | "queued" | "running" | "complete" | "error";
@@ -37,10 +38,10 @@ export default function BadgeBuilder({ origin }: { origin: string }) {
     ? `${origin}/extensions/${encodeURIComponent(scan.extensionId)}/versions/${encodeURIComponent(scan.version)}/scans/${encodeURIComponent(scan.scanId)}`
     : "";
   const markdown = scan
-    ? `[![GuardRails analysis](${badgeUrl})](${reportUrl})`
+    ? badgeMarkdown(badgeUrl, reportUrl)
     : "";
   const html = scan
-    ? `<a href="${reportUrl}"><img src="${badgeUrl}" alt="Analyzed by GuardRails" width="240" height="20"></a>`
+    ? badgeHtml(badgeUrl, reportUrl)
     : "";
 
   useEffect(() => {

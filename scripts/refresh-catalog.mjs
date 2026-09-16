@@ -174,6 +174,18 @@ async function notifyWatchersOfRelease(extensionId, version) {
     .eq("monitoring_state", "monitoring")
     .in("team_id", watches.map((watch) => watch.team_id));
   if (watchUpdate.error) throw watchUpdate.error;
+  const badgeUpdate = await db.from("team_badges")
+    .update({ status: "stale", updated_at: observedAt })
+    .in("team_id", watches.map((watch) => watch.team_id))
+    .eq("extension_id", extensionId)
+    .eq("status", "ready")
+    .neq("version", version)
+    .select("id,team_id,version");
+  if (badgeUpdate.error) throw badgeUpdate.error;
+  for (const badge of badgeUpdate.data || []) {
+    const history = await db.from("team_audit_events").insert({ team_id: badge.team_id, actor_id: null, action: "team_badge_stale", object_type: "badge", object_id: badge.id, extension_id: extensionId, version: badge.version, resulting_state: { status: "stale", observed_version: version, refresh_recommended: true } });
+    if (history.error) throw history.error;
+  }
   const alerts = watches.map((watch) => ({
     team_id: watch.team_id,
     extension_id: extensionId,
@@ -181,7 +193,7 @@ async function notifyWatchersOfRelease(extensionId, version) {
     kind: "release_detected",
     title: `New release detected: ${extensionId}@${version}`,
     summary: "A watched extension published a new exact artifact. GuardRails is reserving Deep Scan capacity and will update this alert when evidence is available.",
-    metadata: { scan_queued: false, baseline_version: watch.baseline_version, release_event: true },
+    metadata: { scan_queued: false, baseline_version: watch.baseline_version, release_event: true, badge_refresh_recommended: true },
     dedupe_key: `release:${extensionId}@${version}`,
   }));
   if (alerts.length) {

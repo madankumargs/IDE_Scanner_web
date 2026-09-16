@@ -16,6 +16,7 @@ function database() {
               release_events: [],
               audit: [],
             }) }] }),
+        first: vi.fn().mockResolvedValue(null),
         run: vi.fn(async () => {
           updates.push(String(values[0]));
           return run();

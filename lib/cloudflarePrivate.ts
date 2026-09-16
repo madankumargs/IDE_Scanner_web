@@ -10,7 +10,7 @@ type PrivateResult<T extends PrivateRow = PrivateRow> = {
   meta?: Record<string, unknown>;
 };
 
-type PrivateDatabase = {
+export type PrivateDatabase = {
   prepare(query: string): {
     bind(...values: unknown[]): {
       all<T extends PrivateRow = PrivateRow>(): Promise<PrivateResult<T>>;

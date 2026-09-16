@@ -119,6 +119,7 @@ export default function Overview({
   decisions,
   alerts,
   watches,
+  badges,
   health,
   overdue,
   failed,
@@ -131,6 +132,7 @@ export default function Overview({
   decisions: QueueDecision[];
   alerts: Alert[];
   watches: WatchItem[];
+  badges: Array<{ status?: string }>;
   health: MonitoringHealth;
   overdue: number;
   failed: number;
@@ -215,6 +217,13 @@ export default function Overview({
           }
           tone={failed ? "red" : "green"}
         />
+        <Metric
+          label="Badge coverage"
+          value={watches.length ? `${Math.round((badges.filter((badge) => ["ready", "stale"].includes(badge.status || "")).length / watches.length) * 100)}%` : "—"}
+          detail={`${badges.filter((badge) => badge.status === "stale").length} release changes to refresh`}
+          tone={badges.some((badge) => badge.status === "stale" || badge.status === "failed") ? "amber" : "green"}
+          onClick={sampleMode ? undefined : () => onNavigate("badges")}
+        />
       </section>
       <div className={styles.overviewGrid}>
         <section className={styles.attention}>
@@ -254,6 +263,11 @@ export default function Overview({
               <i className={styles.green} />
               <span>Active baselines</span>
               <strong>{watches.length}</strong>
+            </li>
+            <li>
+              <i className={badges.some((badge) => badge.status === "stale") ? styles.amber : styles.green} />
+              <span>Ready badges</span>
+              <strong>{badges.filter((badge) => badge.status === "ready").length}</strong>
             </li>
             <li>
               <i className={styles.blue} />

@@ -15,5 +15,8 @@ export function teamApiError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.includes("WORKSPACE_PLAN_LIMIT_REACHED")) {
     return { status: 403, error: "This workspace has reached its plan limit. Remove an existing item or upgrade before adding another.", code: "PLAN_LIMIT_REACHED" };
   }
+  if (error instanceof Error && error.message.startsWith("BADGE_LIMIT:")) {
+    return { status: 429, error: error.message.slice("BADGE_LIMIT:".length).trim(), code: "BADGE_LIMIT_REACHED" };
+  }
   return { status: 503, error: fallback };
 }

@@ -15,6 +15,8 @@ import {
   type TeamBadgeVisibility,
 } from "@/lib/teamBadges";
 import { presentTeamBadge, type PresentedTeamBadge } from "@/lib/teamBadgePresentation";
+import { badgeInsight } from "@/lib/teamBadgeInsights";
+import { TEAM_BADGE_LIMITS, badgeLimitMessage } from "@/lib/teamBadgeLimits";
 
 export const dynamic = "force-dynamic";
 
@@ -94,9 +96,9 @@ async function listCloudflareBadges(teamId: string, userId: string): Promise<Bad
   for (const row of rows.results) {
     reconciled.push(await reconcileCloudflareBadge(db, teamId, userId, row, state));
   }
-  return reconciled
+  return addInsights(reconciled
     .map((row) => presentTeamBadge(row, observed.get(String(row.extension_id).toLowerCase())))
-    .filter((badge): badge is BadgeResponse => Boolean(badge));
+    .filter((badge): badge is BadgeResponse => Boolean(badge)));
 }
 
 async function listSupabaseBadges(teamId: string, userId: string): Promise<BadgeResponse[]> {
@@ -114,9 +116,9 @@ async function listSupabaseBadges(teamId: string, userId: string): Promise<Badge
     userId,
     (badgeResult.data || []) as Array<Record<string, unknown>>,
   );
-  return reconciled
+  return addInsights(reconciled
     .map((row) => presentTeamBadge(row, observed.get(String(row.extension_id).toLowerCase())))
-    .filter((badge): badge is BadgeResponse => Boolean(badge));
+    .filter((badge): badge is BadgeResponse => Boolean(badge)));
 }
 
 /**
@@ -300,6 +302,13 @@ async function createCloudflareBadge(
     return { status: 200, body: await syncCloudflarePending(teamId, userId, input, existing, request) };
   }
 
+  const counts = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM app_team_badges WHERE team_id=? AND status <> 'revoked'").bind(teamId).first<Record<string, unknown>>(),
+    db.prepare("SELECT COUNT(*) AS count FROM app_team_badges WHERE team_id=? AND status='pending'").bind(teamId).first<Record<string, unknown>>(),
+  ]);
+  if (Number(counts[0]?.count || 0) >= TEAM_BADGE_LIMITS.max_published_records) throw new Error(`BADGE_LIMIT: ${badgeLimitMessage("max_published_records")}`);
+  if (Number(counts[1]?.count || 0) >= TEAM_BADGE_LIMITS.max_active_scans) throw new Error(`BADGE_LIMIT: ${badgeLimitMessage("max_active_scans")}`);
+
   const scan = await queueDeepScan(
     input.extensionId,
     input.version,
@@ -432,6 +441,7 @@ async function writeCloudflareBadge(teamId: string, badge: TeamBadge, update: bo
     badge.coverage_percent,
     badge.risk_score,
     badge.malware_score,
+    badge.capability_assessment ? JSON.stringify(badge.capability_assessment) : null,
     badge.scanned_at,
     badge.last_error,
     badge.created_by,
@@ -439,12 +449,12 @@ async function writeCloudflareBadge(teamId: string, badge: TeamBadge, update: bo
     badge.updated_at,
   ];
   if (update) {
-    await db.prepare(`UPDATE app_team_badges SET display_name=?,scan_id=?,scan_job_id=?,artifact_sha256=?,status=?,decision=?,verdict=?,public_outcome=?,trust_tier=?,trust_label=?,coverage_percent=?,risk_score=?,malware_score=?,scanned_at=?,last_error=?,updated_at=? WHERE id=? AND team_id=?`).bind(
-      badge.display_name, badge.scan_id, badge.scan_job_id, badge.artifact_sha256, badge.status, badge.decision, badge.verdict, badge.public_outcome, badge.trust_tier, badge.trust_label, badge.coverage_percent, badge.risk_score, badge.malware_score, badge.scanned_at, badge.last_error, badge.updated_at, badge.id, teamId,
+    await db.prepare(`UPDATE app_team_badges SET display_name=?,scan_id=?,scan_job_id=?,artifact_sha256=?,status=?,decision=?,verdict=?,public_outcome=?,trust_tier=?,trust_label=?,coverage_percent=?,risk_score=?,malware_score=?,capability_assessment=?,scanned_at=?,last_error=?,updated_at=? WHERE id=? AND team_id=?`).bind(
+      badge.display_name, badge.scan_id, badge.scan_job_id, badge.artifact_sha256, badge.status, badge.decision, badge.verdict, badge.public_outcome, badge.trust_tier, badge.trust_label, badge.coverage_percent, badge.risk_score, badge.malware_score, badge.capability_assessment ? JSON.stringify(badge.capability_assessment) : null, badge.scanned_at, badge.last_error, badge.updated_at, badge.id, teamId,
     ).run();
     return;
   }
-  await db.prepare(`INSERT INTO app_team_badges(id,team_id,extension_id,badge_key,display_name,mode,version,scan_id,scan_job_id,artifact_sha256,public_token,visibility,status,decision,verdict,public_outcome,trust_tier,trust_label,coverage_percent,risk_score,malware_score,scanned_at,last_error,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(...values).run();
+  await db.prepare(`INSERT INTO app_team_badges(id,team_id,extension_id,badge_key,display_name,mode,version,scan_id,scan_job_id,artifact_sha256,public_token,visibility,status,decision,verdict,public_outcome,trust_tier,trust_label,coverage_percent,risk_score,malware_score,capability_assessment,scanned_at,last_error,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(...values).run();
 }
 
 async function createSupabaseBadge(
@@ -465,6 +475,7 @@ async function createSupabaseBadge(
     if (input.force && existing.status === "ready") return { status: 409, body: { error: "This exact release already has a ready badge." } };
     return { status: 200, body: await syncSupabasePending(teamId, userId, input, existing, request) };
   }
+  await enforceSupabaseBadgeLimits(db, teamId);
   const scan = await queueDeepScan(input.extensionId, input.version, request, userId, input.force, "team_badge");
   const now = nowIso();
   const token = existing?.public_token || publicToken();
@@ -595,6 +606,7 @@ function serializeSupabaseBadge(badge: TeamBadge): Record<string, unknown> {
     coverage_percent: badge.coverage_percent,
     risk_score: badge.risk_score,
     malware_score: badge.malware_score,
+    capability_assessment: badge.capability_assessment,
     scanned_at: badge.scanned_at,
     last_error: badge.last_error,
     created_by: badge.created_by,
@@ -631,6 +643,7 @@ function pendingBadge(input: {
     coverage_percent: null,
     risk_score: null,
     malware_score: null,
+    capability_assessment: null,
     scanned_at: null,
   };
 }
@@ -657,6 +670,30 @@ function summarizeBadges(badges: BadgeResponse[]) {
     pending: badges.filter((badge) => badge.status === "pending").length,
     failed: badges.filter((badge) => badge.status === "failed").length,
   };
+}
+
+function addInsights(badges: BadgeResponse[]): BadgeResponse[] {
+  const grouped = new Map<string, BadgeResponse[]>();
+  for (const badge of badges) {
+    const key = badge.extension_id.toLowerCase();
+    grouped.set(key, [...(grouped.get(key) || []), badge]);
+  }
+  return badges.map((badge) => {
+    const previous = (grouped.get(badge.extension_id.toLowerCase()) || [])
+      .filter((candidate) => candidate.version !== badge.version && candidate.scanned_at)
+      .sort((a, b) => String(b.scanned_at).localeCompare(String(a.scanned_at)))[0];
+    return { ...badge, insight: badgeInsight(badge, previous) };
+  });
+}
+
+async function enforceSupabaseBadgeLimits(db: ReturnType<typeof serviceDb>, teamId: string): Promise<void> {
+  const result = await db.from("team_badges").select("id,status,created_at").eq("team_id", teamId);
+  if (result.error) throw result.error;
+  const rows = Array.isArray(result.data) ? result.data as Array<Record<string, unknown>> : [];
+  const active = rows.filter((row) => String(row.status) === "pending").length;
+  const durable = rows.filter((row) => String(row.status) !== "revoked").length;
+  if (durable >= TEAM_BADGE_LIMITS.max_published_records) throw new Error(`BADGE_LIMIT: ${badgeLimitMessage("max_published_records")}`);
+  if (active >= TEAM_BADGE_LIMITS.max_active_scans) throw new Error(`BADGE_LIMIT: ${badgeLimitMessage("max_active_scans")}`);
 }
 
 function publicToken(): string {

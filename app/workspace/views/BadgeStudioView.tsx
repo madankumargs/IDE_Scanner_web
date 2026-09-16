@@ -8,6 +8,7 @@ import {
   CircleAlert,
   ClipboardCheck,
   Copy,
+  Download,
   LoaderCircle,
   RefreshCw,
   ScanSearch,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trackProductEvent } from "@/lib/analyticsEvents";
+import { badgeHtml, badgeMarkdown } from "@/lib/badgeSnippets";
 import {
   type TeamBadge,
   type TeamBadgeStatus,
@@ -42,6 +44,14 @@ type InventoryItem = {
 type Badge = TeamBadge & {
   badge_url: string;
   report_url: string;
+  insight?: {
+    previous_version: string | null;
+    risk_delta: number | null;
+    malware_delta: number | null;
+    added_capabilities: string[];
+    removed_capabilities: string[];
+    recommendation: string;
+  };
 };
 
 type BadgeSummary = {
@@ -54,6 +64,7 @@ type BadgeSummary = {
 
 type Props = {
   teamId: string;
+  teamSlug: string;
   role: string;
   watches: WatchItem[];
   getAuthHeaders: () => Promise<Record<string, string>>;
@@ -65,6 +76,7 @@ const writerRoles = ["owner", "admin", "analyst"];
 
 export default function BadgeStudioView({
   teamId,
+  teamSlug,
   role,
   watches,
   getAuthHeaders,
@@ -108,6 +120,7 @@ export default function BadgeStudioView({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [mutatingId, setMutatingId] = useState("");
   const studioTracked = useRef(false);
 
@@ -296,15 +309,38 @@ export default function BadgeStudioView({
   async function copySnippet(badge: Badge, kind: "markdown" | "html") {
     const badgeUrl = absoluteUrl(badge.badge_url);
     const reportUrl = absoluteUrl(badge.report_url);
-    const snippet = kind === "markdown"
-      ? `[![GuardRails analysis](${badgeUrl})](${reportUrl})`
-      : `<a href="${reportUrl}"><img src="${badgeUrl}" alt="Analyzed by GuardRails" width="240" height="20"></a>`;
+    const snippet = kind === "markdown" ? badgeMarkdown(badgeUrl, reportUrl) : badgeHtml(badgeUrl, reportUrl);
     try {
       await navigator.clipboard.writeText(snippet);
       setCopyMessage(`${kind === "markdown" ? "Markdown" : "HTML"} copied.`);
       trackProductEvent({ name: "team_badge_copied", source_route: "/workspace", format: kind });
     } catch {
       setCopyMessage("Copy was blocked by the browser. Select the snippet manually.");
+    }
+  }
+
+  async function downloadExport(format: "markdown" | "snippets" | "json") {
+    setExporting(true);
+    setMessage("");
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/badges/export?format=${format}`, { headers, cache: "no-store" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "Badge export failed.");
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = format === "json" ? "guardrails-trust-inventory.json" : format === "snippets" ? "guardrails-badge-snippets.md" : "GUARDRAILS.md";
+      anchor.click();
+      URL.revokeObjectURL(href);
+      setMessage(`${format === "json" ? "JSON" : format === "snippets" ? "Badge snippets" : "GUARDRAILS.md"} downloaded.`);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Badge export failed.");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -316,9 +352,12 @@ export default function BadgeStudioView({
           <h1>Make your team’s trust visible.</h1>
           <p>Publish an exact-release badge from the workspace your team already uses. Every score stays attached to the analyzed version and report.</p>
         </div>
-        <button className={styles.refreshButton} type="button" onClick={() => void loadBadges()} disabled={state === "loading"}>
-          <RefreshCw className={state === "loading" ? styles.spin : ""} /> Refresh health
-        </button>
+        <div className={styles.pageActions}>
+          <Link className={styles.wallLink} href={`/trust/${encodeURIComponent(teamSlug)}`} target="_blank">Public trust card <ArrowRight /></Link>
+          <button className={styles.refreshButton} type="button" onClick={() => void loadBadges()} disabled={state === "loading"}>
+            <RefreshCw className={state === "loading" ? styles.spin : ""} /> Refresh health
+          </button>
+        </div>
       </header>
 
       <section className={styles.healthPanel} aria-label="Badge health">
@@ -380,7 +419,12 @@ export default function BadgeStudioView({
       <section className={styles.badgeList} aria-label="Team badges">
         <header>
           <div><span className={styles.eyebrow}>Shared trust assets</span><h2>Your release badges</h2></div>
-          <small>{badges.length ? `${badges.length} exact release${badges.length === 1 ? "" : "s"}` : "No badges yet"}</small>
+          <div className={styles.exportActions}>
+            <button type="button" onClick={() => void downloadExport("snippets")} disabled={exporting || !badges.length}><Download /> Snippets</button>
+            <button type="button" onClick={() => void downloadExport("markdown")} disabled={exporting || !badges.length}><Download /> GUARDRAILS.md</button>
+            <button type="button" onClick={() => void downloadExport("json")} disabled={exporting || !badges.length}><Download /> JSON</button>
+            <small>{badges.length ? `${badges.length} exact release${badges.length === 1 ? "" : "s"}` : "No badges yet"}</small>
+          </div>
         </header>
         {badges.map((badge) => <BadgeCard key={badge.id} badge={badge} onCopy={copySnippet} onRefresh={(force = false) => {
           trackProductEvent({ name: "team_badge_refresh_intent", source_route: "/workspace", mode: "exact_release" });
@@ -430,6 +474,7 @@ function BadgeCard({
         <span><b>Malware</b> {score(badge.malware_score)}</span>
         <span><b>Coverage</b> {badge.coverage_percent === null ? "Unavailable" : `${badge.coverage_percent}%`}</span>
       </div>
+      {badge.insight?.previous_version ? <div className={styles.insight}><strong>Since @{badge.insight.previous_version}</strong><span>{deltaCopy("Risk", badge.insight.risk_delta)} · {deltaCopy("Malware", badge.insight.malware_delta)}</span>{badge.insight.added_capabilities.length ? <span>+{badge.insight.added_capabilities.length} capabilities</span> : null}{badge.insight.removed_capabilities.length ? <span>−{badge.insight.removed_capabilities.length} capabilities</span> : null}<p>{badge.insight.recommendation}</p></div> : null}
       <p className={styles.badgeNote}>{badge.status === "stale" ? "Release changed — this badge remains pinned to the older release until you scan the new one." : badge.status === "pending" ? "The isolated scanner is preparing this exact release. You can safely leave and return later." : badge.status === "failed" ? badge.last_error || "The report did not complete. Retry from the watched release." : `Scanned ${formatDate(badge.scanned_at)} · ${badge.trust_label || "Analysis completed"}.`}</p>
       <footer className={styles.badgeActions}>
         {ready ? <Link href={badge.report_url} onClick={() => trackProductEvent({ name: "team_badge_report_opened", source_route: "/workspace", mode: "exact_release" })}>Open exact report <ArrowRight /></Link> : null}
@@ -473,4 +518,9 @@ function formatDate(value: string | null): string {
 
 function badgeStatusCopy(status: TeamBadgeStatus): string {
   return { pending: "Scanning", ready: "Ready to share", stale: "Release changed", failed: "Needs retry", revoked: "Revoked" }[status];
+}
+
+function deltaCopy(label: string, value: number | null): string {
+  if (value === null || value === 0) return `${label} unchanged`;
+  return `${label} ${value > 0 ? "+" : ""}${value}`;
 }
