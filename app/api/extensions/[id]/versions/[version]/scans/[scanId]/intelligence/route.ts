@@ -30,6 +30,9 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string; version: string; scanId: string }> },
 ) {
+  const requestStartedAt = Date.now();
+  const mark = (stage: string) => console.log("[evidence-intelligence-stage]", { stage, elapsed_ms: Date.now() - requestStartedAt });
+  mark("start");
   const route = await context.params;
   const extensionId = decodeRoutePart(route.id);
   const version = decodeRoutePart(route.version);
@@ -38,6 +41,7 @@ export async function POST(
     return errorResponse("Invalid exact-release identity.", 400);
   }
   if (!sameOriginRequest(request)) return errorResponse("Cross-origin intelligence generation is not allowed.", 403);
+  mark("request-validated");
 
   const length = Number(request.headers.get("content-length") || "0");
   if (Number.isFinite(length) && length > MAX_BODY_BYTES) return errorResponse("Request body too large.", 413);
@@ -55,12 +59,14 @@ export async function POST(
     if (!user) return errorResponse("Sign in to generate an intelligence report.", 401, "auth_required");
     userId = user.id;
   }
+  mark("authenticated");
 
   const options = await readOptions(request);
   if (!options) return errorResponse("Unsupported intelligence review options.", 400);
   if (process.env.SARVAM_INTELLIGENCE_REPORT_ENABLED?.trim().toLowerCase() === "false") {
     return errorResponse("Evidence intelligence is temporarily disabled.", 503, "ai_disabled");
   }
+  mark("options-read");
 
   const limit = await checkRateLimit(userId, cloudflare);
   if (!limit.allowed) {
@@ -69,6 +75,7 @@ export async function POST(
       headers: { "Content-Type": "application/json", "Cache-Control": "private, no-store", "Retry-After": String(limit.retryAfter) },
     });
   }
+  mark("rate-limit-checked");
   let evidence: EvidenceIntelligenceContext | null = null;
   try {
     evidence = options.context_ticket ? verifyEvidenceIntelligenceTicket(options.context_ticket) : null;
@@ -89,7 +96,9 @@ export async function POST(
       evidence = compileEvidenceIntelligenceContext({ ...product, scan });
     }
     if (!evidence) return errorResponse("This exact report is not available.", 404);
+    mark(evidence ? "evidence-ready" : "evidence-missing");
     const result = await createEvidenceIntelligenceReport(evidence, options.review_goal, options.depth);
+    mark("provider-complete");
     return NextResponse.json(result.report, {
       headers: {
         "Cache-Control": "private, no-store",
@@ -100,6 +109,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof SarvamProviderError && error.status === 429) return errorResponse("Sarvam is rate limiting this request. Try again shortly.", 429, "provider_rate_limited");
     if (evidence && (error instanceof SarvamConfigurationError || error instanceof SarvamOutputError || error instanceof SarvamProviderError)) {
+      mark("deterministic-fallback");
       const fallback = buildDeterministicReviewFallback(evidence, options.review_goal);
       return NextResponse.json(fallback, {
         headers: {
@@ -109,6 +119,7 @@ export async function POST(
         },
       });
     }
+    mark("provider-error");
     console.warn("[evidence-intelligence] generation failed", { error: error instanceof Error ? error.name : "unknown" });
     return errorResponse("Evidence intelligence generation is temporarily unavailable.", 502, "provider_unavailable");
   }
