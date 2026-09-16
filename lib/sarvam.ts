@@ -469,6 +469,11 @@ export async function createEvidenceIntelligenceReport(
     } catch (error) {
       if (attempt < INTELLIGENCE_MAX_ATTEMPTS - 1 && (error instanceof EvidenceIntelligenceValidationError || error instanceof SarvamOutputError)) {
         repairHint = intelligenceRepairHint(error);
+        console.warn("[sarvam-evidence-intelligence] requesting bounded repair", {
+          attempt: attempt + 1,
+          next_attempt: attempt + 2,
+          category: repairCategory(error),
+        });
         continue;
       }
       if (error instanceof EvidenceIntelligenceValidationError) {
@@ -538,7 +543,7 @@ async function requestIntelligenceResponse({
     },
     body: JSON.stringify({
       model,
-      temperature: 0.05,
+      temperature: repairHint ? 0.2 : 0.05,
       max_tokens: 1_800,
       stream: false,
       ...structuredOutputControls,
@@ -585,11 +590,21 @@ async function requestIntelligenceResponse({
 function intelligenceRepairHint(error: EvidenceIntelligenceValidationError | SarvamOutputError): string {
   const message = error.message.toLowerCase();
   if (message.includes("repeated")) return "remove repeated or paraphrased conclusions; keep the primary takeaway only in primary_takeaway and make every other section add new information";
-  if (message.includes("security assertion") || message.includes("prohibited")) return "remove prohibited security labels and describe only observed facts, bounded consequences, or unknowns";
+  if (message.includes("security assertion") || message.includes("prohibited")) return "rewrite every sentence that discusses intent or impact using only observed facts, conditional capability language, and explicit unknowns; do not mention attacker intent, labels, or established harm";
   if (message.includes("evidence") && (message.includes("outside") || message.includes("references"))) return "use at least one exact evidence reference from the supplied catalog on every material object; never invent or rename a ref";
   if (message.includes("text") || message.includes("length") || message.includes("oversized")) return "shorten every field to its hard character limit and omit optional objects instead of padding them";
   if (message.includes("causal") || message.includes("event-chain")) return "set event_chain.available=false with no steps unless the supplied context has trigger, action, and target or consequence roles";
   return "return one compact JSON guide that follows every field limit, enum, evidence-ref, certainty, and non-repetition constraint";
+}
+
+function repairCategory(error: EvidenceIntelligenceValidationError | SarvamOutputError): string {
+  const message = error.message.toLowerCase();
+  if (message.includes("security assertion") || message.includes("prohibited")) return "security-language";
+  if (message.includes("repeated")) return "repetition";
+  if (message.includes("evidence") || message.includes("reference")) return "evidence-refs";
+  if (message.includes("text") || message.includes("length") || message.includes("oversized")) return "text-limits";
+  if (message.includes("causal") || message.includes("event-chain")) return "causal-chain";
+  return "schema-or-content";
 }
 
 export function parseEvidenceReviewBrief(
