@@ -139,6 +139,7 @@ describe("evidence intelligence output validation", () => {
   it("rejects unsupported compromise and credential-theft assertions", () => {
     const context = compileEvidenceIntelligenceContext(product());
     expect(() => validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], consequence: "This extension will exfiltrate and steal credentials." }] }), context)).toThrow(EvidenceIntelligenceValidationError);
+    expect(() => validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], consequence: "This behavior could indicate a backdoor." }] }), context)).toThrow(EvidenceIntelligenceValidationError);
   });
 
   it("allows explicit uncertainty boundaries about unsupported security conclusions", () => {

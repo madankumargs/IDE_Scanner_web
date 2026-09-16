@@ -1017,16 +1017,14 @@ function evidenceRefAliases(context: EvidenceIntelligenceContext): Map<string, s
 
 function rejectOverclaim(value: string): void {
   // Models often repeat the product's required uncertainty boundary (for
-  // example, "does not establish malicious intent"). Reject affirmative
-  // security conclusions, but do not mistake those explicit negations for
-  // an overclaim.
-  const affirmativePatterns = [
-    /\b(?:is|was|contains|constitutes|indicates|demonstrates|proves|confirms)\s+(?:malware|malicious intent|a backdoor|remote compromise)\b/i,
-    /\b(?:will|does|can|could|may)\s+(?:be used to\s+)?(?:exfiltrate|steal(?:s|ing)? credentials|remotely compromise)\b/i,
-    /\b(?:definitely|certainly)\s+(?:compromised|malicious)\b/i,
-    /\b(?:malicious intent|remote compromise|a backdoor)\s+(?:is|was)\s+(?:established|confirmed|proven)\b/i,
-  ];
-  if (affirmativePatterns.some((pattern) => pattern.test(value))) throw new EvidenceIntelligenceValidationError("The intelligence report used an unsupported security assertion.");
+  // example, "does not establish malicious intent"). Inspect each sentence
+  // so positive malware/compromise claims are rejected without mistaking an
+  // explicit negation for an overclaim.
+  const securityTerms = /\b(?:malware|malicious(?:\s+intent|\s+behavior)?|compromis(?:e|ed|ing)|credential\s+theft|steal(?:s|ing)?\s+credentials?|exfiltrat(?:e|es|ed|ing|ion)|backdoor|ransomware|trojan)\b/i;
+  const explicitNegation = /\b(?:not|no|never|without|cannot|can't|doesn't|does\s+not|isn't|is\s+not|wasn't|was\s+not|unconfirmed|unproven|unsupported|unknown|unclear)\b/i;
+  for (const sentence of value.split(/[.!?;\n]+/)) {
+    if (securityTerms.test(sentence) && !explicitNegation.test(sentence)) throw new EvidenceIntelligenceValidationError("The intelligence report used an unsupported security assertion.");
+  }
 }
 
 function rejectDecisionMutation(value: string, deterministicDecision: string): void {
