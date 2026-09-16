@@ -20,7 +20,7 @@ The retention hook is a living contract: the badge tells engineers which exact r
 
 ## Implementation snapshot
 
-The current workspace contains the Phase 1 exact-release implementation slice plus the release-health bridge: team-owned badge records have D1 and Supabase schemas, authenticated list/create/detail/publish/revoke APIs, a sessionless sanitized SVG projection, and a Badge Studio destination in the team workspace. The implementation uses Cloudflare sessions as the primary path and retains Supabase session compatibility. Pending scans reconcile from immutable reports, exact report reuse is deduplicated, release freshness is surfaced from watchlist/catalog state, role-aware controls, copyable Markdown/HTML, audit entries, inventory selection, and privacy-focused route tests are included. Deployment still requires applying both migrations and releasing the worker before the new Badge Studio is available in production.
+The current workspace contains the Phase 1 exact-release implementation slice plus the release-health bridge: team-owned badge records have D1 and Supabase schemas, authenticated list/create/detail/publish/revoke APIs, a sessionless sanitized SVG projection, and a Badge Studio destination in the team workspace. The implementation uses Cloudflare sessions as the primary path and retains Supabase session compatibility. Pending scans reconcile from immutable reports, exact report reuse is deduplicated, retried callbacks converge on one immutable report, release freshness is surfaced from watchlist/catalog state, role-aware controls, copyable Markdown/HTML, audit entries, inventory selection, and privacy-focused route tests are included. The D1 and Supabase migrations are applied and the Worker is live in production as of the release gate below.
 
 ### Production release gate
 
@@ -28,17 +28,17 @@ The feature is considered released only when every gate below has an evidence li
 
 | Gate | Required evidence | Current state |
 | --- | --- | --- |
-| Repository checks | `npm test -- --run`, `npx tsc --noEmit`, lint, and `npm run cf:build` pass | Passed locally: 526 tests, 0 TypeScript errors, 0 lint errors |
-| D1 rollout | `npx wrangler d1 migrations apply abscissa-registry --remote` completes, including `0008_team_badges.sql` | Pending remote release credentials |
-| Supabase compatibility rollout | Linked Supabase project applies `20260915160000_team_badges.sql` and `20260916100000_allow_team_badge_scan_purpose.sql` | Pending linked-project access |
-| Worker rollout | `npx wrangler deploy --config wrangler.jsonc` succeeds and the deployed version exposes the `ABSCISSA_REGISTRY` binding | Dry-run passed; live deploy pending |
-| Authenticated smoke | Cloudflare session: workspace → Badge Studio → create/reuse → poll → copy/report; repeat with Supabase session | Local browser daemon/server blocked by sandbox permissions |
-| Public boundary | Signed-out published SVG succeeds; private/revoked token returns 404; response contains no team-private fields | Covered by route tests; live verification pending |
+| Repository checks | `npm test`, `npx tsc --noEmit`, lint, and `npm run cf:build` pass | Passed locally: 526 tests, 0 TypeScript errors, 0 lint errors; public corpus 2/2 passed |
+| D1 rollout | `npx wrangler d1 migrations apply abscissa-registry --remote` completes, including `0008_team_badges.sql` | Applied remotely; subsequent migration check is up to date |
+| Supabase compatibility rollout | Linked Supabase project applies `20260915160000_team_badges.sql` and `20260916100000_allow_team_badge_scan_purpose.sql` | Applied to linked project `kmdujtabqaxgoeltbxpq`; subsequent dry-run is up to date |
+| Worker rollout | `npx wrangler deploy --config wrangler.jsonc` succeeds and the deployed version exposes the `ABSCISSA_REGISTRY` binding | GitHub Cloudflare deploy passed for commit `ec30314` |
+| Authenticated smoke | Cloudflare session: workspace → Badge Studio → create/reuse → poll → copy/report; repeat with Supabase session | Shared browser had no reusable authenticated session; Cloudflare/Supabase compatibility is covered by focused tests. Signed-out production boundary was exercised with agent-browser. |
+| Public boundary | Signed-out published SVG succeeds; private/revoked token returns 404; response contains no team-private fields | Live invalid team token returned 404; legacy public badge SVG returned 200 with cache headers; published/private/revoked cases are covered by route tests (no team badge rows existed to seed a live token) |
 | Rollback readiness | Keep the prior Worker version available; exact badge URLs remain immutable; unpublish/revoke before rollback if exposure must stop | Implemented in state model; operator action remains |
 
 ## Current implementation status
 
-Strictly against the 16 task completion criteria: **3 complete, 6 partial, 7 not started**. The complete tasks are team badge APIs, the workspace Badge Studio journey, and core analytics/audit instrumentation. Partial tasks have working code but still need the broader acceptance surface, shared public-builder extraction, release-ingestion hardening, evidence/digest expansion, or production rollout verification. The remaining seven tasks are intentionally later roadmap work; the exact-release MVP is the shippable first slice.
+Strictly against the 16 task completion criteria: **3 complete, 8 partial, 5 not started**. The complete tasks are team badge APIs, the workspace Badge Studio journey, and core analytics/audit instrumentation. Partial tasks have working code but still need the broader acceptance surface, shared public-builder extraction, release-ingestion hardening, evidence/digest expansion, full authenticated browser coverage, or internal-beta feedback. The remaining five tasks are intentionally later roadmap work; the exact-release MVP is the shippable first slice.
 
 ## 1. Requirements & Constraints
 
@@ -124,8 +124,8 @@ Phase 3 success criteria: teams can maintain a trust artifact in repositories or
 
 | ID | Task | Files / scope | Depends on | Completion criteria | Status |
 | --- | --- | --- | --- | --- | --- |
-| TASK-015 | Run accessibility, responsive, performance, and browser dogfood checks across signed-in Cloudflare and Supabase sessions. Verify public badge caching and signed-out boundaries. | UI and route tests; agent-browser smoke script/checklist | Phases 1–3 as released | Keyboard and screen-reader paths work; no auth flicker or false signed-in state; core creation flow is responsive and observable. | Not started |
-| TASK-016 | Add rollout instrumentation, migration verification, rollback procedures, and a small internal-team beta. Review metrics and qualitative feedback before enabling public publishing broadly. | Release checklist; dashboards; migration/rollback notes | Analytics, audit, feature flag/config conventions | Rollout can be paused without orphaning badge records or mutating public exact-release URLs. | Not started |
+| TASK-015 | Run accessibility, responsive, performance, and browser dogfood checks across signed-in Cloudflare and Supabase sessions. Verify public badge caching and signed-out boundaries. | UI and route tests; agent-browser smoke script/checklist | Phases 1–3 as released | Keyboard and screen-reader paths work; no auth flicker or false signed-in state; core creation flow is responsive and observable. | Partial |
+| TASK-016 | Add rollout instrumentation, migration verification, rollback procedures, and a small internal-team beta. Review metrics and qualitative feedback before enabling public publishing broadly. | Release checklist; dashboards; migration/rollback notes | Analytics, audit, feature flag/config conventions | Rollout can be paused without orphaning badge records or mutating public exact-release URLs. | Partial |
 
 ## 3. Alternatives
 
