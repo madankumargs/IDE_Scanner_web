@@ -224,6 +224,15 @@ export async function claimCloudflareJob(input: { runnerId: string; jobId: strin
 
 export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): Promise<string> {
   const db = privateDb();
+  const existing = await db
+    .prepare("SELECT scan_id FROM app_scan_reports WHERE job_id=? LIMIT 1")
+    .bind(jobId)
+    .first<Row>();
+  // GitHub retries callbacks after a network timeout. The first request may
+  // have committed the report even when the runner never received its 200
+  // response, so a replay must be a successful no-op.
+  if (existing?.scan_id) return String(existing.scan_id);
+
   const job = await db.prepare("SELECT * FROM app_scan_jobs WHERE id=? LIMIT 1").bind(jobId).first<Row>();
   if (!job) throw new Error("Scan job was not found.");
   const detail = singleExtension(bundle.extensions);
@@ -236,11 +245,23 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
   if (String(job.extension_id).toLowerCase() !== extensionId.toLowerCase() || String(job.version) !== version) throw new Error("Scanner result does not match the claimed artifact.");
   const scanId = randomUUID();
   const now = nowIso();
-  await db.batch([
-    db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, JSON.stringify(bundle), now),
-    db.prepare("UPDATE app_scan_jobs SET status='complete',lifecycle_stage='completed',result_received_at=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(now, now, now, now, jobId),
-  ]);
-  await addCloudflareScanEvent(jobId, "completed", "result_published", { scan_id: scanId });
+  try {
+    await db.batch([
+      db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, JSON.stringify(bundle), now),
+      db.prepare("UPDATE app_scan_jobs SET status='complete',lifecycle_stage='completed',result_received_at=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(now, now, now, now, jobId),
+      db.prepare("INSERT INTO app_scan_job_events(job_id,stage,event_type,detail_json,created_at) VALUES(?,?,?,?,?)").bind(jobId, "completed", "result_published", JSON.stringify({ scan_id: scanId }), now),
+    ]);
+  } catch (error) {
+    // Two callback deliveries can race. Re-read after a unique-key failure so
+    // both deliveries acknowledge the same durable report.
+    if (!isDuplicateCloudflareReport(error)) throw error;
+    const replayed = await db
+      .prepare("SELECT scan_id FROM app_scan_reports WHERE job_id=? LIMIT 1")
+      .bind(jobId)
+      .first<Row>();
+    if (replayed?.scan_id) return String(replayed.scan_id);
+    throw error;
+  }
   return scanId;
 }
 
@@ -410,6 +431,11 @@ function singleExtension(value: Bundle["extensions"]): Row | null {
 function jsonObject(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 function parseJson(value: unknown): unknown { try { return JSON.parse(String(value || "{}")); } catch { return {}; } }
+
+function isDuplicateCloudflareReport(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unique|constraint/i.test(message) && message.includes("app_scan_reports.job_id");
+}
 
 function requesterHash(request: Request): string {
   const raw = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

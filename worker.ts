@@ -1,5 +1,8 @@
-// OpenNext creates this module during cf:build, after the repository-wide
-// TypeScript check. The runtime module is present before Wrangler bundles.
+// OpenNext generates this module during `cf:build`; it is intentionally not
+// checked into source control. Keep the wrapper typed below without making
+// the repository-wide TypeScript check depend on a generated build artifact.
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- OpenNext creates the module during the Cloudflare build.
+// @ts-ignore -- the generated OpenNext worker is present when Wrangler bundles.
 import generatedWorker from "./.open-next/worker.js";
 import { reconcileCloudflareBadgeHealth } from "./lib/cloudflareBadgeHealth";
 
