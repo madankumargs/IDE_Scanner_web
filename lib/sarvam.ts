@@ -435,6 +435,7 @@ export async function createEvidenceIntelligenceReport(
             "Do not repeat prohibited security labels even as disclaimers. If the report cannot establish intent or harm, write 'intent is unknown' or 'the report does not establish harm' instead of naming a prohibited label.",
             "Use observed only for facts directly represented by evidence. Use bounded_inference for carefully qualified consequences. Use unknown for missing, unassessed, or low-confidence information.",
             "Write one primary takeaway. Do not repeat its statement in scenarios, actions, or unknowns. Do not restate the full decision reason, identity, capability list, or blast-radius matrix in multiple places.",
+            "Before returning, remove any sentence that repeats or paraphrases the primary takeaway. The primary section answers what matters; scenarios explain only conditional mechanisms, actions name only the next verification, and unknowns name only decision-changing gaps.",
             "Create event_chain steps only when the context contains structured causal evidence with a trigger, action, and target or consequence. Otherwise set available=false, use an honest short unavailable_reason, and return no steps.",
             "When event_chain.available=false, event_chain.evidence_refs may be an empty array because no causal claim is being made. Do not invent a causal reference.",
             "Only include release_changes when a comparable baseline is present. Never invent a change from a capability, finding, or current-version metadata.",
