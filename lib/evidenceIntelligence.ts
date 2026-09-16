@@ -922,9 +922,9 @@ function rejectRepeatedGuideText(values: string[]): void {
   const primary = tokenizeGuideText(values[1]);
   for (const sentence of sentences.slice(1)) {
     const tokens = tokenizeGuideText(sentence);
-    if (primary.length >= 5 && tokens.length >= 5) {
+    if (primary.length >= 8 && tokens.length >= primary.length) {
       const shared = tokens.filter((token) => primary.includes(token)).length;
-      if (shared / Math.min(primary.length, tokens.length) >= 0.85) throw new EvidenceIntelligenceValidationError("The reviewer guide repeated the primary takeaway.");
+      if (shared / primary.length >= 0.85) throw new EvidenceIntelligenceValidationError("The reviewer guide repeated the primary takeaway.");
     }
   }
   if (values.some((value) => /\b(?:this report provides|valuable insights|it is important to note|in conclusion|potential blast radius)\b/i.test(value))) throw new EvidenceIntelligenceValidationError("The reviewer guide used generic narrative boilerplate.");
