@@ -174,6 +174,42 @@ describe("Sarvam evidence boundary", () => {
     expect(body.messages[1].content).toContain("Review goal: install_decision");
   });
 
+  it("asks Sarvam for one bounded repair after a rejected draft", async () => {
+    process.env.SARVAM_API_KEY = "test-key";
+    const context = compileEvidenceIntelligenceContext({
+      version: "1.2.3",
+      scan: { id: "scan-1", extension_id: "publisher.extension", version: "1.2.3", artifact_sha256: "a".repeat(64), analysis_status: "complete", decision: "review", coverage_percent: 100, capabilities: { network: true } },
+      findings: [{ id: "finding-1", rule_id: "network-egress", summary: "Outbound request" }],
+      files: [],
+      dependencies: [],
+    });
+    const rejectedDraft = {
+      primary_takeaway: { title: "Pause before approval", statement: "This exact release has a deterministic review result.", action: "Verify the cited rationale before approval.", certainty: "observed", evidence_refs: ["scan.decision", "scan.reason"] },
+      event_chain: { available: false, unavailable_reason: "The report does not contain a complete structured causal chain.", steps: [], evidence_refs: ["scan.coverage_boundaries"] },
+      scenarios: [],
+      release_changes: [],
+      next_actions: [{ action_id: "action-1", owner: "security_team", priority: "next", text: "This exact release has a deterministic review result.", evidence_refs: ["scan.decision"] }],
+      unknowns: [],
+    };
+    const repairedDraft = {
+      ...rejectedDraft,
+      next_actions: [{ action_id: "action-1", owner: "security_team", priority: "next", text: "Confirm the expected network destination before approval.", evidence_refs: ["scan.capabilities"] }],
+      unknowns: [{ unknown_id: "unknown-1", question: "Which runtime destination is used?", why_it_matters: "The destination changes the review context.", certainty: "unknown", evidence_refs: ["scan.coverage"] }],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(rejectedDraft) } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(repairedDraft) } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createEvidenceIntelligenceReport(context, "install_decision");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.report.validation).toMatchObject({ status: "validated", source: "sarvam" });
+    const repairBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(repairBody.messages[0].content).toContain("category-level correction");
+    expect(repairBody.messages[0].content).toContain("remove repeated or paraphrased conclusions");
+  });
+
   it("collects streamed JSON while discarding reasoning chunks", async () => {
     process.env.SARVAM_API_KEY = "test-key";
     const context = compileEvidenceIntelligenceContext({
