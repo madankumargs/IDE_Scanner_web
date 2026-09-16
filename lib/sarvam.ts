@@ -15,6 +15,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const INTELLIGENCE_REQUEST_TIMEOUT_MS = 55_000;
 const INTELLIGENCE_ATTEMPT_TIMEOUT_MS = 24_000;
 const INTELLIGENCE_MAX_ATTEMPTS = 2;
+const INTELLIGENCE_MAX_OUTPUT_TOKENS = 2_400;
 const MAX_CONTEXT_CHARS = 24_000;
 const MAX_ARRAY_ITEMS = 60;
 
@@ -544,7 +545,7 @@ async function requestIntelligenceResponse({
     body: JSON.stringify({
       model,
       temperature: repairHint ? 0.2 : 0.05,
-      max_tokens: 1_800,
+      max_tokens: INTELLIGENCE_MAX_OUTPUT_TOKENS,
       stream: false,
       ...structuredOutputControls,
       messages: [
