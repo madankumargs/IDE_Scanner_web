@@ -592,7 +592,7 @@ export function validateReviewerGuide(value: unknown, context: EvidenceIntellige
     statement: requiredText(primaryInput.statement, REVIEWER_GUIDE_LIMITS.primary_statement, "primary_takeaway.statement"),
     action: requiredText(primaryInput.action, REVIEWER_GUIDE_LIMITS.primary_action, "primary_takeaway.action"),
     certainty: requiredCertainty(primaryInput.certainty),
-    evidence_refs: validatedRefs(primaryInput.evidence_refs, allowedRefs, aliases, 6, false),
+    evidence_refs: validatedRefs(primaryInput.evidence_refs, allowedRefs, aliases, 6, false, "primary_takeaway.evidence_refs"),
   };
   const eventChain = validateEventChain(input.event_chain, context, allowedRefs, aliases);
   const scenarios = validateScenarios(input.scenarios, allowedRefs, aliases);
@@ -840,7 +840,7 @@ function validateEventChain(value: unknown, context: EvidenceIntelligenceContext
   // An unavailable chain has no causal claim to cite. Accept an empty list
   // here; requiring a fabricated causal ref would make an honest provider
   // response fail validation and incorrectly force the deterministic fallback.
-  const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, !input.available);
+  const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, !input.available, "event_chain.evidence_refs");
   if (!input.available) {
     if (stepsInput.length) throw new EvidenceIntelligenceValidationError("An unavailable event chain must not contain generated steps.");
     return { available: false, unavailable_reason: unavailableReason, steps: [], evidence_refs: evidenceRefs };
@@ -851,7 +851,7 @@ function validateEventChain(value: unknown, context: EvidenceIntelligenceContext
     const step = objectValue(item);
     const role = step.role;
     if (role !== "trigger" && role !== "action" && role !== "target" && role !== "consequence") throw new EvidenceIntelligenceValidationError("The event chain contained an unsupported step role.");
-    const refs = validatedRefs(step.evidence_refs, allowedRefs, aliases, 6, false);
+    const refs = validatedRefs(step.evidence_refs, allowedRefs, aliases, 6, false, "event_chain.steps[].evidence_refs");
     if (!refs.some((ref) => causalRefs.has(ref))) throw new EvidenceIntelligenceValidationError("An event-chain step was not tied to structured causal evidence.");
     return { step_id: requiredText(step.step_id, 80, "event_chain.steps[].step_id"), role: role as ReviewerGuideChainStep["role"], label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title, "event_chain.steps[].label"), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text, "event_chain.steps[].detail"), evidence_refs: refs };
   });
@@ -865,7 +865,7 @@ function validateScenarios(value: unknown, allowedRefs: Set<string>, aliases: Ma
   return value.map((item) => {
     const input = objectValue(item);
     const certainty = requiredCertainty(input.certainty);
-    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
+    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false, "scenarios[].evidence_refs");
     const scenario = {
       scenario_id: requiredText(input.scenario_id, 80, "scenarios[].scenario_id"),
       title: requiredText(input.title, REVIEWER_GUIDE_LIMITS.item_title, "scenarios[].title"),
@@ -885,7 +885,7 @@ function validateReleaseChanges(value: unknown, context: EvidenceIntelligenceCon
   if (value.length && !context.release_delta.available) throw new EvidenceIntelligenceValidationError("Release changes were generated without a comparable baseline.");
   return value.map((item) => {
     const input = objectValue(item);
-    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
+    const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false, "release_changes[].evidence_refs");
     if (!evidenceRefs.includes("scan.baseline")) throw new EvidenceIntelligenceValidationError("A release change was not tied to the baseline evidence.");
     return { change_id: requiredText(input.change_id, 80, "release_changes[].change_id"), text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.item_text, "release_changes[].text"), evidence_refs: evidenceRefs };
   });
@@ -897,7 +897,7 @@ function validateGuideActions(value: unknown, allowedRefs: Set<string>, aliases:
     const input = objectValue(item);
     if (input.owner !== "you" && input.owner !== "security_team" && input.owner !== "publisher") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported owner.");
     if (input.priority !== "now" && input.priority !== "next" && input.priority !== "optional") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported priority.");
-    return { action_id: requiredText(input.action_id, 80, "next_actions[].action_id"), owner: input.owner, priority: input.priority, text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.action_text, "next_actions[].text"), evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+    return { action_id: requiredText(input.action_id, 80, "next_actions[].action_id"), owner: input.owner, priority: input.priority, text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.action_text, "next_actions[].text"), evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false, "next_actions[].evidence_refs") };
   });
 }
 
@@ -907,7 +907,7 @@ function validateUnknowns(value: unknown, allowedRefs: Set<string>, aliases: Map
     const input = objectValue(item);
     const certainty = requiredCertainty(input.certainty);
     if (certainty !== "unknown") throw new EvidenceIntelligenceValidationError("An unknown must be marked unknown.");
-    return { unknown_id: requiredText(input.unknown_id, 80, "unknowns[].unknown_id"), question: requiredText(input.question, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].question"), why_it_matters: requiredText(input.why_it_matters, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].why_it_matters"), certainty, evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+    return { unknown_id: requiredText(input.unknown_id, 80, "unknowns[].unknown_id"), question: requiredText(input.question, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].question"), why_it_matters: requiredText(input.why_it_matters, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].why_it_matters"), certainty, evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false, "unknowns[].evidence_refs") };
   });
 }
 
@@ -938,12 +938,12 @@ function tokenizeGuideText(value: string): string[] {
   return [...new Set(normalizeGuideText(value).split(" ").filter((token) => token.length > 2))];
 }
 
-function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean): string[] {
+function validatedRefs(value: unknown, allowed: Set<string>, aliases: Map<string, string>, maxItems: number, allowEmpty: boolean, field = "evidence_refs"): string[] {
   if (!Array.isArray(value) || value.length > maxItems || value.some((item) => typeof item !== "string")) throw new EvidenceIntelligenceValidationError("The intelligence report contained invalid evidence references.");
   const refs = value.map((item) => String(item));
   if (!allowEmpty && refs.length === 0) throw new EvidenceIntelligenceValidationError("The intelligence report omitted required evidence references.");
   const canonicalRefs = refs.map((ref) => aliases.get(ref) || aliases.get(ref.replace(/\.\d+$/, "")) || ref);
-  if (canonicalRefs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError("The intelligence report referenced evidence outside the exact report.");
+  if (canonicalRefs.some((ref) => !allowed.has(ref))) throw new EvidenceIntelligenceValidationError(`The intelligence report referenced evidence outside the exact report in ${field}.`);
   return uniqueStrings(canonicalRefs);
 }
 
