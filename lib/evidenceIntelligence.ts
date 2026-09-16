@@ -837,7 +837,10 @@ function validateEventChain(value: unknown, context: EvidenceIntelligenceContext
   const unavailableReason = requiredText(input.unavailable_reason, 260);
   const stepsInput = input.steps;
   if (!Array.isArray(stepsInput) || stepsInput.length > REVIEWER_GUIDE_LIMITS.chain_steps) throw new EvidenceIntelligenceValidationError("The event chain was not a bounded array.");
-  const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
+  // An unavailable chain has no causal claim to cite. Accept an empty list
+  // here; requiring a fabricated causal ref would make an honest provider
+  // response fail validation and incorrectly force the deterministic fallback.
+  const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, !input.available);
   if (!input.available) {
     if (stepsInput.length) throw new EvidenceIntelligenceValidationError("An unavailable event chain must not contain generated steps.");
     return { available: false, unavailable_reason: unavailableReason, steps: [], evidence_refs: evidenceRefs };

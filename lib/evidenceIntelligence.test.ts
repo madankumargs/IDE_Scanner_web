@@ -108,6 +108,17 @@ describe("evidence intelligence output validation", () => {
     expect(reviewerGuide.next_actions).toHaveLength(1);
   });
 
+  it("accepts an unavailable causal chain without inventing a causal reference", () => {
+    const context = compileEvidenceIntelligenceContext(product());
+    const reviewerGuide = validateReviewerGuide(guide({ event_chain: {
+      available: false,
+      unavailable_reason: "The report does not contain a complete structured causal chain.",
+      steps: [],
+      evidence_refs: [],
+    } }), context);
+    expect(reviewerGuide.event_chain).toMatchObject({ available: false, evidence_refs: [] });
+  });
+
   it("canonicalizes model references to validated access-surface evidence", () => {
     const context = compileEvidenceIntelligenceContext(product());
     const reviewerGuide = validateReviewerGuide(guide({ scenarios: [{ ...guide().scenarios[0], evidence_refs: ["external_services"] }] }), context);

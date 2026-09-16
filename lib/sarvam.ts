@@ -435,6 +435,7 @@ export async function createEvidenceIntelligenceReport(
             "Use observed only for facts directly represented by evidence. Use bounded_inference for carefully qualified consequences. Use unknown for missing, unassessed, or low-confidence information.",
             "Write one primary takeaway. Do not repeat its statement in scenarios, actions, or unknowns. Do not restate the full decision reason, identity, capability list, or blast-radius matrix in multiple places.",
             "Create event_chain steps only when the context contains structured causal evidence with a trigger, action, and target or consequence. Otherwise set available=false, use an honest short unavailable_reason, and return no steps.",
+            "When event_chain.available=false, event_chain.evidence_refs may be an empty array because no causal claim is being made. Do not invent a causal reference.",
             "Only include release_changes when a comparable baseline is present. Never invent a change from a capability, finding, or current-version metadata.",
             "Every material object must use only exact evidence refs supplied in the evidence catalog. Fact refs and object IDs are not valid unless the same string also appears in that catalog. Never invent refs.",
             "Keep the guide compact: at most 3 scenarios, 3 actions, 3 unknowns, 3 release changes, and 4 causal steps. Prefer concrete release-specific nouns and verbs over security boilerplate.",
