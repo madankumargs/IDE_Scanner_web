@@ -588,9 +588,9 @@ export function validateReviewerGuide(value: unknown, context: EvidenceIntellige
   const aliases = evidenceRefAliases(context);
   const primaryInput = objectValue(input.primary_takeaway);
   const primary: ReviewerGuidePrimaryTakeaway = {
-    title: requiredText(primaryInput.title, REVIEWER_GUIDE_LIMITS.primary_title),
-    statement: requiredText(primaryInput.statement, REVIEWER_GUIDE_LIMITS.primary_statement),
-    action: requiredText(primaryInput.action, REVIEWER_GUIDE_LIMITS.primary_action),
+    title: requiredText(primaryInput.title, REVIEWER_GUIDE_LIMITS.primary_title, "primary_takeaway.title"),
+    statement: requiredText(primaryInput.statement, REVIEWER_GUIDE_LIMITS.primary_statement, "primary_takeaway.statement"),
+    action: requiredText(primaryInput.action, REVIEWER_GUIDE_LIMITS.primary_action, "primary_takeaway.action"),
     certainty: requiredCertainty(primaryInput.certainty),
     evidence_refs: validatedRefs(primaryInput.evidence_refs, allowedRefs, aliases, 6, false),
   };
@@ -834,7 +834,7 @@ function levelForDimension(name: keyof BlastRadiusAssessment["dimensions"], entr
 function validateEventChain(value: unknown, context: EvidenceIntelligenceContext, allowedRefs: Set<string>, aliases: Map<string, string>): ReviewerGuideEventChain {
   const input = objectValue(value);
   if (typeof input.available !== "boolean") throw new EvidenceIntelligenceValidationError("The event-chain availability was invalid.");
-  const unavailableReason = requiredText(input.unavailable_reason, 260);
+  const unavailableReason = requiredText(input.unavailable_reason, 260, "event_chain.unavailable_reason");
   const stepsInput = input.steps;
   if (!Array.isArray(stepsInput) || stepsInput.length > REVIEWER_GUIDE_LIMITS.chain_steps) throw new EvidenceIntelligenceValidationError("The event chain was not a bounded array.");
   // An unavailable chain has no causal claim to cite. Accept an empty list
@@ -853,7 +853,7 @@ function validateEventChain(value: unknown, context: EvidenceIntelligenceContext
     if (role !== "trigger" && role !== "action" && role !== "target" && role !== "consequence") throw new EvidenceIntelligenceValidationError("The event chain contained an unsupported step role.");
     const refs = validatedRefs(step.evidence_refs, allowedRefs, aliases, 6, false);
     if (!refs.some((ref) => causalRefs.has(ref))) throw new EvidenceIntelligenceValidationError("An event-chain step was not tied to structured causal evidence.");
-    return { step_id: requiredText(step.step_id, 80), role: role as ReviewerGuideChainStep["role"], label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: refs };
+    return { step_id: requiredText(step.step_id, 80, "event_chain.steps[].step_id"), role: role as ReviewerGuideChainStep["role"], label: requiredText(step.label, REVIEWER_GUIDE_LIMITS.item_title, "event_chain.steps[].label"), detail: requiredText(step.detail, REVIEWER_GUIDE_LIMITS.item_text, "event_chain.steps[].detail"), evidence_refs: refs };
   });
   const roles = new Set(steps.map((step) => step.role));
   if (!roles.has("trigger") || !roles.has("action") || (!roles.has("target") && !roles.has("consequence"))) throw new EvidenceIntelligenceValidationError("The event chain omitted a required causal role.");
@@ -867,12 +867,12 @@ function validateScenarios(value: unknown, allowedRefs: Set<string>, aliases: Ma
     const certainty = requiredCertainty(input.certainty);
     const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
     const scenario = {
-      scenario_id: requiredText(input.scenario_id, 80),
-      title: requiredText(input.title, REVIEWER_GUIDE_LIMITS.item_title),
-      when: requiredText(input.when, REVIEWER_GUIDE_LIMITS.item_text),
-      mechanism: requiredText(input.mechanism, REVIEWER_GUIDE_LIMITS.item_text),
-      consequence: requiredText(input.consequence, REVIEWER_GUIDE_LIMITS.item_text),
-      affected_surface: requiredText(input.affected_surface, REVIEWER_GUIDE_LIMITS.item_text),
+      scenario_id: requiredText(input.scenario_id, 80, "scenarios[].scenario_id"),
+      title: requiredText(input.title, REVIEWER_GUIDE_LIMITS.item_title, "scenarios[].title"),
+      when: requiredText(input.when, REVIEWER_GUIDE_LIMITS.item_text, "scenarios[].when"),
+      mechanism: requiredText(input.mechanism, REVIEWER_GUIDE_LIMITS.item_text, "scenarios[].mechanism"),
+      consequence: requiredText(input.consequence, REVIEWER_GUIDE_LIMITS.item_text, "scenarios[].consequence"),
+      affected_surface: requiredText(input.affected_surface, REVIEWER_GUIDE_LIMITS.item_text, "scenarios[].affected_surface"),
       certainty,
       evidence_refs: evidenceRefs,
     };
@@ -887,7 +887,7 @@ function validateReleaseChanges(value: unknown, context: EvidenceIntelligenceCon
     const input = objectValue(item);
     const evidenceRefs = validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false);
     if (!evidenceRefs.includes("scan.baseline")) throw new EvidenceIntelligenceValidationError("A release change was not tied to the baseline evidence.");
-    return { change_id: requiredText(input.change_id, 80), text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.item_text), evidence_refs: evidenceRefs };
+    return { change_id: requiredText(input.change_id, 80, "release_changes[].change_id"), text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.item_text, "release_changes[].text"), evidence_refs: evidenceRefs };
   });
 }
 
@@ -897,7 +897,7 @@ function validateGuideActions(value: unknown, allowedRefs: Set<string>, aliases:
     const input = objectValue(item);
     if (input.owner !== "you" && input.owner !== "security_team" && input.owner !== "publisher") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported owner.");
     if (input.priority !== "now" && input.priority !== "next" && input.priority !== "optional") throw new EvidenceIntelligenceValidationError("The next action contained an unsupported priority.");
-    return { action_id: requiredText(input.action_id, 80), owner: input.owner, priority: input.priority, text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.action_text), evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+    return { action_id: requiredText(input.action_id, 80, "next_actions[].action_id"), owner: input.owner, priority: input.priority, text: requiredText(input.text, REVIEWER_GUIDE_LIMITS.action_text, "next_actions[].text"), evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
   });
 }
 
@@ -907,7 +907,7 @@ function validateUnknowns(value: unknown, allowedRefs: Set<string>, aliases: Map
     const input = objectValue(item);
     const certainty = requiredCertainty(input.certainty);
     if (certainty !== "unknown") throw new EvidenceIntelligenceValidationError("An unknown must be marked unknown.");
-    return { unknown_id: requiredText(input.unknown_id, 80), question: requiredText(input.question, REVIEWER_GUIDE_LIMITS.unknown_text), why_it_matters: requiredText(input.why_it_matters, REVIEWER_GUIDE_LIMITS.unknown_text), certainty, evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
+    return { unknown_id: requiredText(input.unknown_id, 80, "unknowns[].unknown_id"), question: requiredText(input.question, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].question"), why_it_matters: requiredText(input.why_it_matters, REVIEWER_GUIDE_LIMITS.unknown_text, "unknowns[].why_it_matters"), certainty, evidence_refs: validatedRefs(input.evidence_refs, allowedRefs, aliases, 6, false) };
   });
 }
 
@@ -1084,8 +1084,8 @@ function safeText(value: unknown, max: number): string {
   return redact(String(value)).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ").trim().slice(0, max);
 }
 
-function requiredText(value: unknown, max: number): string {
-  if (typeof value !== "string" || !value.trim() || value.length > max) throw new EvidenceIntelligenceValidationError("The intelligence report contained missing or oversized text.");
+function requiredText(value: unknown, max: number, field = "text"): string {
+  if (typeof value !== "string" || !value.trim() || value.length > max) throw new EvidenceIntelligenceValidationError(`The intelligence report contained missing or oversized text in ${field}.`);
   return value.trim();
 }
 
