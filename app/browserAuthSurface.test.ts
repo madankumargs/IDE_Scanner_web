@@ -41,5 +41,6 @@ describe("Cloudflare-compatible browser auth surfaces", () => {
   it("keeps Deep Scan routes compatible with either authenticated provider", () => {
     expect(read("app/api/deep-scans/route.ts")).toContain("authenticated(request)");
     expect(read("app/api/deep-scans/[id]/route.ts")).toContain("authenticated(request)");
+    expect(read("app/api/scans/marketplace/route.ts")).toContain("authenticated(request)");
   });
 });
