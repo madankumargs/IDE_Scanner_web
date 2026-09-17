@@ -5,6 +5,9 @@
 // @ts-ignore -- the generated OpenNext worker is present when Wrangler bundles.
 import generatedWorker from "./.open-next/worker.js";
 import { reconcileCloudflareBadgeHealth } from "./lib/cloudflareBadgeHealth";
+import { dispatchQueuedCloudflareScan } from "./lib/cloudflareScheduledScan";
+import type { PrivateDatabase } from "./lib/cloudflarePrivate";
+import { isPublicRoutePath, isRscPrefetch } from "./lib/publicRequestPolicy";
 
 type WorkerEnvironment = Record<string, unknown> & {
   ABSCISSA_REGISTRY?: D1Database;
@@ -30,26 +33,7 @@ const nextWorker = generatedWorker as NextWorker;
 const edgeCache = (
   globalThis as typeof globalThis & { caches: CacheStorageWithDefault }
 ).caches.default;
-
-const PUBLIC_PAGE_PREFIXES = [
-  "/about",
-  "/benchmark",
-  "/catalog",
-  "/changelog",
-  "/contact",
-  "/detections",
-  "/docs",
-  "/extensions/",
-  "/integrations",
-  "/metrics",
-  "/pricing",
-  "/publishers/",
-  "/registry",
-  "/research/",
-  "/security",
-  "/status",
-  "/terms",
-];
+const publicRenders = new Map<string, Promise<Response>>();
 
 function isPublicPage(request: Request): boolean {
   if (request.method !== "GET") return false;
@@ -57,7 +41,6 @@ function isPublicPage(request: Request): boolean {
   const url = new URL(request.url);
   if (
     url.search ||
-    request.headers.has("cookie") ||
     request.headers.has("authorization")
   ) {
     return false;
@@ -74,14 +57,7 @@ function isPublicPage(request: Request): boolean {
     return false;
   }
 
-  if (url.pathname === "/") return true;
-  if (!PUBLIC_PAGE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
-    return false;
-  }
-
-  // Scan pages are authenticated and can be large; keep them on the normal
-  // OpenNext path even though they share the /extensions/ prefix.
-  return !url.pathname.includes("/scans/");
+  return isPublicRoutePath(url.pathname);
 }
 
 function cacheKey(request: Request): Request {
@@ -108,12 +84,42 @@ function withEdgeCacheHeaders(response: Response, state: "HIT" | "MISS") {
   });
 }
 
+async function renderPublicPage(
+  request: Request,
+  key: Request,
+  env: WorkerEnvironment,
+  ctx: WorkerContext,
+): Promise<Response> {
+  const response = await nextWorker.fetch(request, env, ctx);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (
+    response.status !== 200 ||
+    !contentType.includes("text/html") ||
+    response.headers.has("set-cookie")
+  ) {
+    return response;
+  }
+
+  const cacheableResponse = withEdgeCacheHeaders(response, "MISS");
+  ctx.waitUntil(edgeCache.put(key, cacheableResponse.clone()));
+  return cacheableResponse;
+}
+
 const worker = {
   async fetch(
     request: Request,
     env: WorkerEnvironment,
     ctx: WorkerContext,
   ): Promise<Response> {
+    if (isRscPrefetch(request)) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Abscissa-RSC-Prefetch": "bypassed",
+        },
+      });
+    }
     if (!isPublicPage(request)) {
       return nextWorker.fetch(request, env, ctx);
     }
@@ -122,25 +128,35 @@ const worker = {
     const cached = await edgeCache.match(key);
     if (cached) return withEdgeCacheHeaders(cached, "HIT");
 
-    const response = await nextWorker.fetch(request, env, ctx);
-    const contentType = response.headers.get("content-type") ?? "";
-    if (
-      response.status !== 200 ||
-      !contentType.includes("text/html") ||
-      response.headers.has("set-cookie")
-    ) {
-      return response;
+    let render = publicRenders.get(key.url);
+    if (!render) {
+      render = renderPublicPage(request, key, env, ctx);
+      publicRenders.set(key.url, render);
+      void render.finally(() => {
+        if (publicRenders.get(key.url) === render) publicRenders.delete(key.url);
+      }).catch(() => undefined);
     }
-
-    const cacheableResponse = withEdgeCacheHeaders(response, "MISS");
-    ctx.waitUntil(edgeCache.put(key, cacheableResponse.clone()));
-    return cacheableResponse;
+    return (await render).clone();
   },
   async scheduled(
-    _controller: { scheduledTime: number },
+    controller: { scheduledTime: number; cron?: string },
     env: WorkerEnvironment,
   ): Promise<void> {
     if (!env.ABSCISSA_REGISTRY) return;
+    if (controller.cron === "*/5 * * * *") {
+      try {
+        await dispatchQueuedCloudflareScan(
+          env,
+          env.ABSCISSA_REGISTRY as unknown as PrivateDatabase,
+        );
+      } catch (error) {
+        console.error(
+          "[scheduled-deep-scan] dispatch failed",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      return;
+    }
     await reconcileCloudflareBadgeHealth(env.ABSCISSA_REGISTRY);
   },
 };

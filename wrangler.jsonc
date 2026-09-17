@@ -13,7 +13,7 @@
   ],
   "workers_dev": true,
   "triggers": {
-    "crons": ["23 */6 * * *"]
+    "crons": ["*/5 * * * *", "23 */6 * * *"]
   },
   "vars": {
     "GITHUB_OAUTH_CLIENT_ID": "Ov23liWQ5kElxVniE4tx",
