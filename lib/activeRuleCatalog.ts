@@ -1,6 +1,8 @@
 import "server-only";
 
 import { serviceDb } from "@/lib/supabase";
+import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
+import { privateDb } from "@/lib/cloudflarePrivate";
 import { catalogFromReleaseReport, type ActiveRuleCatalog } from "@/lib/rules";
 
 /**
@@ -10,6 +12,10 @@ import { catalogFromReleaseReport, type ActiveRuleCatalog } from "@/lib/rules";
  */
 export async function getActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> {
   try {
+    if (cloudflarePrivateAvailable()) {
+      const cloudflareCatalog = await getCloudflareActiveRuleCatalog();
+      if (cloudflareCatalog) return cloudflareCatalog;
+    }
     const db = serviceDb();
     const release = await db
       .from("scan_publication_releases")
@@ -59,6 +65,54 @@ export async function getActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> 
   } catch {
     return null;
   }
+}
+
+async function getCloudflareActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> {
+  const db = privateDb();
+  const release = await db
+    .prepare("SELECT id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports FROM app_scan_publication_releases WHERE active=1 LIMIT 1")
+    .first<Record<string, unknown>>();
+  if (!release?.id) return null;
+
+  const expectedReports = Number(release.expected_reports || 0);
+  const members = await db.prepare(`
+    SELECT m.scan_id,m.extension_id,m.version,m.artifact_sha256,r.report_json
+    FROM app_scan_publication_release_reports m
+    JOIN app_scan_reports r ON r.scan_id=m.scan_id
+    WHERE m.release_id=?
+    ORDER BY m.extension_id,m.version
+  `).bind(String(release.id)).all<Record<string, unknown>>();
+  if (!expectedReports || members.results.length !== expectedReports) return null;
+
+  const expected = {
+    policyVersion: text(release.policy_version),
+    rulesetVersion: text(release.ruleset_version),
+    scoreSchemaVersion: text(release.score_schema_version),
+    scannerBuild: text(release.scanner_build),
+  };
+  if (!expected.policyVersion || !expected.rulesetVersion || !expected.scoreSchemaVersion || !expected.scannerBuild) return null;
+
+  let rules: ActiveRuleCatalog["rules"] | null = null;
+  let fingerprint = "";
+  const identities = new Set<string>();
+  for (const member of members.results) {
+    const key = `${String(member.extension_id || "").toLowerCase()}@${String(member.version || "")}`;
+    if (!key || !member.artifact_sha256 || identities.has(key)) return null;
+    identities.add(key);
+    let bundle: Record<string, unknown>;
+    try {
+      bundle = JSON.parse(String(member.report_json || "")) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    const candidate = catalogFromReleaseReport(bundle, expected);
+    if (!candidate) return null;
+    const candidateFingerprint = JSON.stringify(candidate);
+    if (fingerprint && fingerprint !== candidateFingerprint) return null;
+    rules = candidate;
+    fingerprint = candidateFingerprint;
+  }
+  return rules ? { ...expected, rules } : null;
 }
 
 function text(value: unknown): string {
