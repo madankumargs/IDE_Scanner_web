@@ -1,7 +1,6 @@
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
 import { getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
 import { serviceDb } from "@/lib/supabase";
-import { runtimeServiceDb, runtimeSupabase } from "@/lib/supabaseRuntime";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb, type PrivateDatabase } from "@/lib/cloudflarePrivate";
 import { unstable_cache } from "next/cache";
@@ -166,7 +165,7 @@ async function fetchPublicStatus(): Promise<PublicStatus> {
     // Wrangler injects production secrets through the request context, not
     // process.env. Prefer that client so the status probe measures the real
     // primary store instead of always falling back to the public mirror.
-    const db = runtimeServiceDb() ?? runtimeSupabase() ?? serviceDb();
+    const db = serviceDb();
     const [probe, refresh, scans, deliveries, incidents] = await Promise.all([
       db
         .from("registry_refreshes")
@@ -195,8 +194,8 @@ async function fetchPublicStatus(): Promise<PublicStatus> {
         .order("started_at", { ascending: false })
         .limit(20),
     ]);
-    const scanRows = scans.data ?? [];
-    const deliveryRows = deliveries.data ?? [];
+    const scanRows = (scans.data ?? []) as Array<{ analysis_status?: string }>;
+    const deliveryRows = (deliveries.data ?? []) as Array<{ status?: string }>;
     return evaluatePublicStatus({
       runner,
       databaseReachable: !probe.error,
