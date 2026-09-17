@@ -20,11 +20,12 @@ const releaseId = `d1-${Date.now()}-${scannerBuild.slice(0, 12)}-${randomUUID().
 const now = new Date().toISOString();
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const statements = [
-  "BEGIN TRANSACTION;",
-  "UPDATE app_scan_publication_releases SET active=0 WHERE active=1;",
-  `INSERT INTO app_scan_publication_releases(id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports,report_count_at_activation,active,created_at,activated_at) VALUES(${quote(releaseId)},${quote(policyVersion)},${quote(rulesetVersion)},${quote(scoreSchemaVersion)},${quote(scannerBuild)},${extensions.length},${extensions.length},1,${quote(now)},${quote(now)});`,
+  // D1's remote SQL endpoint rejects BEGIN/COMMIT wrappers. Stage the release
+  // inactive first, then add every immutable member, and flip active last.
+  `INSERT INTO app_scan_publication_releases(id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports,report_count_at_activation,active,created_at,activated_at) VALUES(${quote(releaseId)},${quote(policyVersion)},${quote(rulesetVersion)},${quote(scoreSchemaVersion)},${quote(scannerBuild)},${extensions.length},${extensions.length},0,${quote(now)},NULL);`,
   ...extensions.map((item) => `INSERT INTO app_scan_publication_release_reports(release_id,scan_id,extension_id,version,artifact_sha256) VALUES(${quote(releaseId)},${quote(item.scan_id)},${quote(item.extension_id)},${quote(item.version)},${quote(item.artifact_hash)});`),
-  "COMMIT;",
+  "UPDATE app_scan_publication_releases SET active=0 WHERE active=1;",
+  `UPDATE app_scan_publication_releases SET active=1,activated_at=${quote(now)} WHERE id=${quote(releaseId)};`,
 ];
 const summary = { release_id: releaseId, reports: extensions.length, scanner_build: scannerBuild, policy_version: policyVersion, ruleset_version: rulesetVersion, score_schema_version: scoreSchemaVersion };
 if (!apply) {
