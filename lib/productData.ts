@@ -1,7 +1,7 @@
 import { publicDb, serviceDb } from "@/lib/supabase";
 import { isConcreteVersion, listMarketplaceVersions, resolveMarketplaceExtension, searchMarketplace } from "@/lib/marketplace";
 import { getPublicRegistryProduct, getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
-import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
+import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct, getCloudflareRegistrySection } from "@/lib/cloudflareRegistry";
 import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cloudflarePrivateAvailable, getCloudflareScanProduct, getCloudflareScanSummary } from "@/lib/cloudflareDeepScan";
@@ -76,6 +76,16 @@ async function fetchPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedIte
 
 /** Current-policy reproducible scans only. Development and private work never enter this catalog. */
 async function fetchPublicInventory(limit = 240): Promise<PublicInventory> {
+  // Public pages should use the compact D1 publication mirror first. It is
+  // already bounded and immutable between imports, while the Supabase query
+  // below remains the compatibility path for local/legacy deployments.
+  const cloudflareInventory = await getCloudflareRegistrySection<PublicInventory>("inventory");
+  if (cloudflareInventory?.items && cloudflareInventory.totals) {
+    return {
+      ...cloudflareInventory,
+      items: cloudflareInventory.items.slice(0, Math.min(limit, cloudflareInventory.items.length)),
+    };
+  }
   const mirror = async () => {
     const inventory = (await getPublicRegistrySnapshot())?.inventory;
     return inventory ? { ...inventory, items: inventory.items.slice(0, limit) } : emptyInventory();
