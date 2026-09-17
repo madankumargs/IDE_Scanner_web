@@ -23,7 +23,7 @@ const db = createClient(url, key, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const { data, error } = await db.from("scans")
-  .select("id,extension_id,version,artifact_sha256,decision,severity,analysis_status,coverage_percent,analysis_coverage,policy_version,ruleset_version,score_schema_version,scanner_build,scanned_at")
+  .select("id,extension_id,version,artifact_sha256,decision,severity,analysis_status,coverage_percent,analysis_coverage,canonical_report,policy_version,ruleset_version,score_schema_version,scanner_build,scanned_at")
   .in("scan_purpose", ["public_intelligence", "benchmark"])
   .eq("scanner_build", scannerBuild)
   .eq("policy_version", policyVersion)
@@ -87,6 +87,14 @@ for (const wanted of expected) {
   }
   if (coverage.required_providers_complete !== true) {
     mismatches.push(`${key_}: required provider coverage is incomplete`);
+  }
+  const canonicalReport = objectValue(actual.canonical_report);
+  const embeddedRules = objectValue(canonicalReport.rules);
+  const embeddedRuleRows = Array.isArray(embeddedRules.rules) ? embeddedRules.rules : [];
+  if (String(embeddedRules.policy_version || "") !== policyVersion
+    || String(embeddedRules.ruleset_version || "") !== rulesetVersion
+    || embeddedRuleRows.length === 0) {
+    mismatches.push(`${key_}: canonical report is missing the active policy/ruleset catalog`);
   }
   scanIds.push(String(actual.id));
   scoreSchemas.add(String(actual.score_schema_version || ""));
