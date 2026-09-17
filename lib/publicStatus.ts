@@ -1,6 +1,9 @@
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
 import { getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
 import { serviceDb } from "@/lib/supabase";
+import { runtimeServiceDb, runtimeSupabase } from "@/lib/supabaseRuntime";
+import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
+import { privateDb, type PrivateDatabase } from "@/lib/cloudflarePrivate";
 import { unstable_cache } from "next/cache";
 
 export type ServiceState = "operational" | "degraded" | "outage" | "unknown";
@@ -34,6 +37,7 @@ type HealthInput = {
   scanFailureRate: number | null;
   notificationFailureRate: number | null;
   databaseReachable: boolean;
+  notificationConfigured?: boolean;
   publicMirrorAvailable?: boolean;
   incidents?: PublicIncident[];
   now?: Date;
@@ -74,7 +78,9 @@ export function evaluatePublicStatus(input: HealthInput): PublicStatus {
             ? "degraded"
           : "outage",
       input.runner.status === "ready"
-        ? "Runner heartbeat is current and requests are accepted."
+        ? input.runner.last_seen_at && Date.now() - new Date(input.runner.last_seen_at).getTime() < 12 * 60_000
+          ? "Runner heartbeat is current and requests are accepted."
+          : "Runner is idle; requests are accepted and queued work is dispatched automatically."
         : input.runner.accepting_requests
           ? "Requests are accepted, but the latest runner heartbeat is delayed."
           : input.publicMirrorAvailable
@@ -94,8 +100,12 @@ export function evaluatePublicStatus(input: HealthInput): PublicStatus {
       "notifications",
       "Notification delivery",
       "Team delivery outcomes during the last 24 hours.",
-      rateState(input.notificationFailureRate),
-      rateDetail(input.notificationFailureRate, "delivery"),
+      input.notificationFailureRate === null && input.notificationConfigured === false
+        ? "operational"
+        : rateState(input.notificationFailureRate),
+      input.notificationFailureRate === null && input.notificationConfigured === false
+        ? "No notification channels are configured; no deliveries are pending."
+        : rateDetail(input.notificationFailureRate, "delivery"),
       checkedAt,
     ),
     service(
@@ -150,7 +160,13 @@ async function fetchPublicStatus(): Promise<PublicStatus> {
   const runner = await getDeepScanHealth();
   const since = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
   try {
-    const db = serviceDb();
+    if (cloudflarePrivateAvailable()) {
+      return await fetchCloudflarePublicStatus(privateDb(), runner, since);
+    }
+    // Wrangler injects production secrets through the request context, not
+    // process.env. Prefer that client so the status probe measures the real
+    // primary store instead of always falling back to the public mirror.
+    const db = runtimeServiceDb() ?? runtimeSupabase() ?? serviceDb();
     const [probe, refresh, scans, deliveries, incidents] = await Promise.all([
       db
         .from("registry_refreshes")
@@ -201,7 +217,11 @@ async function fetchPublicStatus(): Promise<PublicStatus> {
           ),
       incidents: incidents.error ? [] : (incidents.data as PublicIncident[]),
     });
-  } catch {
+  } catch (error) {
+    console.error(
+      "[public-status] primary data store probe failed",
+      error instanceof Error ? error.message : String(error),
+    );
     const mirror = await getPublicRegistrySnapshot();
     if (mirror) {
       const refreshes = Object.values(mirror.metrics.freshness).filter(
@@ -223,6 +243,69 @@ async function fetchPublicStatus(): Promise<PublicStatus> {
       scanFailureRate: null,
       notificationFailureRate: null,
     });
+  }
+}
+
+async function fetchCloudflarePublicStatus(
+  db: PrivateDatabase,
+  runner: Awaited<ReturnType<typeof getDeepScanHealth>>,
+  since: string,
+): Promise<PublicStatus> {
+  const probe = await db.prepare("SELECT 1 AS ok").first<{ ok?: number }>();
+  if (!probe) throw new Error("Cloudflare D1 health probe returned no result.");
+  const refreshPromise = db
+      .prepare("SELECT MAX(generated_at) AS completed_at FROM registry_section_chunks")
+      .first<{ completed_at?: string | null }>(),
+    scansPromise = db
+      .prepare("SELECT status,error FROM app_scan_jobs WHERE profile='deep' AND status IN ('complete','failed') AND COALESCE(completed_at,updated_at)>=?")
+      .bind(since)
+      .all<{ status?: string; error?: string | null }>(),
+    deliveriesPromise = db
+      .prepare("SELECT status FROM app_notification_deliveries WHERE created_at>=?")
+      .bind(since)
+      .all<{ status?: string }>(),
+    teamsPromise = db.prepare("SELECT state_json FROM app_team_state").all<{ state_json?: string }>();
+  const [refresh, scans, deliveries, teams] = await Promise.all([
+    refreshPromise.catch(() => null),
+    scansPromise.catch(() => ({ results: [] as Array<{ status?: string; error?: string | null }> })),
+    deliveriesPromise.catch(() => ({ results: [] as Array<{ status?: string }> })),
+    teamsPromise.catch(() => ({ results: [] as Array<{ state_json?: string }> })),
+  ]);
+
+  // Dispatch failures are represented by Deep Scan health. They are not
+  // analyzer failures and must not inflate the publication failure rate.
+  const scanRows = scans?.results || [];
+  const analyzedScans = scanRows.filter(
+    (row) => !String(row.error || "").toLowerCase().includes("dispatch failed"),
+  );
+  const scanFailures = analyzedScans.filter((row) => row.status === "failed").length;
+  const deliveryRows = deliveries?.results || [];
+  return evaluatePublicStatus({
+    runner,
+    databaseReachable: true,
+    newestRegistryRefresh: refresh?.completed_at ? String(refresh.completed_at) : null,
+    scanFailureRate: ratio(scanFailures, analyzedScans.length),
+    notificationFailureRate: ratio(
+      deliveryRows.filter((row) => row.status === "failed").length,
+      deliveryRows.length,
+    ),
+    notificationConfigured: Boolean(teams?.results?.some((row) => hasConfiguredNotificationChannel(row.state_json))),
+    incidents: [],
+  });
+}
+
+function hasConfiguredNotificationChannel(stateJson: string | undefined): boolean {
+  try {
+    const state = JSON.parse(stateJson || "{}");
+    return Array.isArray(state?.channels)
+      && state.channels.some(
+        (channel: unknown) => channel && typeof channel === "object"
+          && (channel as { enabled?: unknown }).enabled !== false
+          && typeof (channel as { target?: unknown }).target === "string"
+          && Boolean((channel as { target: string }).target.trim()),
+      );
+  } catch {
+    return false;
   }
 }
 
