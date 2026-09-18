@@ -15,6 +15,18 @@ export type PublicationHealth = {
   notification_failure_rate: number;
 };
 
+export function hasAccuracyGateAttestation(release: {
+  accuracy_gate_corpus_id?: unknown;
+  accuracy_gate_corpus_version?: unknown;
+  accuracy_gate_sha256?: unknown;
+} | null | undefined): boolean {
+  return Boolean(
+    release?.accuracy_gate_corpus_id
+    && release.accuracy_gate_corpus_version
+    && /^[0-9a-f]{64}$/.test(String(release.accuracy_gate_sha256 || "")),
+  );
+}
+
 export function evaluatePublicationHealth(input: Omit<PublicationHealth, "healthy" | "reasons">): PublicationHealth {
   const reasons: string[] = [];
   if (!input.active_release) reasons.push("No active public classification release.");
@@ -68,14 +80,18 @@ export async function getPublicationHealth(): Promise<PublicationHealth> {
   const failures = completed.filter((item) => item.status === "failed").length;
   const recentScans = scans.data || [];
   const scanFailures = recentScans.filter((item) => item.analysis_status === "failed").length;
-  return evaluatePublicationHealth({ active_release: release ? { id: String(release.id), expected_reports: Number(release.expected_reports), activated_at: String(release.activated_at), accuracy_gate_verified: Boolean(release.accuracy_gate_corpus_id && release.accuracy_gate_corpus_version && /^[0-9a-f]{64}$/.test(String(release.accuracy_gate_sha256 || ""))) } : null, current_report_count: currentReportCount, newest_scan_at: newestScanAt, runner_status: runner.status, runner_last_seen_at: runner.last_seen_at, scan_failure_rate: recentScans.length ? scanFailures / recentScans.length : 0, notification_failure_rate: completed.length ? failures / completed.length : 0 });
+  return evaluatePublicationHealth({ active_release: release ? { id: String(release.id), expected_reports: Number(release.expected_reports), activated_at: String(release.activated_at || ""), accuracy_gate_verified: hasAccuracyGateAttestation(release) } : null, current_report_count: currentReportCount, newest_scan_at: newestScanAt, runner_status: runner.status, runner_last_seen_at: runner.last_seen_at, scan_failure_rate: recentScans.length ? scanFailures / recentScans.length : 0, notification_failure_rate: completed.length ? failures / completed.length : 0 });
 }
 
 async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
   const db = privateDb();
   const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const release = await db.prepare("SELECT id,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256,expected_reports,activated_at FROM app_scan_publication_releases WHERE active=1 LIMIT 1").first<Record<string, unknown>>();
+  const releaseId = release?.id ? String(release.id) : "";
   const [reports, jobs, deliveries, runner] = await Promise.all([
-    db.prepare("SELECT COUNT(*) AS count, MAX(created_at) AS newest_scan_at FROM app_scan_reports").first<Record<string, unknown>>(),
+    releaseId
+      ? db.prepare("SELECT COUNT(*) AS count, MAX(r.created_at) AS newest_scan_at FROM app_scan_publication_release_reports m JOIN app_scan_reports r ON r.scan_id=m.scan_id WHERE m.release_id=?").bind(releaseId).first<Record<string, unknown>>()
+      : Promise.resolve<Record<string, unknown> | null>(null),
     db.prepare("SELECT status, COUNT(*) AS count FROM app_scan_jobs WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
     db.prepare("SELECT status, COUNT(*) AS count FROM app_notification_deliveries WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
     getDeepScanHealth(),
@@ -88,21 +104,18 @@ async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
   const failedJobs = jobRows.filter((row) => String(row.status) === "failed").reduce((sum, row) => sum + Number(row.count || 0), 0);
   const deliveryCount = deliveryRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
   const failedDeliveries = deliveryRows.filter((row) => String(row.status) === "failed").reduce((sum, row) => sum + Number(row.count || 0), 0);
-  const reasons: string[] = [];
-  if (!currentReportCount) reasons.push("No completed Deep Scan reports in Cloudflare D1.");
-  if (!newestScanAt || Date.now() - new Date(newestScanAt).getTime() > 30 * 60 * 60 * 1000) reasons.push("Public scan corpus is older than 30 hours.");
-  if (runner.status !== "ready") reasons.push(`Deep Scan runner is ${runner.status}.`);
-  if (jobCount && failedJobs / jobCount > 0.1) reasons.push("Scan failure rate exceeds 10 percent.");
-  if (deliveryCount && failedDeliveries / deliveryCount > 0.1) reasons.push("Notification failure rate exceeds 10 percent.");
-  return {
-    healthy: reasons.length === 0,
-    reasons,
-    active_release: currentReportCount ? { id: "cloudflare-d1-corpus", expected_reports: currentReportCount, activated_at: newestScanAt || new Date().toISOString(), accuracy_gate_verified: true } : null,
+  return evaluatePublicationHealth({
+    active_release: release ? {
+      id: String(release.id),
+      expected_reports: Number(release.expected_reports || 0),
+      activated_at: String(release.activated_at || ""),
+      accuracy_gate_verified: hasAccuracyGateAttestation(release),
+    } : null,
     current_report_count: currentReportCount,
     newest_scan_at: newestScanAt,
     runner_status: runner.status,
     runner_last_seen_at: runner.last_seen_at,
     scan_failure_rate: jobCount ? failedJobs / jobCount : 0,
     notification_failure_rate: deliveryCount ? failedDeliveries / deliveryCount : 0,
-  };
+  });
 }

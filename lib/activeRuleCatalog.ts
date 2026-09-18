@@ -4,6 +4,7 @@ import { serviceDb } from "@/lib/supabase";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb } from "@/lib/cloudflarePrivate";
 import { catalogFromReleaseReport, type ActiveRuleCatalog } from "@/lib/rules";
+import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 
 /**
  * Reads the catalog embedded in the active immutable scanner release. The web
@@ -19,11 +20,12 @@ export async function getActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> 
     const db = serviceDb();
     const release = await db
       .from("scan_publication_releases")
-      .select("id,policy_version,ruleset_version,score_schema_version,scanner_build")
+      .select("id,policy_version,ruleset_version,score_schema_version,scanner_build,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256")
       .eq("active", true)
       .limit(1)
       .maybeSingle();
     if (release.error || !release.data?.id) return null;
+    if (!hasAccuracyGateAttestation(release.data)) return null;
 
     const members = await db
       .from("scan_publication_release_scans")
@@ -70,9 +72,10 @@ export async function getActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> 
 async function getCloudflareActiveRuleCatalog(): Promise<ActiveRuleCatalog | null> {
   const db = privateDb();
   const release = await db
-    .prepare("SELECT id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports FROM app_scan_publication_releases WHERE active=1 LIMIT 1")
+    .prepare("SELECT id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256 FROM app_scan_publication_releases WHERE active=1 LIMIT 1")
     .first<Record<string, unknown>>();
   if (!release?.id) return null;
+  if (!hasAccuracyGateAttestation(release)) return null;
 
   const expectedReports = Number(release.expected_reports || 0);
   const members = await db.prepare(`

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePublicationHealth, summarizeReleaseMemberScans } from "@/lib/publicationHealth";
+import { evaluatePublicationHealth, hasAccuracyGateAttestation, summarizeReleaseMemberScans } from "@/lib/publicationHealth";
+
+describe("hasAccuracyGateAttestation", () => {
+  it("requires corpus identity and a full gate digest", () => {
+    expect(hasAccuracyGateAttestation({ accuracy_gate_corpus_id: "holdout", accuracy_gate_corpus_version: "1", accuracy_gate_sha256: "a".repeat(64) })).toBe(true);
+    expect(hasAccuracyGateAttestation({ accuracy_gate_corpus_id: "holdout", accuracy_gate_corpus_version: "1", accuracy_gate_sha256: "a".repeat(63) })).toBe(false);
+    expect(hasAccuracyGateAttestation(null)).toBe(false);
+  });
+});
 
 describe("evaluatePublicationHealth", () => {
   it("requires an active, complete, current release", () => {
