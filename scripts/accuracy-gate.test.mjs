@@ -10,10 +10,12 @@ const validGate = {
     policy_version: "policy-1",
     ruleset_version: "rules-1",
   },
-  gate: { passed: true, checks: { required_pass_rate: true, safe_block_rate: true, malicious_allow_rate: true } },
+  gate: { passed: true, checks: { required_pass_rate: true, safe_block_rate: true, malicious_allow_rate: true, incomplete_required: true } },
   summary: {
     required_artifacts: 8,
     required_passed: 8,
+    required_failed: 0,
+    incomplete_required: 0,
     required_pass_rate: 1,
     safe_evaluated: 2,
     safe_block_rate: 0,
@@ -102,5 +104,21 @@ describe("accuracy publication gate", () => {
       holdout: { ...validGate.holdout, label_counts: { known_safe: 5, known_malicious: 4 } },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout label counts do not match the frozen corpus");
+  });
+
+  it("rejects a passed-looking gate with an incomplete required check", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      gate: { passed: true, checks: { required_pass_rate: true, safe_block_rate: true, malicious_allow_rate: true } },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("accuracy gate contains a failed or missing check");
+  });
+
+  it("rejects a gate with an out-of-range summary rate", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      summary: { ...validGate.summary, safe_block_rate: -1 },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("accuracy gate summary safe_block_rate must be a number between 0 and 1");
   });
 });

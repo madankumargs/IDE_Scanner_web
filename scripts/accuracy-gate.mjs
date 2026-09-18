@@ -18,7 +18,8 @@ export function validateAccuracyGate(value, expected = {}) {
     errors.push("accuracy gate must identify a versioned labelled corpus");
   }
   if (object(gate.gate).passed !== true) errors.push("accuracy gate did not pass");
-  if (!checks || Object.values(checks).some((value) => value !== true)) {
+  const requiredChecks = ["required_pass_rate", "safe_block_rate", "malicious_allow_rate", "incomplete_required"];
+  if (!checks || requiredChecks.some((key) => checks[key] !== true) || Object.values(checks).some((value) => value !== true)) {
     errors.push("accuracy gate contains a failed or missing check");
   }
 
@@ -31,9 +32,14 @@ export function validateAccuracyGate(value, expected = {}) {
 
   const requiredArtifacts = number(summary.required_artifacts);
   const requiredPassed = number(summary.required_passed);
+  const requiredFailed = number(summary.required_failed);
+  const incompleteRequired = number(summary.incomplete_required);
   const safeEvaluated = number(summary.safe_evaluated);
   const maliciousEvaluated = number(summary.malicious_evaluated);
-  if (requiredArtifacts < 1 || requiredPassed !== requiredArtifacts) {
+  for (const field of ["required_pass_rate", "safe_block_rate", "malicious_allow_rate"]) {
+    if (!boundedRate(summary[field])) errors.push(`accuracy gate summary ${field} must be a number between 0 and 1`);
+  }
+  if (requiredArtifacts < 1 || requiredPassed !== requiredArtifacts || requiredFailed !== 0 || incompleteRequired !== 0) {
     errors.push("accuracy gate has incomplete required corpus coverage");
   }
   if (safeEvaluated < 1 || maliciousEvaluated < 1) {
@@ -55,6 +61,9 @@ export function validateAccuracyGate(value, expected = {}) {
   }
   if (number(holdout.required_pass_rate) < 1) {
     errors.push("fresh-labeled holdout required pass rate is below 100 percent");
+  }
+  for (const field of ["required_pass_rate", "safe_block_rate", "malicious_allow_rate"]) {
+    if (!boundedRate(holdout[field])) errors.push(`fresh-labeled holdout ${field} must be a number between 0 and 1`);
   }
   if (number(holdout.safe_block_rate) > 0) {
     errors.push("fresh-labeled holdout has known-safe blocks");
@@ -90,4 +99,8 @@ function object(value) {
 
 function number(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : -1;
+}
+
+function boundedRate(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
