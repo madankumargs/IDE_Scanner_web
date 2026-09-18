@@ -17,6 +17,10 @@ describe("Extension Registry product surface",()=>{
   it("shows useful registry health rather than only internal totals",()=>{
     for(const label of ["Public intelligence","Exact artifacts","Needs attention","Last refreshed"]) expect(page).toContain(label);
   });
+  it("paginates the current publication instead of truncating it at the first 240 reports",()=>{
+    expect(page).toContain("INVENTORY_PAGE_SIZE = 240");
+    expect(page).toContain("Current public report pages");
+  });
   it("uses compact outcome, severity, and sort filters",()=>{
     expect(inventory).toContain("All outcomes");
     expect(inventory).toContain("All severities");

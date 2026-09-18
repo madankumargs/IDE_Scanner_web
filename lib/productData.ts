@@ -34,14 +34,16 @@ export type PublicInventory = { items: PublicInventoryItem[]; totals: { extensio
 export type PublicAnalysisHistory = { items: PublicInventoryItem[]; total: number; complete: number; pending: number };
 
 const cachedSecurityFeed=unstable_cache(async(limit:number)=>fetchPublicSecurityFeed(limit).catch(() => []),["public-feed-v1"],{revalidate:300,tags:["public-intel"]});
-const cachedPublicInventory=unstable_cache(async(limit:number)=>fetchPublicInventory(limit).catch(() => emptyInventory()),["public-inventory-v1"],{revalidate:300,tags:["public-intel"]});
+const cachedPublicInventory=unstable_cache(async(limit:number,offset:number)=>fetchPublicInventory(limit,offset).catch(() => emptyInventory()),["public-inventory-v2"],{revalidate:300,tags:["public-intel"]});
 const cachedPublicAnalysisHistory=unstable_cache(async(limit:number,offset:number)=>fetchPublicAnalysisHistory(limit,offset).catch(() => emptyAnalysisHistory()),["public-analysis-history-v1"],{revalidate:300,tags:["public-intel"]});
 const cachedCatalog=unstable_cache(async(query:string,limit:number)=>fetchCatalog(query,limit),["public-catalog-v1"],{revalidate:300,tags:["public-intel","catalog"]});
 
 export function getPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedItem[]> { return cachedSecurityFeed(limit); }
 
 /** Current-policy reproducible scans only. Development and private work never enter this catalog. */
-export function getPublicInventory(limit = 240): Promise<PublicInventory> { return cachedPublicInventory(limit); }
+export function getPublicInventory(limit = 240, offset = 0): Promise<PublicInventory> {
+  return cachedPublicInventory(Math.min(Math.max(Math.floor(limit), 1), 240), Math.max(Math.floor(offset), 0));
+}
 
 export function getPublicAnalysisHistory(limit = 24, offset = 0): Promise<PublicAnalysisHistory> {
   return cachedPublicAnalysisHistory(Math.min(Math.max(limit, 1), 100), Math.max(offset, 0));
@@ -75,7 +77,7 @@ async function fetchPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedIte
 }
 
 /** Current-policy reproducible scans only. Development and private work never enter this catalog. */
-async function fetchPublicInventory(limit = 240): Promise<PublicInventory> {
+async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInventory> {
   // Public pages should use the compact D1 publication mirror first. It is
   // already bounded and immutable between imports, while the Supabase query
   // below remains the compatibility path for local/legacy deployments.
@@ -83,19 +85,19 @@ async function fetchPublicInventory(limit = 240): Promise<PublicInventory> {
   if (cloudflareInventory?.items && cloudflareInventory.totals) {
     return {
       ...cloudflareInventory,
-      items: cloudflareInventory.items.slice(0, Math.min(limit, cloudflareInventory.items.length)),
+      items: cloudflareInventory.items.slice(offset, offset + limit),
     };
   }
   const mirror = async () => {
     const inventory = (await getPublicRegistrySnapshot())?.inventory;
-    return inventory ? { ...inventory, items: inventory.items.slice(0, limit) } : emptyInventory();
+    return inventory ? { ...inventory, items: inventory.items.slice(offset, offset + limit) } : emptyInventory();
   };
   const db = publicDb();
   if (!db) return mirror();
   try {
     const classification = await activePublicClassification(db);
     if (!classification || classification.scanIds?.length === 0) return mirror();
-    let request = db.from("scans").select("id,extension_id,version,artifact_sha256,severity,decision,decision_reason,public_outcome,decision_basis,evidence_confidence,provenance_tier,expected_profile_id,capability_assessment,score_schema_version,risk_score,malware_score,coverage_percent,scanner_build,ruleset_version,scanned_at").in("scan_purpose", ["public_intelligence", "benchmark"]).eq("score_schema_version", classification.scoreSchemaVersion).eq("analysis_status", "complete").eq("policy_version", classification.policyVersion).eq("ruleset_version", classification.rulesetVersion).eq("scanner_build", classification.scannerBuild).in("decision", ["allow", "review", "block"]).order("scanned_at", { ascending: false }).limit(240);
+    let request = db.from("scans").select("id,extension_id,version,artifact_sha256,severity,decision,decision_reason,public_outcome,decision_basis,evidence_confidence,provenance_tier,expected_profile_id,capability_assessment,score_schema_version,risk_score,malware_score,coverage_percent,scanner_build,ruleset_version,scanned_at").in("scan_purpose", ["public_intelligence", "benchmark"]).eq("score_schema_version", classification.scoreSchemaVersion).eq("analysis_status", "complete").eq("policy_version", classification.policyVersion).eq("ruleset_version", classification.rulesetVersion).eq("scanner_build", classification.scannerBuild).in("decision", ["allow", "review", "block"]).order("scanned_at", { ascending: false }).limit(Math.min(offset + limit, 10000));
     request = classification.scanIds ? request.in("id", classification.scanIds) : request.is("superseded_at", null);
     const { data: scans, error } = await request;
     if (error || !scans?.length) return mirror();
@@ -104,7 +106,7 @@ async function fetchPublicInventory(limit = 240): Promise<PublicInventory> {
       const key = `${String(scan.extension_id).toLowerCase()}@${scan.version}`;
       if (!latest.has(key)) latest.set(key, scan);
     }
-    const selectedScans = [...latest.values()].slice(0, Math.min(limit, 240));
+    const selectedScans = [...latest.values()].slice(offset, offset + limit);
     const ids = [...new Set(selectedScans.map((row) => String(row.extension_id)))];
     const { data: stored, error: storedError } = await db.from("extensions").select("id,display_name,publisher,description,icon_url,publisher_verified").in("id", ids);
     if (storedError) return mirror();

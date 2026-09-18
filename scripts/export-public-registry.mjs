@@ -117,7 +117,10 @@ try {
   const extensionById = new Map(extensions.map((row) => [String(row.id).toLowerCase(), row]));
   const versionByExtension = groupBy(productVersions, (row) => String(row.extension_id).toLowerCase());
   const scanRows = scans.filter((row) => ["allow", "review", "block"].includes(String(row.decision)));
-  const inventoryRows = latestByArtifact(scanRows).slice(0, 240);
+  // Keep the immutable publication mirror large enough for the paginated
+  // registry. The page only renders 24 cards at a time, while server-side
+  // pages read bounded 240-row windows from this section.
+  const inventoryRows = latestByArtifact(scanRows).slice(0, 10000);
   const inventoryItems = inventoryRows.map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
   const historyItems = latestByExactArtifact(historyScans).slice(0, 1000).map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
   const inventory = {
