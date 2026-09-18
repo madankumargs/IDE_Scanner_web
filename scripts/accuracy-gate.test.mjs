@@ -29,6 +29,7 @@ const validGate = {
     required_pass_rate: 1,
     safe_block_rate: 0,
     malicious_allow_rate: 0,
+    label_counts: { known_safe: 5, known_malicious: 5 },
     scanner_build: "a".repeat(40),
     policy_version: "policy-1",
     ruleset_version: "rules-1",
@@ -93,5 +94,13 @@ describe("accuracy publication gate", () => {
       holdout: { ...validGate.holdout, safe_evaluated: 4 },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout must include at least 5 known-safe and 5 known-malicious exact artifacts");
+  });
+
+  it("rejects holdout summary counts that drift from the frozen labels", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, label_counts: { known_safe: 5, known_malicious: 4 } },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout label counts do not match the frozen corpus");
   });
 });

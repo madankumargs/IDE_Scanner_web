@@ -62,6 +62,11 @@ export function validateAccuracyGate(value, expected = {}) {
   if (number(holdout.malicious_allow_rate) > 0) {
     errors.push("fresh-labeled holdout allows known-malicious fixtures");
   }
+  const labelCounts = object(holdout.label_counts);
+  if (number(labelCounts.known_safe) !== number(holdout.safe_evaluated)
+    || number(labelCounts.known_malicious) !== number(holdout.malicious_evaluated)) {
+    errors.push("fresh-labeled holdout label counts do not match the frozen corpus");
+  }
   if (runtimeEvidence.required !== true || runtimeEvidence.runtime_enabled !== true || String(runtimeEvidence.profile || "") !== "deep") {
     errors.push("fresh-labeled holdout must prove a required deep runtime scan");
   }
