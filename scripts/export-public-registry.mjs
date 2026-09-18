@@ -128,6 +128,16 @@ try {
   const inventoryItems = inventoryRows.map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
   const historyItems = latestByExactArtifact(historyScans).slice(0, 1000).map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
   const inventory = {
+    publication: {
+      release_id: String(release.id),
+      policy_version: String(release.policy_version),
+      ruleset_version: String(release.ruleset_version),
+      score_schema_version: String(release.score_schema_version),
+      scanner_build: String(release.scanner_build),
+      accuracy_gate_corpus_id: String(release.accuracy_gate_corpus_id),
+      accuracy_gate_corpus_version: String(release.accuracy_gate_corpus_version),
+      accuracy_gate_sha256: String(release.accuracy_gate_sha256),
+    },
     items: inventoryItems,
     totals: {
       extensions: new Set(inventoryItems.map((item) => item.extension_id)).size,

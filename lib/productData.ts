@@ -31,7 +31,7 @@ export type CatalogExtension = {
 export type ScanDecision = "allow" | "review" | "block" | "incomplete";
 export type PublicSecurityFeedItem = { scan_id: string; extension_id: string; version: string; display_name: string; severity: string; decision: ScanDecision; public_outcome: string; decision_basis: string; evidence_confidence: string; scanned_at: string; coverage_percent: number; decision_reason: string };
 export type PublicInventoryItem = PublicSecurityFeedItem & { publisher: string; publisher_verified: boolean; description: string; icon_url: string; risk_score: number; malware_score: number; artifact_sha256: string; provenance_tier: string; expected_profile_id: string; capability_assessment: Record<string, unknown>; scanner_build: string; ruleset_version: string; score_schema_version: string };
-export type PublicInventory = { items: PublicInventoryItem[]; totals: { extensions: number; releases: number; complete: number; allowed: number; expected: number; investigate: number; review: number; blocked: number; lastScannedAt: string | null } };
+export type PublicInventory = { items: PublicInventoryItem[]; totals: { extensions: number; releases: number; complete: number; allowed: number; expected: number; investigate: number; review: number; blocked: number; lastScannedAt: string | null }; publication?: { accuracy_gate_corpus_id?: unknown; accuracy_gate_corpus_version?: unknown; accuracy_gate_sha256?: unknown } };
 export type PublicAnalysisHistory = { items: PublicInventoryItem[]; total: number; complete: number; pending: number };
 
 const cachedSecurityFeed=unstable_cache(async(limit:number)=>fetchPublicSecurityFeed(limit).catch(() => []),["public-feed-v1"],{revalidate:300,tags:["public-intel"]});
@@ -83,7 +83,7 @@ async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInve
   // already bounded and immutable between imports, while the Supabase query
   // below remains the compatibility path for local/legacy deployments.
   const cloudflareInventory = await getCloudflareRegistrySection<PublicInventory>("inventory");
-  if (cloudflareInventory?.items && cloudflareInventory.totals) {
+  if (cloudflareInventory?.items && cloudflareInventory.totals && hasAccuracyGateAttestation(cloudflareInventory.publication)) {
     return {
       ...cloudflareInventory,
       items: cloudflareInventory.items.slice(offset, offset + limit),
@@ -91,7 +91,9 @@ async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInve
   }
   const mirror = async () => {
     const inventory = (await getPublicRegistrySnapshot())?.inventory;
-    return inventory ? { ...inventory, items: inventory.items.slice(offset, offset + limit) } : emptyInventory();
+    return inventory && hasAccuracyGateAttestation(inventory.publication)
+      ? { ...inventory, items: inventory.items.slice(offset, offset + limit) }
+      : emptyInventory();
   };
   const db = publicDb();
   if (!db) return mirror();
