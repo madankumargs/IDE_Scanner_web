@@ -23,9 +23,9 @@ const validGate = {
   holdout: {
     status: "fresh-labeled",
     complete: true,
-    artifact_count: 6,
-    safe_evaluated: 4,
-    malicious_evaluated: 2,
+    artifact_count: 10,
+    safe_evaluated: 5,
+    malicious_evaluated: 5,
     required_pass_rate: 1,
     safe_block_rate: 0,
     malicious_allow_rate: 0,
@@ -85,5 +85,13 @@ describe("accuracy publication gate", () => {
       holdout: { ...validGate.holdout, runtime_evidence: { required: false, runtime_enabled: false, profile: "quick" } },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout must prove a required deep runtime scan");
+  });
+
+  it("rejects a holdout that is too small to support a publication claim", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, safe_evaluated: 4 },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout must include at least 5 known-safe and 5 known-malicious exact artifacts");
   });
 });

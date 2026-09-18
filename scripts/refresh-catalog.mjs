@@ -14,8 +14,8 @@ function databaseConnectionString() {
 // the direct Postgres path instead; it preserves the same writes without
 // routing the catalog refresh through the restricted service layer.
 const db = createPostgresClient(databaseConnectionString());
-const scanLimit = boundedInteger("SCAN_BATCH_LIMIT", 100, 1, 5000);
-const cohortLimit = boundedInteger("CATALOG_COHORT_LIMIT", 250, 1, 5000);
+const scanLimit = boundedInteger("SCAN_BATCH_LIMIT", 1000, 1, 10000);
+const cohortLimit = boundedInteger("CATALOG_COHORT_LIMIT", 1000, 1, 10000);
 const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
 const refreshStartedAt = new Date().toISOString();
 const scannerBuild = process.env.SCANNER_BUILD_SHA || await currentScannerBuild();

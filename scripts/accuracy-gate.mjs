@@ -1,4 +1,6 @@
 export const ACCURACY_GATE_SCHEMA_VERSION = "1.0";
+export const MIN_FRESH_HOLDOUT_SAFE = 5;
+export const MIN_FRESH_HOLDOUT_MALICIOUS = 5;
 
 export function validateAccuracyGate(value, expected = {}) {
   const errors = [];
@@ -43,8 +45,8 @@ export function validateAccuracyGate(value, expected = {}) {
   if (holdout.status !== "fresh-labeled" || holdout.complete !== true) {
     errors.push("publication requires a complete fresh-labeled holdout gate in addition to regression fixtures");
   }
-  if (number(holdout.safe_evaluated) < 1 || number(holdout.malicious_evaluated) < 1) {
-    errors.push("fresh-labeled holdout must include both known-safe and known-malicious exact artifacts");
+  if (number(holdout.safe_evaluated) < MIN_FRESH_HOLDOUT_SAFE || number(holdout.malicious_evaluated) < MIN_FRESH_HOLDOUT_MALICIOUS) {
+    errors.push(`fresh-labeled holdout must include at least ${MIN_FRESH_HOLDOUT_SAFE} known-safe and ${MIN_FRESH_HOLDOUT_MALICIOUS} known-malicious exact artifacts`);
   }
   const holdoutArtifacts = number(holdout.artifact_count);
   const holdoutEvaluated = number(holdout.safe_evaluated) + number(holdout.malicious_evaluated);
