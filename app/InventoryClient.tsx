@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowUpRight, BadgeCheck, CalendarClock, CheckCircle2, Search, ShieldAlert, ShieldCheck, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import ExtensionIcon from "@/app/ExtensionIcon";
 import { deriveTrustTier } from "@/lib/trustTiers";
 import { rankRelatedExtensions } from "@/lib/relatedExtensions";
@@ -46,12 +46,8 @@ export default function InventoryClient({ inventory, totalCount, resultDescripti
 function RegistryCard({item, allItems}:{item:PublicInventoryItem; allItems:PublicInventoryItem[]}) {
   const tier = deriveTrustTier({ decision: item.decision === "incomplete" ? null : item.decision, analysis_status: "complete" });
   const decision = tier.tier === "unanalyzed" ? labels.incomplete : title(tier.label);
-  // Prefer precomputed ids (Part 2) — falls back to live rank when snapshot is older or missing the field.
-  const liveRecs = useMemo(() => rankRelatedExtensions(
-    { extension_id: item.extension_id, display_name: item.display_name, description: item.description, publisher: item.publisher, decision: item.decision, severity: item.severity },
-    allItems,
-    2,
-  ), [item, allItems]);
+  // Prefer precomputed ids (Part 2) — lazy live-rank fallback only when the
+  // snapshot lacks the field or its ids no longer resolve.
   const recs = useMemo(() => {
     const precomputed = (item as { related_extension_ids?: string[] }).related_extension_ids;
     if (Array.isArray(precomputed) && precomputed.length) {
@@ -59,11 +55,12 @@ function RegistryCard({item, allItems}:{item:PublicInventoryItem; allItems:Publi
       const resolved = precomputed.map((id) => byId.get(String(id).toLowerCase())).filter((candidate): candidate is PublicInventoryItem => Boolean(candidate));
       if (resolved.length) return resolved.slice(0, 2);
     }
-    return liveRecs;
-  }, [item, allItems, liveRecs]);
-  useEffect(() => {
-    if (recs.length) console.debug("[registry-rec] tray rendered", { current: item.extension_id, recs: recs.map((r) => r.extension_id) });
-  }, [item.extension_id, recs]);
+    return rankRelatedExtensions(
+      { extension_id: item.extension_id, display_name: item.display_name, description: item.description, publisher: item.publisher, decision: item.decision, severity: item.severity },
+      allItems,
+      2,
+    );
+  }, [item, allItems]);
   return <article className={styles.card}>
     <Link className={styles.cardLink} href={`/extensions/${encodeURIComponent(item.extension_id)}`} aria-label={`Open ${item.display_name} extension profile`}>
       <header><ExtensionIcon iconUrl={item.icon_url} publisher={item.publisher} name={item.display_name}/><div><strong>{item.display_name}{item.publisher_verified?<BadgeCheck aria-label="Verified publisher"/>:null}</strong><span>{item.publisher} · {item.extension_id}</span></div><ArrowUpRight/></header>

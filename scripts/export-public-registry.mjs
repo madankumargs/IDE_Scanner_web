@@ -118,7 +118,11 @@ try {
   const versionByExtension = groupBy(productVersions, (row) => String(row.extension_id).toLowerCase());
   const scanRows = scans.filter((row) => ["allow", "review", "block"].includes(String(row.decision)));
   const inventoryRows = latestByArtifact(scanRows).slice(0, 240);
-  const inventoryItems = inventoryRows.map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
+  const rawInventoryItems = inventoryRows.map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
+  const relatedStart = Date.now();
+  const relatedMap = computeRelatedMap(rawInventoryItems);
+  const relatedMs = Date.now() - relatedStart;
+  const inventoryItems = rawInventoryItems.map((item) => ({ ...item, related_extension_ids: relatedMap.get(String(item.extension_id).toLowerCase()) || [] }));
   const historyItems = latestByExactArtifact(historyScans).slice(0, 1000).map((scan) => normalizeInventory(scan, extensionById.get(String(scan.extension_id).toLowerCase())));
   const inventory = {
     items: inventoryItems,
@@ -199,7 +203,7 @@ try {
   const snapshot = { schema_version: 1, generated_at: generatedAt, metrics, feed, inventory, history: historyItems, catalog, benchmark, products };
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, `${JSON.stringify(snapshot)}\n`, "utf8");
-  console.log(JSON.stringify({ output, extensions: extensions.length, releases: latestVersions.length, product_releases: productVersions.length, scans: scans.length, inventory: inventoryItems.length, history: historyItems.length, bytes: Buffer.byteLength(JSON.stringify(snapshot)) }));
+  console.log(JSON.stringify({ output, extensions: extensions.length, releases: latestVersions.length, product_releases: productVersions.length, scans: scans.length, inventory: inventoryItems.length, history: historyItems.length, relatedMs, bytes: Buffer.byteLength(JSON.stringify(snapshot)) }));
 } finally {
   await client.end();
 }
@@ -332,6 +336,45 @@ function objectValue(value) {
 
 function severityRank(value) {
   return ({ CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 })[String(value)] || 0;
+}
+
+function computeRelatedMap(items) {
+  // Inline port of lib/relatedExtensions.ts scoring — kept dependency-free for
+  // the weekly snapshot job. Pre-tokenize once (240 items) so the pairwise
+  // pass is O(n^2) set-intersections with no repeated string splitting.
+  const STOPWORDS = new Set(["the","and","for","with","your","you","that","this","from","into","extension","extensions","vscode","code","visual","studio","support","supports","tool","tools","plugin","provides","language","file","files","all","any","are","can","has","have","not","our","use","using","when","more","most","new","get","its","via","within","without","based","easy"]);
+  const DECISION_RANK = { allow: 0, review: 1, incomplete: 2, "not-scanned": 3, block: 4 };
+  const SEVERITY_RANK = { INFO: 1, LOW: 2, MEDIUM: 3, HIGH: 4, CRITICAL: 5 };
+  const tokenize = (text) => { const s=new Set(); for(const raw of String(text||"").toLowerCase().split(/[^a-z0-9+#]+/)){ if(raw.length>=3 && !STOPWORDS.has(raw)) s.add(raw);} return s; };
+  const decisionRank=(d)=> DECISION_RANK[String(d||"").toLowerCase()] ?? 3;
+  const severityRank=(s)=> SEVERITY_RANK[String(s||"").toUpperCase()] || 0;
+  const safetyRank=(d,s)=> decisionRank(d)*10 + severityRank(s||"");
+  const tokensById = new Map(items.map((it)=>[String(it.extension_id||"").toLowerCase(), tokenize(`${it.display_name} ${it.description}`)]));
+  const out=new Map();
+  for(const current of items){
+    const curId=String(current.extension_id||"").toLowerCase();
+    const curTokens=tokensById.get(curId) || new Set();
+    const curSafety=safetyRank(current.decision, current.severity);
+    const best=new Map();
+    for(const candidate of items){
+      const id=String(candidate.extension_id||"").toLowerCase();
+      if(!id || id===curId) continue;
+      if(safetyRank(candidate.decision,candidate.severity) > curSafety) continue;
+      if(typeof candidate.coverage_percent==="number" && candidate.coverage_percent < 60) continue;
+      const tokens=tokensById.get(id) || tokenize(`${candidate.display_name} ${candidate.description}`);
+      let overlap=0; for(const t of tokens) if(curTokens.has(t)) overlap+=1;
+      if(!overlap) continue;
+      const cov=typeof candidate.coverage_percent==="number"?candidate.coverage_percent:null;
+      const covBonus=cov===null?0:cov>=90?2:cov>=70?1:-2;
+      const riskBonus=typeof candidate.risk_score==="number" && candidate.risk_score<=20?1:0;
+      const score=overlap*10 + (String(candidate.decision).toLowerCase()==="allow"?6:0) + (candidate.publisher_verified?5:0) + (5 - severityRank(candidate.severity)) + covBonus + riskBonus;
+      const ex=best.get(id);
+      if(!ex || score>ex.score) best.set(id,{candidate,score});
+    }
+    const ranked=[...best.values()].sort((a,b)=> b.score-a.score || safetyRank(a.candidate.decision,a.candidate.severity)-safetyRank(b.candidate.decision,b.candidate.severity) || a.candidate.extension_id.localeCompare(b.candidate.extension_id)).slice(0,2).map((e)=>e.candidate.extension_id);
+    out.set(curId, ranked);
+  }
+  return out;
 }
 
 function number(value) {
