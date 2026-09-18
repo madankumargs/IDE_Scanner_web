@@ -39,11 +39,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: process.env.CLOUDFLARE_BUILD === "1",
   },
-  experimental: {
-    // Avoid Next 16's Node 26 CLI --showConfig handoff. The project-local
-    // TypeScript compiler API remains the supported checker for this app.
-    useTypeScriptCli: false,
-  },
   poweredByHeader: false,
   turbopack: {
     root: process.cwd()
