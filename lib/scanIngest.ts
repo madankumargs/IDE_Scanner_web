@@ -9,10 +9,15 @@ export function incompleteArtifactReason(bundle: Bundle): string | null {
   const detail = singleExtension(bundle.extensions);
   if (!detail) return null;
   const identity = object(detail.artifact_identity);
-  if (String(identity.sha256 || detail.artifact_sha256 || "")) return null;
+  const identityHash = String(identity.sha256 || "").trim();
+  const detailHash = String(detail.artifact_sha256 || "").trim();
+  if (identityHash && detailHash && identityHash.toLowerCase() !== detailHash.toLowerCase()) {
+    return "Artifact identity contains conflicting SHA-256 values.";
+  }
+  if (isSha256(identityHash || detailHash)) return null;
   if (String(detail.decision || "") !== "incomplete" && String(detail.source || "") !== "marketplace-error") return null;
   const inventory = object(detail.artifact_inventory);
-  return String(inventory.skipped_reason || detail.decision_reason || detail.verdict_reason || "Artifact acquisition did not complete.").slice(0, 1000);
+  return String(inventory.skipped_reason || detail.decision_reason || detail.verdict_reason || "Artifact acquisition did not complete or did not provide a valid SHA-256 identity.").slice(0, 1000);
 }
 
 // Gate for scans that will be published as canonical public/benchmark
@@ -32,6 +37,13 @@ export function publicCanonicalError(
   if (reportedSchemaVersion !== "2.3") return "Public scans require canonical report schema 2.3.";
   if (String(detail.score_schema_version || "") !== "2") return "Public scans require canonical score schema v2.";
   if (String(metadata.scanner_version || "").includes("hosted-static")) return "Hosted-static reports cannot be published as canonical scans.";
+  const identity = object(detail.artifact_identity);
+  const identityHash = String(identity.sha256 || "").trim();
+  const detailHash = String(detail.artifact_sha256 || "").trim();
+  if (!isSha256(identityHash || detailHash)) return "Public scans require canonical artifact SHA-256 identity.";
+  if (identityHash && detailHash && identityHash.toLowerCase() !== detailHash.toLowerCase()) {
+    return "Public scans require matching artifact SHA-256 identity fields.";
+  }
   if (!metadata.policy_version || metadata.policy_version === "legacy") return "Public scans require an explicit non-legacy classification policy.";
   if (!metadata.ruleset_version || metadata.ruleset_version === "unknown") return "Public scans require an explicit ruleset version.";
   const intelligence = object(metadata.intelligence_snapshot);
@@ -81,6 +93,8 @@ export async function ingestScanBundle(jobId: string, bundle: Bundle, receiptId?
   const version = String(detail.version || identity.version || "");
   const artifactSha = String(identity.sha256 || detail.artifact_sha256 || "");
   if (!reportedExtensionId || !version || !artifactSha) throw new Error("Bundle is missing immutable artifact identity.");
+  if (!isSha256(artifactSha)) throw new Error("Bundle artifact identity must be a SHA-256 digest.");
+  if (identity.sha256 && String(identity.sha256).toLowerCase() !== artifactSha.toLowerCase()) throw new Error("Bundle artifact identity fields disagree.");
   if (!scannerBuild || scannerBuild === "unknown") throw new Error("Bundle is missing immutable scanner build identity.");
   // Keep the scan callback compatible with the currently deployed database
   // while operational-intelligence migration 011 rolls out. A worker result
@@ -178,6 +192,7 @@ export function singleExtension(value: Bundle["extensions"]): Record<string, unk
 }
 function object(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
+function isSha256(value: string): boolean { return /^[0-9a-f]{64}$/i.test(value); }
 function legacyOutcome(detail: Record<string, unknown>): string {
   const decision = String(detail.decision || "incomplete");
   if (decision === "allow") return "clear";

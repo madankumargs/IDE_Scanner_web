@@ -65,11 +65,12 @@ describe("scan ingestion boundaries", () => {
 
 describe("public canonical schema enforcement", () => {
   const build = "a".repeat(40);
-  const goodDetail = {
-    score_schema_version: "2",
-    analysis_status: "complete",
-    decision: "allow",
-    analysis_coverage: {
+    const goodDetail = {
+      score_schema_version: "2",
+      analysis_status: "complete",
+      decision: "allow",
+      artifact_identity: { sha256: "d".repeat(64) },
+      analysis_coverage: {
       status: "complete",
       executable_file_coverage_percent: 100,
       required_providers_complete: true,
@@ -111,7 +112,7 @@ describe("public canonical schema enforcement", () => {
 
   it("enforces independent status and decision for Policy v3", () => {
     expect(publicCanonicalError(true, "2.3", goodDetail, goodMeta, build)).toBeNull();
-    expect(publicCanonicalError(true, "2.3", { score_schema_version: "2", decision: "allow" }, goodMeta, build)).toContain("analysis status");
+    expect(publicCanonicalError(true, "2.3", { ...goodDetail, analysis_status: undefined, decision: "allow" }, goodMeta, build)).toContain("analysis status");
     expect(publicCanonicalError(true, "2.3", {
       ...goodDetail,
       analysis_status: "failed",
@@ -158,5 +159,25 @@ describe("public canonical schema enforcement", () => {
       },
       build,
     )).toContain("replayable registry intelligence evidence");
+  });
+
+  it("rejects a public report without an exact SHA-256 artifact identity", () => {
+    expect(publicCanonicalError(
+      true,
+      "2.3",
+      { ...goodDetail, artifact_identity: { sha256: "not-a-digest" } },
+      goodMeta,
+      build,
+    )).toContain("artifact SHA-256 identity");
+  });
+
+  it("rejects conflicting artifact identity fields", () => {
+    expect(publicCanonicalError(
+      true,
+      "2.3",
+      { ...goodDetail, artifact_sha256: "e".repeat(64) },
+      goodMeta,
+      build,
+    )).toContain("matching artifact SHA-256");
   });
 });
