@@ -16,7 +16,7 @@ import styles from "../trust.module.css";
 export const metadata: Metadata = {
   title: "Security",
   description:
-    "Published packages are never executed by the scanner, Deep Scan runners are disposable, and workspace delivery targets stay encrypted.",
+    "Managed Deep Scan combines exact-artifact static analysis with bounded Bubblewrap runtime evidence, and workspace delivery targets stay encrypted.",
   alternates: { canonical: "/security" },
 };
 
@@ -24,8 +24,8 @@ const controls = [
   {
     icon: LockKeyhole,
     label: "Analysis",
-    title: "Extension packages are not executed",
-    text: "Deep Scan extracts and statically inspects an exact published artifact. Extension entrypoints, lifecycle hooks, and bundled executables are not launched by the scanner.",
+    title: "Managed Deep Scan observes only inside isolation",
+    text: "Deep Scan extracts and statically inspects an exact published artifact, then runs bounded Bubblewrap observations for capabilities that require runtime coverage. The worker never executes an extension on the host; a failed, timed-out, or unsupported runtime path remains incomplete or not applicable instead of becoming an allow.",
   },
   {
     icon: Fingerprint,
@@ -94,7 +94,7 @@ export default function SecurityPage() {
           </header>
           <div>
             <span>Package execution</span>
-            <strong>Disabled</strong>
+            <strong>Bubblewrap-isolated only</strong>
           </div>
           <div>
             <span>Artifact identity</span>

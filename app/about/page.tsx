@@ -26,9 +26,12 @@ export default function AboutPage() {
           <ScanSearch />
           <h2>What the product does</h2>
           <p>
-            It retrieves an exact published artifact, performs static analysis
-            without launching extension code, and records findings, coverage,
-            artifact identity, scanner build, and ruleset.
+            It retrieves an exact published artifact, performs static analysis,
+            and records bounded Bubblewrap runtime observations when the
+            artifact requires them. Findings, coverage, artifact identity,
+            scanner build, ruleset, and runtime limitations stay attached to
+            the same report. Unsupported or failed runtime coverage is visible;
+            it is not converted into an allow.
           </p>
         </article>
         <article>

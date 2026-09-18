@@ -87,7 +87,7 @@ export function saveHostedScanReport(payload: unknown): ImportedReportBundle | n
     const detail = Array.isArray(report.extensions) ? report.extensions[index] || row : report.extensions?.[String(row.detail_ref || detailRef)] || row;
     details[detailRef] = {
       ...detail,
-      description: String(detail.description || "Hosted static analysis result."),
+      description: String(detail.description || "Hosted exact-artifact analysis result."),
       repository: String(detail.repository || ""),
       verdict_reason: String(detail.verdict_reason || detail.decision_reason || ""),
       grade: String(detail.grade || "N/A"),
