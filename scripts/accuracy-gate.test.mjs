@@ -23,8 +23,15 @@ const validGate = {
   holdout: {
     status: "fresh-labeled",
     complete: true,
+    artifact_count: 6,
     safe_evaluated: 4,
     malicious_evaluated: 2,
+    required_pass_rate: 1,
+    safe_block_rate: 0,
+    malicious_allow_rate: 0,
+    scanner_build: "a".repeat(40),
+    policy_version: "policy-1",
+    ruleset_version: "rules-1",
   },
 };
 
@@ -53,5 +60,21 @@ describe("accuracy publication gate", () => {
     expect(validateAccuracyGate(validGate, { scanner_build: "b".repeat(40) })).toContain(
       "accuracy gate scanner_build does not match the publication identity",
     );
+  });
+
+  it("rejects a holdout with a malicious allow even when the regression summary passes", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, malicious_allow_rate: 0.1 },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout allows known-malicious fixtures");
+  });
+
+  it("rejects a holdout with identity drift", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, ruleset_version: "rules-drift" },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout ruleset_version does not match the report identity");
   });
 });

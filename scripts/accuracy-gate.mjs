@@ -45,6 +45,25 @@ export function validateAccuracyGate(value, expected = {}) {
   if (number(holdout.safe_evaluated) < 1 || number(holdout.malicious_evaluated) < 1) {
     errors.push("fresh-labeled holdout must include both known-safe and known-malicious exact artifacts");
   }
+  const holdoutArtifacts = number(holdout.artifact_count);
+  const holdoutEvaluated = number(holdout.safe_evaluated) + number(holdout.malicious_evaluated);
+  if (holdoutArtifacts < 2 || holdoutEvaluated !== holdoutArtifacts) {
+    errors.push("fresh-labeled holdout has incomplete exact-artifact coverage");
+  }
+  if (number(holdout.required_pass_rate) < 1) {
+    errors.push("fresh-labeled holdout required pass rate is below 100 percent");
+  }
+  if (number(holdout.safe_block_rate) > 0) {
+    errors.push("fresh-labeled holdout has known-safe blocks");
+  }
+  if (number(holdout.malicious_allow_rate) > 0) {
+    errors.push("fresh-labeled holdout allows known-malicious fixtures");
+  }
+  for (const field of ["scanner_build", "policy_version", "ruleset_version"]) {
+    if (holdout[field] && String(holdout[field]) !== String(identity[field] || "")) {
+      errors.push(`fresh-labeled holdout ${field} does not match the report identity`);
+    }
+  }
 
   return errors;
 }
