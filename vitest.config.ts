@@ -17,6 +17,7 @@ export default defineConfig({
       "worker/**/*.test.ts",
       "cloudflare/**/*.test.ts",
       "tests/**/*.test.ts",
+      "scripts/**/*.test.mjs",
     ],
     exclude: ["**/node_modules/**", ".claude/**", ".next/**"],
   },

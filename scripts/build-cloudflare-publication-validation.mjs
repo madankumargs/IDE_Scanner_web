@@ -1,13 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { assertAccuracyGate } from "./accuracy-gate.mjs";
 
 const args = process.argv.slice(2);
 const scannerBuild = valueAfter("--scanner-build");
 const output = valueAfter("--out");
 const expectedReports = Number(valueAfter("--expected-reports") || 100);
-if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !Number.isSafeInteger(expectedReports) || expectedReports < 1) {
-  throw new Error("--scanner-build, --out, and a positive --expected-reports are required.");
+const accuracyGatePath = valueAfter("--accuracy-gate");
+if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !accuracyGatePath || !Number.isSafeInteger(expectedReports) || expectedReports < 1) {
+  throw new Error("--scanner-build, --out, --accuracy-gate, and a positive --expected-reports are required.");
 }
+const accuracyGateBytes = await readFile(accuracyGatePath);
+const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
+assertAccuracyGate(accuracyGate, { scanner_build: scannerBuild });
 
 const sql = `
   select scan_id,extension_id,version,artifact_sha256,created_at,report_json
@@ -74,11 +80,26 @@ if (extensions.length !== expectedReports) throw new Error(`Expected ${expectedR
 const identities = new Set(extensions.map((row) => `${row.policy_version}\u0000${row.ruleset_version}\u0000${row.score_schema_version}`));
 if (identities.size !== 1) throw new Error("Cloudflare publication reports do not share one policy, ruleset, and score schema.");
 const first = extensions[0];
+assertAccuracyGate(accuracyGate, {
+  scanner_build: scannerBuild,
+  policy_version: first.policy_version,
+  ruleset_version: first.ruleset_version,
+});
+const accuracyGateSha256 = createHash("sha256").update(accuracyGateBytes).digest("hex");
 const validation = {
   scanner_build: scannerBuild,
   policy_version: first.policy_version,
   ruleset_version: first.ruleset_version,
   score_schema_version: first.score_schema_version,
+  accuracy_gate_sha256: accuracyGateSha256,
+  accuracy_gate: {
+    corpus_id: String(accuracyGate.corpus_id),
+    corpus_version: String(accuracyGate.corpus_version),
+    scanner_build: String(accuracyGate.report_identity.scanner_build),
+    required_pass_rate: accuracyGate.summary.required_pass_rate,
+    safe_block_rate: accuracyGate.summary.safe_block_rate,
+    malicious_allow_rate: accuracyGate.summary.malicious_allow_rate,
+  },
   extensions,
 };
 await writeFile(output, `${JSON.stringify(validation, null, 2)}\n`, "utf8");

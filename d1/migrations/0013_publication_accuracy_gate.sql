@@ -1,0 +1,3 @@
+ALTER TABLE app_scan_publication_releases ADD COLUMN accuracy_gate_corpus_id TEXT;
+ALTER TABLE app_scan_publication_releases ADD COLUMN accuracy_gate_corpus_version TEXT;
+ALTER TABLE app_scan_publication_releases ADD COLUMN accuracy_gate_sha256 TEXT;
