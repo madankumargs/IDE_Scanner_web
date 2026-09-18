@@ -3,6 +3,7 @@ import { getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
 import { unstable_cache } from "next/cache";
 import { benchmarkRows } from "@/lib/websiteBenchmarkRows";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 
 export type ReproducibleBenchmarkRow = (typeof benchmarkRows)[number] & {
   scan: null | {
@@ -84,11 +85,11 @@ export function selectBenchmarkScansForRelease(scans: BenchmarkScan[], release: 
 async function activeBenchmarkPublication(db: SupabaseClient): Promise<ActivePublication | null> {
   const release = await db
     .from("scan_publication_releases")
-    .select("id,policy_version,ruleset_version,score_schema_version,scanner_build")
+    .select("id,policy_version,ruleset_version,score_schema_version,scanner_build,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256")
     .eq("active", true)
     .limit(1)
     .maybeSingle();
-  if (release.error || !release.data?.policy_version || !release.data?.ruleset_version || !release.data?.score_schema_version || !release.data?.scanner_build) return null;
+  if (release.error || !release.data || !hasAccuracyGateAttestation(release.data) || !release.data.policy_version || !release.data.ruleset_version || !release.data.score_schema_version || !release.data.scanner_build) return null;
 
   const members = await db.from("scan_publication_release_scans").select("scan_id").eq("release_id", release.data.id);
   if (members.error) return null;
