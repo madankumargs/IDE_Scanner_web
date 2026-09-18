@@ -17,6 +17,10 @@ on:
         description: Marketplace pages of 100 extensions to ingest
         required: false
         default: "3"
+      enable_bulk_scan:
+        description: Queue the broad public cohort only after an active accuracy-attested release exists
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -38,6 +42,7 @@ jobs:
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit || '100' }}
           CATALOG_COHORT_LIMIT: ${{ inputs.cohort_limit || '250' }}
           MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
+          CATALOG_BULK_SCAN_ENABLED: ${{ inputs.enable_bulk_scan || 'false' }}
       - name: Export public registry mirror
         run: npx tsx scripts/export-public-registry.mjs
         env:

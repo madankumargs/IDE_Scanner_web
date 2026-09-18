@@ -20,6 +20,18 @@ const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
 const refreshStartedAt = new Date().toISOString();
 const scannerBuild = process.env.SCANNER_BUILD_SHA || await currentScannerBuild();
 const chunks = (items, size = 60) => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+const bulkScanRequested = String(process.env.CATALOG_BULK_SCAN_ENABLED || "").trim().toLowerCase() === "true";
+const activeRelease = await db.from("scan_publication_releases")
+  .select("id,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256")
+  .eq("active", true)
+  .limit(1)
+  .maybeSingle();
+if (activeRelease.error) throw activeRelease.error;
+const bulkCatalogReady = bulkScanRequested
+  && Boolean(activeRelease.data?.id)
+  && Boolean(activeRelease.data?.accuracy_gate_corpus_id)
+  && Boolean(activeRelease.data?.accuracy_gate_corpus_version)
+  && /^[0-9a-f]{64}$/i.test(String(activeRelease.data?.accuracy_gate_sha256 || ""));
 let terminating = false;
 process.on("uncaughtException", async (error) => {
   if (terminating) return;
@@ -144,6 +156,10 @@ for (const extension of cohort) {
   for (const release of newlyObserved) if (await notifyWatchersOfRelease(extension.id, release.version)) monitoredReleases.add(release.version);
   for (const item of rows.slice(0, 4)) {
     const monitoredRelease = monitoredReleases.has(item.version);
+    // Public cohort scans are deliberately inert until a complete accuracy-
+    // attested release exists. Watched releases remain eligible because they
+    // are customer-specific commitments, not public ecosystem claims.
+    if (!bulkCatalogReady && !monitoredRelease) continue;
     // A watched release is a customer promise. It receives capacity even when
     // the public catalog batch is saturated; ordinary catalog scans wait.
     if (queued >= scanLimit && !monitoredRelease) break;
