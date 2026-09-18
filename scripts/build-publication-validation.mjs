@@ -1,12 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { assertAccuracyGate } from "./accuracy-gate.mjs";
 
 const args = process.argv.slice(2);
 const scannerBuild = valueAfter("--scanner-build");
 const output = valueAfter("--out");
-if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output) {
-  throw new Error("--scanner-build must be a full commit SHA and --out is required.");
+const accuracyGatePath = valueAfter("--accuracy-gate");
+if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !accuracyGatePath) {
+  throw new Error("--scanner-build must be a full commit SHA, --out, and --accuracy-gate are required.");
 }
+const accuracyGateBytes = await readFile(accuracyGatePath);
+const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
+assertAccuracyGate(accuracyGate, { scanner_build: scannerBuild });
 
 const sql = `
   with active as (
@@ -53,14 +59,33 @@ for (const row of rows) {
 
 if (failures.length) throw new Error(`Publication manifest cannot be built:\n- ${failures.join("\n- ")}`);
 const selectedRows = [...selected.values()];
+if (!selectedRows.length) throw new Error("Publication manifest contains no complete reports.");
 const identities = new Set(selectedRows.map((row) => `${row.policy_version}\u0000${row.ruleset_version}\u0000${row.score_schema_version}`));
 if (identities.size !== 1) throw new Error("Replacement cohort does not use one policy, ruleset, and score schema.");
 const identity = selectedRows[0];
+assertAccuracyGate(accuracyGate, {
+  scanner_build: scannerBuild,
+  policy_version: String(identity.policy_version || ""),
+  ruleset_version: String(identity.ruleset_version || ""),
+});
+const accuracyGateSha256 = createHash("sha256").update(accuracyGateBytes).digest("hex");
 const validation = {
   scanner_build: scannerBuild,
   policy_version: String(identity.policy_version || ""),
   ruleset_version: String(identity.ruleset_version || ""),
   score_schema_version: String(identity.score_schema_version || ""),
+  accuracy_gate_sha256: accuracyGateSha256,
+  accuracy_gate: {
+    corpus_id: String(accuracyGate.corpus_id),
+    corpus_version: String(accuracyGate.corpus_version),
+    scanner_build: String(accuracyGate.report_identity.scanner_build),
+    required_pass_rate: accuracyGate.summary.required_pass_rate,
+    safe_block_rate: accuracyGate.summary.safe_block_rate,
+    malicious_allow_rate: accuracyGate.summary.malicious_allow_rate,
+    holdout_status: String(accuracyGate.holdout.status),
+    holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated,
+    holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated,
+  },
   extensions: selectedRows.map((row) => ({
     extension_id: String(row.extension_id),
     version: String(row.version),

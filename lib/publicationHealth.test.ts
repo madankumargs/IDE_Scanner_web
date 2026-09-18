@@ -6,6 +6,12 @@ describe("evaluatePublicationHealth", () => {
     const health = evaluatePublicationHealth({ active_release: { id: "release", expected_reports: 10, activated_at: "2026-07-30T00:00:00.000Z" }, current_report_count: 10, newest_scan_at: new Date().toISOString(), runner_status: "ready", runner_last_seen_at: new Date().toISOString(), scan_failure_rate: 0, notification_failure_rate: 0 });
     expect(health.healthy).toBe(true);
   });
+
+  it("rejects a release without an accuracy-gate attestation", () => {
+    const health = evaluatePublicationHealth({ active_release: { id: "release", expected_reports: 10, activated_at: "2026-07-30T00:00:00.000Z", accuracy_gate_verified: false }, current_report_count: 10, newest_scan_at: new Date().toISOString(), runner_status: "ready", runner_last_seen_at: new Date().toISOString(), scan_failure_rate: 0, notification_failure_rate: 0 });
+    expect(health.healthy).toBe(false);
+    expect(health.reasons).toContain("Active public classification release has no accuracy-gate attestation.");
+  });
   it("reports each failed launch dependency", () => {
     const health = evaluatePublicationHealth({ active_release: null, current_report_count: 0, newest_scan_at: null, runner_status: "configuration_unavailable", runner_last_seen_at: null, scan_failure_rate: 0.2, notification_failure_rate: 0.2 });
     expect(health.reasons).toHaveLength(5);

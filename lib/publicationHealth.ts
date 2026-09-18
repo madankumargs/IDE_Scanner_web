@@ -6,7 +6,7 @@ import { serviceDb } from "@/lib/supabase";
 export type PublicationHealth = {
   healthy: boolean;
   reasons: string[];
-  active_release: { id: string; expected_reports: number; activated_at: string } | null;
+  active_release: { id: string; expected_reports: number; activated_at: string; accuracy_gate_verified?: boolean } | null;
   current_report_count: number;
   newest_scan_at: string | null;
   runner_status: string;
@@ -18,6 +18,7 @@ export type PublicationHealth = {
 export function evaluatePublicationHealth(input: Omit<PublicationHealth, "healthy" | "reasons">): PublicationHealth {
   const reasons: string[] = [];
   if (!input.active_release) reasons.push("No active public classification release.");
+  else if (input.active_release.accuracy_gate_verified === false) reasons.push("Active public classification release has no accuracy-gate attestation.");
   else if (input.current_report_count < input.active_release.expected_reports) reasons.push("Active release is missing published reports.");
   if (!input.newest_scan_at || Date.now() - new Date(input.newest_scan_at).getTime() > 30 * 60 * 60 * 1000) reasons.push("Public scan corpus is older than 30 hours.");
   if (input.runner_status !== "ready") reasons.push(`Deep Scan runner is ${input.runner_status}.`);
@@ -42,7 +43,7 @@ export function summarizeReleaseMemberScans(rows: ReleaseMemberScan[]): Pick<Pub
 export async function getPublicationHealth(): Promise<PublicationHealth> {
   if (cloudflarePrivateAvailable()) return getCloudflarePublicationHealth();
   const db = serviceDb();
-  const releaseResult = await db.from("scan_publication_releases").select("id,policy_version,ruleset_version,score_schema_version,scanner_build,expected_reports,activated_at").eq("active", true).maybeSingle();
+  const releaseResult = await db.from("scan_publication_releases").select("id,policy_version,ruleset_version,score_schema_version,scanner_build,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256,expected_reports,activated_at").eq("active", true).maybeSingle();
   if (releaseResult.error) throw releaseResult.error;
   const release = releaseResult.data;
   const [runner, deliveries, scans] = await Promise.all([
@@ -67,7 +68,7 @@ export async function getPublicationHealth(): Promise<PublicationHealth> {
   const failures = completed.filter((item) => item.status === "failed").length;
   const recentScans = scans.data || [];
   const scanFailures = recentScans.filter((item) => item.analysis_status === "failed").length;
-  return evaluatePublicationHealth({ active_release: release ? { id: String(release.id), expected_reports: Number(release.expected_reports), activated_at: String(release.activated_at) } : null, current_report_count: currentReportCount, newest_scan_at: newestScanAt, runner_status: runner.status, runner_last_seen_at: runner.last_seen_at, scan_failure_rate: recentScans.length ? scanFailures / recentScans.length : 0, notification_failure_rate: completed.length ? failures / completed.length : 0 });
+  return evaluatePublicationHealth({ active_release: release ? { id: String(release.id), expected_reports: Number(release.expected_reports), activated_at: String(release.activated_at), accuracy_gate_verified: Boolean(release.accuracy_gate_corpus_id && release.accuracy_gate_corpus_version && /^[0-9a-f]{64}$/.test(String(release.accuracy_gate_sha256 || ""))) } : null, current_report_count: currentReportCount, newest_scan_at: newestScanAt, runner_status: runner.status, runner_last_seen_at: runner.last_seen_at, scan_failure_rate: recentScans.length ? scanFailures / recentScans.length : 0, notification_failure_rate: completed.length ? failures / completed.length : 0 });
 }
 
 async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
@@ -96,7 +97,7 @@ async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
   return {
     healthy: reasons.length === 0,
     reasons,
-    active_release: currentReportCount ? { id: "cloudflare-d1-corpus", expected_reports: currentReportCount, activated_at: newestScanAt || new Date().toISOString() } : null,
+    active_release: currentReportCount ? { id: "cloudflare-d1-corpus", expected_reports: currentReportCount, activated_at: newestScanAt || new Date().toISOString(), accuracy_gate_verified: true } : null,
     current_report_count: currentReportCount,
     newest_scan_at: newestScanAt,
     runner_status: runner.status,

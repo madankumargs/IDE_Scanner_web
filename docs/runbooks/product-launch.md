@@ -6,14 +6,23 @@ Run `npm run launch:readiness -- --with-health` with `LAUNCH_HEALTH_URL` and
 `LAUNCH_HEALTH_SECRET` set. Do not promote when the active public release is
 missing, incomplete, stale, or the health endpoint reports a non-2xx response.
 
-Before building or activating a Cloudflare publication, run the scanner's
-version-pinned production corpus benchmark with `IDE_SCANNER_BUILD_SHA` set to
-the exact scanner commit. Pass its JSON result to both
-`build-cloudflare-publication-validation.mjs --accuracy-gate` and
-`activate-cloudflare-scan-publication.mjs --accuracy-gate`. The scripts reject
-failed gates, unknown build identities, mismatched policy/ruleset versions, and
-gates with no known-safe or known-malicious evaluation. A release must not be
-expanded merely because its scan jobs completed.
+Before building or activating either a Cloudflare/D1 or Supabase publication,
+run the scanner's version-pinned production corpus benchmark with
+`IDE_SCANNER_BUILD_SHA` set to the exact scanner commit, then build the
+combined accuracy gate. Pass that same gate JSON to the matching validation
+and activation scripts:
+
+* Cloudflare/D1: `build-cloudflare-publication-validation.mjs
+  --accuracy-gate`, then `activate-cloudflare-scan-publication.mjs
+  --accuracy-gate`.
+* Supabase: `build-publication-validation.mjs --accuracy-gate`, then
+  `activate-scan-publication.mjs --accuracy-gate`.
+
+The Supabase accuracy-gate migration must be applied before using the updated
+activation script. All four scripts reject failed gates, unknown build
+identities, mismatched policy/ruleset versions, and gates with no known-safe or
+known-malicious evaluation. A release must not be expanded merely because its
+scan jobs completed.
 
 The production corpus is a deterministic regression suite, not an ecosystem
 accuracy claim. The gate artifact must also carry a separate

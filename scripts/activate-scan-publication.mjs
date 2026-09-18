@@ -1,22 +1,36 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
+import { assertAccuracyGate } from "./accuracy-gate.mjs";
 
 const arguments_ = process.argv.slice(2);
 const reportPath = valueAfter("--report");
+const accuracyGatePath = valueAfter("--accuracy-gate");
 const apply = arguments_.includes("--apply");
-if (!reportPath) throw new Error("--report is required");
+if (!reportPath || !accuracyGatePath) throw new Error("--report and --accuracy-gate are required");
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error("Production Supabase service credentials are required.");
 
 const report = JSON.parse(await readFile(reportPath, "utf8"));
+const accuracyGateBytes = await readFile(accuracyGatePath);
+const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
 const expected = Array.isArray(report.extensions) ? report.extensions : [];
 const scannerBuild = String(report.scanner_build || "");
 const policyVersion = String(report.policy_version || "");
 const rulesetVersion = String(report.ruleset_version || "");
 if (!expected.length || !/^[0-9a-f]{40}$/.test(scannerBuild) || !policyVersion || !rulesetVersion) {
   throw new Error("The validation report has no complete release identity.");
+}
+assertAccuracyGate(accuracyGate, {
+  scanner_build: scannerBuild,
+  policy_version: policyVersion,
+  ruleset_version: rulesetVersion,
+});
+const accuracyGateSha256 = createHash("sha256").update(accuracyGateBytes).digest("hex");
+if (String(report.accuracy_gate_sha256 || "") !== accuracyGateSha256) {
+  throw new Error("The publication validation report was not built from the supplied accuracy gate.");
 }
 
 const db = createClient(url, key, {
@@ -110,6 +124,9 @@ const summary = {
   policy_version: policyVersion,
   ruleset_version: rulesetVersion,
   score_schema_version: [...scoreSchemas][0],
+  accuracy_gate_corpus_id: String(accuracyGate.corpus_id),
+  accuracy_gate_corpus_version: String(accuracyGate.corpus_version),
+  accuracy_gate_sha256: accuracyGateSha256,
 };
 if (!apply) {
   console.log(JSON.stringify({ ...summary, status: "validated-dry-run" }, null, 2));
@@ -123,6 +140,9 @@ const activated = await db.rpc("activate_scan_publication_release", {
   p_scanner_build: scannerBuild,
   p_expected_reports: scanIds.length,
   p_scan_ids: scanIds,
+  p_accuracy_gate_corpus_id: String(accuracyGate.corpus_id),
+  p_accuracy_gate_corpus_version: String(accuracyGate.corpus_version),
+  p_accuracy_gate_sha256: accuracyGateSha256,
 });
 if (activated.error) throw activated.error;
 console.log(JSON.stringify({ ...summary, status: "activated", release_id: activated.data?.id }, null, 2));
