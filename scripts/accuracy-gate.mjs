@@ -7,6 +7,7 @@ export function validateAccuracyGate(value, expected = {}) {
   const checks = object(gate.gate)?.checks;
   const summary = object(gate.summary);
   const holdout = object(gate.holdout);
+  const runtimeEvidence = object(holdout.runtime_evidence);
 
   if (String(gate.schema_version || "") !== ACCURACY_GATE_SCHEMA_VERSION) {
     errors.push(`accuracy gate schema must be ${ACCURACY_GATE_SCHEMA_VERSION}`);
@@ -58,6 +59,9 @@ export function validateAccuracyGate(value, expected = {}) {
   }
   if (number(holdout.malicious_allow_rate) > 0) {
     errors.push("fresh-labeled holdout allows known-malicious fixtures");
+  }
+  if (runtimeEvidence.required !== true || runtimeEvidence.runtime_enabled !== true || String(runtimeEvidence.profile || "") !== "deep") {
+    errors.push("fresh-labeled holdout must prove a required deep runtime scan");
   }
   for (const field of ["scanner_build", "policy_version", "ruleset_version"]) {
     if (holdout[field] && String(holdout[field]) !== String(identity[field] || "")) {

@@ -32,6 +32,7 @@ const validGate = {
     scanner_build: "a".repeat(40),
     policy_version: "policy-1",
     ruleset_version: "rules-1",
+    runtime_evidence: { required: true, runtime_enabled: true, profile: "deep" },
   },
 };
 
@@ -76,5 +77,13 @@ describe("accuracy publication gate", () => {
       holdout: { ...validGate.holdout, ruleset_version: "rules-drift" },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout ruleset_version does not match the report identity");
+  });
+
+  it("rejects a holdout without required deep runtime evidence", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, runtime_evidence: { required: false, runtime_enabled: false, profile: "quick" } },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout must prove a required deep runtime scan");
   });
 });
