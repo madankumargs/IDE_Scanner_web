@@ -40,7 +40,7 @@ const statements = [
   "UPDATE app_scan_publication_releases SET active=0 WHERE active=1;",
   `UPDATE app_scan_publication_releases SET active=1,activated_at=${quote(now)} WHERE id=${quote(releaseId)};`,
 ];
-const summary = { release_id: releaseId, reports: extensions.length, scanner_build: scannerBuild, policy_version: policyVersion, ruleset_version: rulesetVersion, score_schema_version: scoreSchemaVersion, accuracy_gate_corpus_id: String(accuracyGate.corpus_id), accuracy_gate_corpus_version: String(accuracyGate.corpus_version), accuracy_gate_sha256: accuracyGateSha256 };
+const summary = { release_id: releaseId, reports: extensions.length, scanner_build: scannerBuild, policy_version: policyVersion, ruleset_version: rulesetVersion, score_schema_version: scoreSchemaVersion, accuracy_gate_corpus_id: String(accuracyGate.corpus_id), accuracy_gate_corpus_version: String(accuracyGate.corpus_version), accuracy_gate_sha256: accuracyGateSha256, holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated, holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated };
 if (!apply) {
   console.log(JSON.stringify({ ...summary, status: "validated-dry-run" }, null, 2));
   process.exit(0);

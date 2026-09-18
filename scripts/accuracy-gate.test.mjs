@@ -20,6 +20,12 @@ const validGate = {
     malicious_evaluated: 4,
     malicious_allow_rate: 0,
   },
+  holdout: {
+    status: "fresh-labeled",
+    complete: true,
+    safe_evaluated: 4,
+    malicious_evaluated: 2,
+  },
 };
 
 describe("accuracy publication gate", () => {
@@ -33,6 +39,13 @@ describe("accuracy publication gate", () => {
       summary: { ...validGate.summary, safe_evaluated: 0 },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("accuracy gate must evaluate both known-safe and known-malicious fixtures");
+  });
+
+  it("rejects the synthetic regression gate when no fresh holdout is attached", () => {
+    const { holdout: _holdout, ...regressionOnly } = validGate;
+    expect(validateAccuracyGate(regressionOnly, { scanner_build: "a".repeat(40) })).toContain(
+      "publication requires a complete fresh-labeled holdout gate in addition to regression fixtures",
+    );
   });
 
   it("rejects reuse against a different scanner build", () => {

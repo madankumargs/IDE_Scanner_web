@@ -15,6 +15,13 @@ failed gates, unknown build identities, mismatched policy/ruleset versions, and
 gates with no known-safe or known-malicious evaluation. A release must not be
 expanded merely because its scan jobs completed.
 
+The production corpus is a deterministic regression suite, not an ecosystem
+accuracy claim. The gate artifact must also carry a separate
+`holdout` object with `status: "fresh-labeled"`, `complete: true`, and positive
+`safe_evaluated` and `malicious_evaluated` counts from exact retained artifacts.
+Until that holdout exists, the registry may keep its current release but must
+not activate or bulk-publish a new cohort.
+
 ## Runner outage
 
 The public report remains available. Pause acquisition copy that promises a new

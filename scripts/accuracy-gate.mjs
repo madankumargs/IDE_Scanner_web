@@ -6,6 +6,7 @@ export function validateAccuracyGate(value, expected = {}) {
   const identity = object(gate.report_identity);
   const checks = object(gate.gate)?.checks;
   const summary = object(gate.summary);
+  const holdout = object(gate.holdout);
 
   if (String(gate.schema_version || "") !== ACCURACY_GATE_SCHEMA_VERSION) {
     errors.push(`accuracy gate schema must be ${ACCURACY_GATE_SCHEMA_VERSION}`);
@@ -38,6 +39,12 @@ export function validateAccuracyGate(value, expected = {}) {
   if (number(summary.required_pass_rate) < 1) errors.push("accuracy gate required pass rate is below 100 percent");
   if (number(summary.safe_block_rate) > 0) errors.push("accuracy gate has known-safe blocks");
   if (number(summary.malicious_allow_rate) > 0) errors.push("accuracy gate allows known-malicious fixtures");
+  if (holdout.status !== "fresh-labeled" || holdout.complete !== true) {
+    errors.push("publication requires a complete fresh-labeled holdout gate in addition to regression fixtures");
+  }
+  if (number(holdout.safe_evaluated) < 1 || number(holdout.malicious_evaluated) < 1) {
+    errors.push("fresh-labeled holdout must include both known-safe and known-malicious exact artifacts");
+  }
 
   return errors;
 }

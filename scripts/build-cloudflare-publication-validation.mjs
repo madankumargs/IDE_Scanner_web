@@ -99,6 +99,9 @@ const validation = {
     required_pass_rate: accuracyGate.summary.required_pass_rate,
     safe_block_rate: accuracyGate.summary.safe_block_rate,
     malicious_allow_rate: accuracyGate.summary.malicious_allow_rate,
+    holdout_status: String(accuracyGate.holdout.status),
+    holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated,
+    holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated,
   },
   extensions,
 };
