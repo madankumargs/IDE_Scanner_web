@@ -38,11 +38,26 @@ export default function AccountPage() {
   const [message, setMessage] = useState(() => {
     if (typeof window === "undefined") return "";
     const error = new URLSearchParams(window.location.search).get("error");
-    return error === "invalid_link"
-      ? "That sign-in link is invalid or expired. Start a new sign-in."
-      : error === "missing_code"
-        ? "The sign-in response was incomplete. Start again."
-        : "";
+    switch (error) {
+      case "invalid_link":
+        return "That sign-in link is invalid or expired. Start a new sign-in.";
+      case "missing_code":
+        return "The sign-in response was incomplete. Start again.";
+      case "invalid_state":
+        return "That GitHub sign-in attempt expired or was opened in another tab. Try again.";
+      case "provider_denied":
+        return "GitHub did not approve that sign-in. Try again and approve access.";
+      case "missing_identity":
+      case "missing_email":
+        return "GitHub did not return an email address. Check that your GitHub email is verified, then try again.";
+      case "provider_unavailable":
+        return "GitHub sign-in is temporarily unavailable. Try again shortly.";
+      case null:
+      case "":
+        return "";
+      default:
+        return "That sign-in attempt did not complete. Try again.";
+    }
   });
   const [role, setRole] = useState("developer");
   const [ide, setIde] = useState("vscode");
@@ -186,15 +201,16 @@ export default function AccountPage() {
     const name =
       workspaceName.trim() ||
       (useCase === "team" ? "My team workspace" : "My developer workspace");
+    // Cloudflare session users authenticate via the HttpOnly gr_session cookie
+    // (account.token is empty for them). Only send a Bearer token when one exists.
+    const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (account.token) authHeaders.Authorization = `Bearer ${account.token}`;
     setOnboardingSaving(true);
     setMessage("");
     try {
       const teamsResponse = await fetch("/api/teams", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${account.token}`,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders,
         body: JSON.stringify({ name, onboarding: true }),
       });
       const teamsBody = await teamsResponse.json().catch(() => ({}));
@@ -206,10 +222,7 @@ export default function AccountPage() {
       }
       const profileResponse = await fetch("/api/profile", {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${account.token}`,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders,
         body: JSON.stringify({ role, primary_ide: ide, use_case: useCase }),
       });
       const profileBody = await profileResponse.json().catch(() => ({}));

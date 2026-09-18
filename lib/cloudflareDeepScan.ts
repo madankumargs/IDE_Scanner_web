@@ -2,7 +2,8 @@ import "server-only";
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { privateDb, newId, nowIso, type AppAuthUser } from "@/lib/cloudflarePrivate";
+import { anonymousRequesterHash, FreeScanLimitError, privateDb, newId, nowIso, type AppAuthUser } from "@/lib/cloudflarePrivate";
+import { issueAnonymousReportKey } from "@/lib/anonymousScanToken";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 import { resolveMarketplaceExtension } from "@/lib/marketplace";
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
@@ -91,6 +92,51 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
     throw new Error(message);
   }
   return withCloudflareReportUrl({ id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started" });
+}
+
+/**
+ * One free Deep Scan per visitor on the D1 path. Mirrors the signed-in queue
+ * but scopes identity to a hashed visitor IP, consumes no user quota, creates
+ * no user subscription, and ignores `force`. Completed reports are reused
+ * globally here exactly as the signed-in path already does, because D1
+ * reports are capability-readable by their unguessable scan id.
+ */
+export async function queueAnonymousCloudflareDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request): Promise<Row> {
+  const db = privateDb();
+  const catalog = await getCloudflareRegistryCatalogExtension<{ id?: string; latest_version?: string }>(extensionId);
+  const marketplace = catalog ? null : await resolveMarketplaceExtension(extensionId);
+  const canonicalExtensionId = String(catalog?.id || marketplace?.extension_id || extensionId);
+  const version = requestedVersion || String(catalog?.latest_version || marketplace?.version || "");
+  if (!version) throw new Error("No published version is available for this extension.");
+  const requesterHash = anonymousRequesterHash(request);
+
+  const own = await db.prepare("SELECT * FROM app_scan_jobs WHERE extension_id=? AND version=? AND profile='deep' AND requester_hash=? AND requested_by IS NULL AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1").bind(canonicalExtensionId, version, requesterHash).first<Row>();
+  if (own) {
+    if (String(own.status) === "queued") await dispatchCloudflareDeepScan(String(own.id), 120);
+    return withAnonymousCloudflareKey(withCloudflareReportUrl({ ...own, deduplicated: true }), String(own.id));
+  }
+  const complete = await db.prepare("SELECT scan_id FROM app_scan_reports WHERE extension_id=? AND version=? ORDER BY created_at DESC LIMIT 1").bind(canonicalExtensionId, version).first<Row>();
+  if (complete?.scan_id) return withCloudflareReportUrl({ status: "complete", scan_id: String(complete.scan_id), reused: true, free_scan_preserved: true, extension_id: canonicalExtensionId, version });
+  const usage = await db.prepare("SELECT COUNT(*) AS count FROM app_scan_jobs WHERE requester_hash=? AND requested_by IS NULL AND status!='failed'").bind(requesterHash).first<Row>();
+  if (Number(usage?.count || 0) >= 1) throw new FreeScanLimitError();
+  const id = randomUUID();
+  const createdAt = nowIso();
+  await db.prepare(`INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requested_by,requester_hash,scan_purpose,created_at,updated_at,last_event_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, canonicalExtensionId, version, "deep", "queued", "queued", null, requesterHash, "user_request", createdAt, createdAt, createdAt).run();
+  await addCloudflareScanEvent(id, "queued", "created", { extension_id: canonicalExtensionId, version, anonymous: true });
+  try {
+    await dispatchCloudflareDeepScan(id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
+    await db.prepare("UPDATE app_scan_jobs SET status='failed',lifecycle_stage='failed',error=?,callback_error=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(message, message, nowIso(), nowIso(), nowIso(), id).run();
+    await addCloudflareScanEvent(id, "failed", "dispatch_failed", { error: message });
+    throw new Error(message);
+  }
+  return withAnonymousCloudflareKey(withCloudflareReportUrl({ id, extension_id: canonicalExtensionId, version, profile: "deep", status: "queued", lifecycle_stage: "dispatched", dispatch: "started" }), id);
+}
+
+export function withAnonymousCloudflareKey<T extends Row>(result: T, jobId: string): T & { report_key?: string } {
+  const key = issueAnonymousReportKey(jobId);
+  return key ? { ...result, report_key: key } : result;
 }
 
 export async function dispatchCloudflareDeepScan(jobId: string, minimumIntervalSeconds = 0): Promise<boolean> {

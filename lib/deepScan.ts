@@ -3,6 +3,8 @@ import { resolveMarketplaceExtension } from "@/lib/marketplace";
 import { serviceDb } from "@/lib/supabase";
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
 import { cloudflarePrivateAvailable, dispatchCloudflareDeepScan, queueCloudflareDeepScan } from "@/lib/cloudflareDeepScan";
+import { anonymousRequesterHash, FreeScanLimitError } from "@/lib/cloudflarePrivate";
+import { issueAnonymousReportKey } from "@/lib/anonymousScanToken";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 
 export class DeepScanUnavailableError extends Error {
@@ -86,6 +88,72 @@ export async function queueDeepScan(extensionId: string, requestedVersion: strin
   return withReportUrl({ ...job.data, profile: "deep", runner_poll_seconds: 0, dispatch: "started" });
 }
 
+/**
+ * One free Deep Scan per visitor, no account. The quota is keyed by a hashed
+ * visitor IP: jobs that failed because of a system error do not consume it,
+ * and already-public reports are served without consuming it. Anonymous jobs
+ * carry no user subscription; the returned report_key plus the unguessable
+ * job id are the visitor's capability to follow and open their own scan.
+ * `force` is intentionally ignored so visitors cannot spam rebuilds.
+ */
+export async function queueAnonymousDeepScan(extensionId: string, requestedVersion: string | undefined, request: Request): Promise<Record<string, unknown>> {
+  const health = await getDeepScanHealth();
+  if (!health.accepting_requests) throw new DeepScanUnavailableError("Deep Scan is not configured to accept requests.");
+  const db = serviceDb();
+
+  const item = await resolveMarketplaceExtension(extensionId);
+  const canonicalExtensionId = item.extension_id;
+  const version = requestedVersion || item.version;
+  if (!version) throw new Error("No published version is available for this extension.");
+  const requesterHash = anonymousRequesterHash(request);
+
+  const own = await db.from("scan_jobs").select("*").eq("extension_id", canonicalExtensionId).eq("version", version).eq("profile", "deep").eq("requester_hash", requesterHash).is("requested_by", null).in("status", ["queued", "running"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (own.error) throw own.error;
+  if (own.data) {
+    if (own.data.status === "queued") await dispatchDeepScan(String(own.data.id), 120);
+    return withAnonymousKey(withReportUrl({ ...own.data, deduplicated: true }), String(own.data.id));
+  }
+
+  // A reproducible public report is already open to everyone; serve it without
+  // consuming the visitor's single free scan.
+  const pub = await db.from("scans").select("id").eq("extension_id", canonicalExtensionId).eq("version", version).in("scan_purpose", ["public_intelligence", "benchmark"]).eq("analysis_status", "complete").order("scanned_at", { ascending: false }).limit(1).maybeSingle();
+  if (!pub.error && pub.data?.id) {
+    return withReportUrl({ status: "complete", scan_id: String(pub.data.id), reused: true, free_scan_preserved: true, extension_id: canonicalExtensionId, version });
+  }
+
+  const used = await db.from("scan_jobs").select("id", { count: "exact", head: true }).eq("requester_hash", requesterHash).is("requested_by", null).neq("status", "failed");
+  if (used.error) throw used.error;
+  if ((used.count || 0) >= 1) throw new FreeScanLimitError();
+
+  const extension = await db.from("extensions").upsert({ id: item.extension_id, name: item.extension_id.split(".").slice(1).join("."), display_name: item.display_name, publisher: item.publisher, description: item.short_description, registry: item.registry || "vs-marketplace", publisher_verified: item.publisher_verified, installs: item.install_count, rating: item.rating_average, icon_url: item.icon_url, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  if (extension.error) throw extension.error;
+
+  const artifact = await db.from("extension_versions").upsert({ extension_id: item.extension_id, version, registry: item.registry || "vs-marketplace", is_latest: version === item.version, scan_state: "queued" }, { onConflict: "extension_id,version" });
+  if (artifact.error) throw artifact.error;
+
+  const job = await db.from("scan_jobs").insert({ extension_id: canonicalExtensionId, version, profile: "deep", requester_hash: requesterHash, requested_by: null, scan_purpose: "user_request", status: "queued", expected_scanner_build: null, claim_protocol: 2 }).select("*").single();
+  if (job.error) {
+    const retry = await db.from("scan_jobs").select("*").eq("extension_id", canonicalExtensionId).eq("version", version).eq("profile", "deep").eq("requester_hash", requesterHash).is("requested_by", null).in("status", ["queued", "running"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (retry.data) {
+      if (retry.data.status === "queued") await dispatchDeepScan(String(retry.data.id), 120);
+      return withAnonymousKey(withReportUrl({ ...retry.data, deduplicated: true }), String(retry.data.id));
+    }
+    await db.from("extension_versions").update({ scan_state: "failed" }).eq("extension_id", canonicalExtensionId).eq("version", version);
+    throw job.error;
+  }
+  await db.from("scan_job_events").insert({ job_id: job.data.id, stage: "queued", event_type: "created", detail: { extension_id: canonicalExtensionId, version, anonymous: true } });
+  try {
+    await dispatchDeepScan(String(job.data.id));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The Deep Scan worker could not be started.";
+    await db.from("scan_jobs").update({ status: "failed", lifecycle_stage: "failed", error: message, callback_error: message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString(), last_event_at: new Date().toISOString() }).eq("id", job.data.id);
+    await db.from("scan_job_events").insert({ job_id: job.data.id, stage: "failed", event_type: "dispatch_failed", detail: { error: message } });
+    await db.from("extension_versions").update({ scan_state: "failed" }).eq("extension_id", canonicalExtensionId).eq("version", version);
+    throw new Error(message);
+  }
+  return withAnonymousKey(withReportUrl({ ...job.data, profile: "deep", runner_poll_seconds: 0, dispatch: "started" }), String(job.data.id));
+}
+
 export function withReportUrl<T extends Record<string, unknown>>(result: T): T & { report_url?: string } {
   const extensionId = typeof result.extension_id === "string" ? result.extension_id : "";
   const version = typeof result.version === "string" ? result.version : "";
@@ -94,6 +162,11 @@ export function withReportUrl<T extends Record<string, unknown>>(result: T): T &
   if (!complete || !extensionId || !version) return result;
   const base = `/extensions/${encodeURIComponent(extensionId)}/versions/${encodeURIComponent(version)}`;
   return { ...result, report_url: scanId ? `${base}/scans/${encodeURIComponent(scanId)}` : base };
+}
+
+export function withAnonymousKey<T extends Record<string, unknown>>(result: T, jobId: string): T & { report_key?: string } {
+  const key = issueAnonymousReportKey(jobId);
+  return key ? { ...result, report_key: key } : result;
 }
 
 export async function dispatchDeepScan(jobId: string, minimumIntervalSeconds = 0): Promise<boolean> {

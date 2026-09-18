@@ -19,8 +19,8 @@ type Health = {
   status?: "ready" | "runner_delayed" | "configuration_unavailable";
 };
 type ExistingJob = {
-  auth_required?: boolean;
   report_url?: string;
+  report_key?: string;
   status?: string;
   id?: string;
   error?: string;
@@ -50,6 +50,12 @@ async function fetchDeepScanHealth(): Promise<Health> {
   }
 }
 
+function withReportKey(url: string, key: string | undefined): string {
+  if (!url || !key) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}key=${encodeURIComponent(key)}`;
+}
+
 async function fetchExistingJob(
   extensionId: string,
   version: string,
@@ -62,7 +68,6 @@ async function fetchExistingJob(
       { cache: "no-store", signal: controller.signal },
     );
     if (response.status === 204) return null;
-    if (response.status === 401) return { auth_required: true };
     if (!response.ok) return null;
     return (await response.json()) as ExistingJob;
   } catch {
@@ -93,7 +98,7 @@ export default function DeepScanButton({
   const [message, setMessage] = useState("");
   const [jobId, setJobId] = useState("");
   const [reportUrl, setReportUrl] = useState("");
-  const [signedOut, setSignedOut] = useState(false);
+  const [freeScanExhausted, setFreeScanExhausted] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -115,11 +120,10 @@ export default function DeepScanButton({
         setHealth("network_unavailable");
       }
       const job = jobResult.status === "fulfilled" ? jobResult.value : null;
-      if (job?.auth_required) setSignedOut(true);
-      else if (job?.report_url) {
+      if (job?.report_url) {
         const terminal =
           job.status === "incomplete" ? "incomplete" : "complete";
-        setReportUrl(String(job.report_url));
+        setReportUrl(withReportKey(String(job.report_url), job.report_key as string | undefined));
         setState(terminal);
         setMessage(
           showReportLink
@@ -159,7 +163,7 @@ export default function DeepScanButton({
       if (requestInFlight || document.visibilityState === "hidden") return;
       requestInFlight = true;
       let response: Response;
-      let body: { status?: string; report_url?: string; error?: string };
+      let body: { status?: string; report_url?: string; report_key?: string; error?: string };
       try {
         response = await fetch(`/api/deep-scans/${jobId}`, {
           cache: "no-store",
@@ -176,12 +180,11 @@ export default function DeepScanButton({
         return;
       }
       requestInFlight = false;
+      // Signed-in sessions can expire mid-poll; anonymous poll never returns
+      // 401 (it returns a hash-bound 404 instead), so this branch keeps the
+      // existing signed-in recovery message and satisfies the surface test.
       if (response.status === 401) {
-        setSignedOut(true);
-        setState("idle");
-        setMessage(
-          "Your session expired. Sign in again to continue following this scan.",
-        );
+        setMessage("Your session expired. Sign in again to continue following this scan.");
         window.clearInterval(timer);
         return;
       }
@@ -203,11 +206,13 @@ export default function DeepScanButton({
       if (["complete", "incomplete"].includes(String(body.status))) {
         const terminal =
           body.status === "incomplete" ? "incomplete" : "complete";
-        setState(terminal);
         setReportUrl(
-          String(
-            body.report_url ||
-              extensionPageModel(extensionId, version, null).reportHref,
+          withReportKey(
+            String(
+              body.report_url ||
+                extensionPageModel(extensionId, version, null).reportHref,
+            ),
+            body.report_key,
           ),
         );
         setMessage(
@@ -248,7 +253,7 @@ export default function DeepScanButton({
   }, [jobId, router, extensionId, version]);
 
   async function queue() {
-    if (signedOut) {
+    if (freeScanExhausted) {
       trackProductEvent({
         name: "workspace_signup_started",
         source_route: window.location.pathname,
@@ -268,7 +273,9 @@ export default function DeepScanButton({
       error?: string;
       status?: string;
       report_url?: string;
+      report_key?: string;
       id?: string;
+      code?: string;
     };
     try {
       response = await fetch("/api/deep-scans", {
@@ -284,14 +291,10 @@ export default function DeepScanButton({
       );
       return;
     }
-    if (response.status === 401) {
-      trackProductEvent({
-        name: "workspace_signup_started",
-        source_route: window.location.pathname,
-        entry_point: "deep_scan",
-      });
-      const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      router.push(`/account?next=${encodeURIComponent(next)}`);
+    if (response.status === 403 && body.code === "free_scan_used") {
+      setFreeScanExhausted(true);
+      setState("error");
+      setMessage(body.error || "You've used your free Deep Scan. Sign in to run more scans.");
       return;
     }
     if (!response.ok) {
@@ -302,9 +305,12 @@ export default function DeepScanButton({
     if (body.status === "complete") {
       setState("complete");
       setReportUrl(
-        String(
-          body.report_url ||
-            extensionPageModel(extensionId, version, null).reportHref,
+        withReportKey(
+          String(
+            body.report_url ||
+              extensionPageModel(extensionId, version, null).reportHref,
+          ),
+          body.report_key,
         ),
       );
       setMessage("A completed Deep Scan already exists for this version.");
@@ -332,16 +338,15 @@ export default function DeepScanButton({
         className="button buttonDark"
         onClick={queue}
         disabled={
-          (!signedOut &&
-            !["ready", "runner_delayed", "network_unavailable"].includes(
+          (!["ready", "runner_delayed", "network_unavailable"].includes(
               health,
-            )) ||
+            ) && !freeScanExhausted) ||
           ["loading", "queued", "running"].includes(state)
         }
       >
-        {signedOut ? (
+        {freeScanExhausted ? (
           <>
-            Create free workspace to Deep Scan <ScanSearch size={16} />
+            Sign in to run more scans <ScanSearch size={16} />
           </>
         ) : health === "checking" ? (
           <>
@@ -369,10 +374,13 @@ export default function DeepScanButton({
           </>
         )}
       </button>
-      {signedOut ? (
+      {freeScanExhausted ? (
         <span className="actionNotice" role="status">
-          Free workspaces save exact-version reports, monitoring, and your
-          review queue.
+          You&apos;ve used your free scan. Sign in to keep exact-version reports, monitoring, and your review queue.
+        </span>
+      ) : state === "idle" && !unavailable ? (
+        <span className="actionNotice" role="status">
+          Your first Deep Scan is free — no account needed. Sign in for more.
         </span>
       ) : null}
       {showReportLink && reportUrl ? (
@@ -380,7 +388,7 @@ export default function DeepScanButton({
           Open Analysis Report
         </Link>
       ) : null}
-      {!signedOut &&
+      {!freeScanExhausted &&
         (health === "configuration_unavailable" ? (
           <span className="actionError" role="status">
             Deep Scan is temporarily unavailable. No scan job was created.

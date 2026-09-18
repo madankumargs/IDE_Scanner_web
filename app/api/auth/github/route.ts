@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { runtimeEnv } from "@/lib/runtimeEnv";
-import { safeNext } from "@/lib/cloudflarePrivate";
+import { isSecureRequest, safeNext } from "@/lib/cloudflarePrivate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,8 @@ export async function GET(request: Request) {
   authorize.searchParams.set("scope", "read:user user:email");
   authorize.searchParams.set("state", state);
   const response = NextResponse.redirect(authorize);
-  response.headers.append("Set-Cookie", `gr_oauth_state=${encodeURIComponent(state)}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`);
-  response.headers.append("Set-Cookie", `gr_oauth_next=${encodeURIComponent(safeNext(url.searchParams.get("next")))}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`);
+  const secure = isSecureRequest(request) ? "; Secure" : "";
+  response.headers.append("Set-Cookie", `gr_oauth_state=${encodeURIComponent(state)}; Max-Age=600; Path=/; HttpOnly;${secure} SameSite=Lax`);
+  response.headers.append("Set-Cookie", `gr_oauth_next=${encodeURIComponent(safeNext(url.searchParams.get("next")))}; Max-Age=600; Path=/; HttpOnly;${secure} SameSite=Lax`);
   return response;
 }

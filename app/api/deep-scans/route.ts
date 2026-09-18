@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { normalizeMarketplaceId } from "@/lib/marketplace";
 import { serviceDb } from "@/lib/supabase";
 import { serverDb } from "@/lib/supabaseServer";
-import { DeepScanUnavailableError, queueDeepScan } from "@/lib/deepScan";
+import { DeepScanUnavailableError, queueAnonymousDeepScan, queueDeepScan, withAnonymousKey } from "@/lib/deepScan";
 import { scanProgressColumns, scanProgressPayload } from "@/lib/scanProgress";
-import { cloudflarePrivateAvailable, cloudflareScanProgress } from "@/lib/cloudflareDeepScan";
-import { privateDb, userFromSession } from "@/lib/cloudflarePrivate";
+import { cloudflarePrivateAvailable, cloudflareScanProgress, queueAnonymousCloudflareDeepScan, withAnonymousCloudflareKey } from "@/lib/cloudflareDeepScan";
+import { FreeScanLimitError, anonymousRequesterHash, privateDb, userFromSession } from "@/lib/cloudflarePrivate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,53 +14,71 @@ export async function GET(request: Request) {
   try {
     if (cloudflarePrivateAvailable()) {
       const user = await userFromSession(request);
-      if (!user) return NextResponse.json({ error: "Sign in to view Deep Scan progress.", code: "auth_required" }, { status: 401 });
       const url = new URL(request.url);
       const extensionId = normalizeMarketplaceId(url.searchParams.get("extension_id") || "");
       const version = (url.searchParams.get("version") || "").trim();
       const db = privateDb();
-      const job = await db.prepare(`SELECT j.* FROM app_scan_jobs j JOIN app_scan_job_subscribers s ON s.job_id=j.id WHERE s.user_id=? AND j.extension_id=? ${version ? "AND j.version=?" : ""} ORDER BY j.created_at DESC LIMIT 1`).bind(...(version ? [user.id, extensionId, version] : [user.id, extensionId])).first<Record<string, unknown>>();
-      return job ? NextResponse.json(await cloudflareScanProgress(job)) : new NextResponse(null, { status: 204 });
+      if (user) {
+        const job = await db.prepare(`SELECT j.* FROM app_scan_jobs j JOIN app_scan_job_subscribers s ON s.job_id=j.id WHERE s.user_id=? AND j.extension_id=? ${version ? "AND j.version=?" : ""} ORDER BY j.created_at DESC LIMIT 1`).bind(...(version ? [user.id, extensionId, version] : [user.id, extensionId])).first<Record<string, unknown>>();
+        if (job) return NextResponse.json(await cloudflareScanProgress(job));
+      }
+      // Anonymous lookup: same visitor (IP hash) with no account — powers the
+      // one-free-scan poll without leaking other visitors' jobs.
+      const hash = anonymousRequesterHash(request);
+      const anonJob = await db.prepare(`SELECT * FROM app_scan_jobs WHERE extension_id=? ${version ? "AND version=?" : ""} AND requester_hash=? AND requested_by IS NULL ORDER BY created_at DESC LIMIT 1`).bind(...(version ? [extensionId, version, hash] : [extensionId, hash])).first<Record<string, unknown>>();
+      if (anonJob) {
+        const payload = await cloudflareScanProgress(anonJob);
+        return NextResponse.json(withAnonymousCloudflareKey(payload as Record<string, unknown> & { extension_id?: string; version?: string; status?: string }, String(anonJob.id)));
+      }
+      if (user) return new NextResponse(null, { status: 204 });
+      // No anonymous job either — keep polling silent so the button can still
+      // offer the free-scan CTA instead of a hard auth wall.
+      return new NextResponse(null, { status: 204 });
     }
     const db = await serverDb();
     const {
       data: { user },
     } = await db.auth.getUser();
-    if (!user)
-      return NextResponse.json(
-        { error: "Sign in to view Deep Scan progress.", code: "auth_required" },
-        { status: 401 },
-      );
     const url = new URL(request.url);
     const extensionId = normalizeMarketplaceId(
       url.searchParams.get("extension_id") || "",
     );
     const version = (url.searchParams.get("version") || "").trim();
     const service = serviceDb();
-    const subscriptions = await service
-      .from("scan_job_subscribers")
-      .select("job_id")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (subscriptions.error) throw subscriptions.error;
-    const jobIds = (subscriptions.data || []).map((item) =>
-      String(item.job_id),
-    );
-    if (!jobIds.length) return new NextResponse(null, { status: 204 });
-    let query = service
-      .from("scan_jobs")
-      .select(scanProgressColumns)
-      .in("id", jobIds)
-      .eq("extension_id", extensionId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (version) query = query.eq("version", version);
-    const result = await query.maybeSingle();
-    if (result.error) throw result.error;
-    return result.data
-      ? NextResponse.json(await scanProgressPayload(service, result.data))
-      : new NextResponse(null, { status: 204 });
+    if (user) {
+      const subscriptions = await service
+        .from("scan_job_subscribers")
+        .select("job_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (subscriptions.error) throw subscriptions.error;
+      const jobIds = (subscriptions.data || []).map((item) =>
+        String(item.job_id),
+      );
+      if (jobIds.length) {
+        let query = service
+          .from("scan_jobs")
+          .select(scanProgressColumns)
+          .in("id", jobIds)
+          .eq("extension_id", extensionId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (version) query = query.eq("version", version);
+        const result = await query.maybeSingle();
+        if (result.error) throw result.error;
+        if (result.data) return NextResponse.json(await scanProgressPayload(service, result.data));
+      }
+    }
+    const anonHash = anonymousRequesterHash(request);
+    let anonQuery = service.from("scan_jobs").select(scanProgressColumns).eq("requester_hash", anonHash).is("requested_by", null).eq("extension_id", extensionId).order("created_at", { ascending: false }).limit(1);
+    if (version) anonQuery = anonQuery.eq("version", version);
+    const anon = await anonQuery.maybeSingle();
+    if (!anon.error && anon.data) {
+      const payload = await scanProgressPayload(service, anon.data);
+      return NextResponse.json(withAnonymousKey(payload as Record<string, unknown>, String(anon.data.id)));
+    }
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Scan lookup failed." },
@@ -78,34 +96,40 @@ export async function POST(request: Request) {
     };
     if (cloudflarePrivateAvailable()) {
       const user = await userFromSession(request);
-      if (!user) return NextResponse.json({ error: "Sign in to request a Deep Scan.", code: "auth_required" }, { status: 401 });
       const extensionId = normalizeMarketplaceId(String(payload.extension_id || ""));
-      const result = await queueDeepScan(extensionId, payload.version?.trim() || undefined, request, user.id, payload.force === true);
+      const version = payload.version?.trim() || undefined;
+      if (user) {
+        const result = await queueDeepScan(extensionId, version, request, user.id, payload.force === true);
+        return NextResponse.json(result, { status: String(result.status) === "complete" ? 200 : 202 });
+      }
+      const result = await queueAnonymousCloudflareDeepScan(extensionId, version, request);
       return NextResponse.json(result, { status: String(result.status) === "complete" ? 200 : 202 });
     }
     const db = await serverDb();
     const {
       data: { user },
     } = await db.auth.getUser();
-    if (!user)
-      return NextResponse.json(
-        { error: "Sign in to request a Deep Scan.", code: "auth_required" },
-        { status: 401 },
-      );
     const extensionId = normalizeMarketplaceId(
       String(payload.extension_id || ""),
     );
-    const result = await queueDeepScan(
-      extensionId,
-      payload.version?.trim() || undefined,
-      request,
-      user.id,
-      payload.force === true,
-    );
-    return NextResponse.json(result, {
-      status: String(result.status) === "complete" ? 200 : 202,
-    });
+    const version = payload.version?.trim() || undefined;
+    if (user) {
+      const result = await queueDeepScan(
+        extensionId,
+        version,
+        request,
+        user.id,
+        payload.force === true,
+      );
+      return NextResponse.json(result, {
+        status: String(result.status) === "complete" ? 200 : 202,
+      });
+    }
+    const result = await queueAnonymousDeepScan(extensionId, version, request);
+    return NextResponse.json(result, { status: String(result.status) === "complete" ? 200 : 202 });
   } catch (error) {
+    if (error instanceof FreeScanLimitError || (error instanceof Error && error.name === "FreeScanLimitError"))
+      return NextResponse.json({ error: error.message, code: "free_scan_used", sign_in_required: true }, { status: 403 });
     if (
       error instanceof DeepScanUnavailableError ||
       (error instanceof Error && error.name === "DeepScanUnavailableError")

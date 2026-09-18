@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { runtimeEnv } from "@/lib/runtimeEnv";
 
 type PrivateRow = Record<string, unknown>;
 type PrivateResult<T extends PrivateRow = PrivateRow> = {
@@ -89,6 +90,32 @@ export function sessionHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * Best-effort visitor IP for anonymous abuse limits. Prefers Cloudflare's
+ * connecting-IP header; falls back to the first forwarded address. This is a
+ * rate-limit signal, not an identity: NAT and VPN sharing mean one hash can
+ * cover many humans, which is why the anonymous quota fail-open direction is
+ * "ask to sign in", never "block the artifact".
+ */
+export function requesterIp(request: Request): string {
+  const cf = request.headers.get("cf-connecting-ip")?.split(",")[0]?.trim();
+  if (cf) return cf;
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || "unknown";
+}
+
+export function anonymousRequesterHash(request: Request): string {
+  const secret = runtimeEnv("SCAN_RATE_LIMIT_SECRET") || runtimeEnv("SCAN_CALLBACK_SECRET") || "ide-scanner";
+  return createHash("sha256").update(`${secret}:${requesterIp(request)}`).digest("hex");
+}
+
+export class FreeScanLimitError extends Error {
+  constructor() {
+    super("This visitor has already used the free Deep Scan. Sign in to run more scans.");
+    this.name = "FreeScanLimitError";
+  }
+}
+
 export async function userFromSession(request: Request): Promise<AppAuthUser | null> {
   const token = tokenFromRequest(request);
   if (!token) return null;
@@ -173,12 +200,25 @@ export async function deleteSession(request: Request): Promise<void> {
   await privateDb().prepare("DELETE FROM app_sessions WHERE token_hash=?").bind(sessionHash(token)).run();
 }
 
-export function sessionCookie(token: string, maxAge = 30 * 24 * 60 * 60): string {
-  return `gr_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+export function isSecureRequest(request: Request): boolean {
+  try {
+    if (new URL(request.url).protocol === "https:") return true;
+  } catch {
+    // Fall through to proxy headers when the URL is not parseable.
+  }
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  return forwarded === "https";
 }
 
-export function clearSessionCookie(): string {
-  return sessionCookie("", 0);
+export function sessionCookie(token: string, maxAge = 30 * 24 * 60 * 60, secure = true): string {
+  // The Secure attribute prevents browsers from storing or sending the cookie
+  // over plain HTTP, which breaks the local dev server (http://127.0.0.1:8765).
+  // Production stays Secure; local HTTP omits it.
+  return `gr_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
+}
+
+export function clearSessionCookie(secure = true): string {
+  return sessionCookie("", 0, secure);
 }
 
 export function safeNext(value: string | null | undefined): string {
