@@ -5,6 +5,7 @@ import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct, ge
 import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cloudflarePrivateAvailable, getCloudflareScanProduct, getCloudflareScanSummary } from "@/lib/cloudflareDeepScan";
+import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 
 const cachedVersions=unstable_cache(async(id:string)=>listMarketplaceVersions(id),["registry-versions-v2"],{revalidate:21600,tags:["registry-versions"]});
 const MAX_RENDERED_VERSION_HISTORY = 120;
@@ -489,21 +490,20 @@ function latestByExactArtifact(rows: Array<Record<string, unknown>>): Array<Reco
 async function activePublicClassification(
   db: SupabaseClient,
 ): Promise<PublicClassification | null> {
-  const result = await db.from("scan_publication_releases").select("id,policy_version,ruleset_version,score_schema_version,scanner_build").eq("active", true).limit(1).maybeSingle();
-  if (result.error) {
-    if (!isMissingPublicationReleaseTable(result.error)) throw result.error;
-    const fallback = dominantPublicClassification(await legacyPublicationRows(db));
-    return fallback ? { ...fallback, scanIds: null } : null;
-  }
-  if (!result.data?.policy_version || !result.data?.ruleset_version || !result.data?.score_schema_version || !result.data?.scanner_build) return null;
+  const result = await db.from("scan_publication_releases").select("id,policy_version,ruleset_version,score_schema_version,scanner_build,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256").eq("active", true).limit(1).maybeSingle();
+  // A release without a signed accuracy-gate attestation is not a public
+  // classification. Legacy dominant-policy fallback is intentionally gone:
+  // missing migrations or stale releases must render no public cohort.
+  if (result.error || !result.data || !hasAccuracyGateAttestation(result.data)) return null;
+  if (!result.data.policy_version || !result.data.ruleset_version || !result.data.score_schema_version || !result.data.scanner_build) return null;
   const members = await db.from("scan_publication_release_scans").select("scan_id").eq("release_id", result.data.id);
-  if (members.error && !isMissingPublicationMembershipTable(members.error)) throw members.error;
+  if (members.error) return null;
   return {
     policyVersion: String(result.data.policy_version),
     rulesetVersion: String(result.data.ruleset_version),
     scoreSchemaVersion: String(result.data.score_schema_version),
     scannerBuild: String(result.data.scanner_build),
-    scanIds: members.error ? null : (members.data || []).map((row) => String(row.scan_id)).filter(Boolean),
+    scanIds: (members.data || []).map((row) => String(row.scan_id)).filter(Boolean),
   };
 }
 
@@ -639,37 +639,6 @@ export function dominantPublicClassification(
     scoreSchemaVersion: selected.scoreSchemaVersion,
     scannerBuild: selected.scannerBuild,
   } : null;
-}
-
-async function legacyPublicationRows(db: SupabaseClient): Promise<ClassificationRow[]> {
-  const rows: ClassificationRow[] = [];
-  const pageSize = 1000;
-  for (let from = 0; from < 100_000; from += pageSize) {
-    const result = await db.from("scans")
-      .select("extension_id,version,policy_version,ruleset_version,score_schema_version,scanner_build,scanned_at")
-      .in("scan_purpose", ["public_intelligence", "benchmark"])
-      .eq("analysis_status", "complete")
-      .neq("policy_version", "legacy")
-      .neq("ruleset_version", "unknown")
-      .is("superseded_at", null)
-      .order("scanned_at", { ascending: false })
-      .range(from, from + pageSize - 1);
-    if (result.error) throw result.error;
-    const page = (result.data || []) as ClassificationRow[];
-    rows.push(...page);
-    if (page.length < pageSize) return rows;
-  }
-  throw new Error("Legacy publication release selection exceeded its safety limit.");
-}
-
-function isMissingPublicationReleaseTable(error: { code?: string; message?: string }): boolean {
-  return error.code === "PGRST205"
-    && String(error.message || "").includes("scan_publication_releases");
-}
-
-function isMissingPublicationMembershipTable(error: { code?: string; message?: string }): boolean {
-  return error.code === "PGRST205"
-    && String(error.message || "").includes("scan_publication_release_scans");
 }
 
 function isMissingScanJobResultsTable(error: { code?: string; message?: string }): boolean {

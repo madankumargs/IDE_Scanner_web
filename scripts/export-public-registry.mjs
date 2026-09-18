@@ -18,7 +18,8 @@ await client.connect();
 try {
   const generatedAt = new Date().toISOString();
   const releaseResult = await client.query(`
-    select id, policy_version, ruleset_version, score_schema_version, scanner_build
+    select id, policy_version, ruleset_version, score_schema_version, scanner_build,
+           accuracy_gate_corpus_id, accuracy_gate_corpus_version, accuracy_gate_sha256
     from public.scan_publication_releases
     where active = true
     order by activated_at desc
@@ -26,6 +27,9 @@ try {
   `);
   const release = releaseResult.rows[0];
   if (!release) throw new Error("No active public scan publication release exists.");
+  if (!release.accuracy_gate_corpus_id || !release.accuracy_gate_corpus_version || !/^[0-9a-f]{64}$/i.test(String(release.accuracy_gate_sha256 || ""))) {
+    throw new Error("The active public scan publication has no accuracy-gate attestation.");
+  }
 
   const memberResult = await client.query(
     `select scan_id::text from public.scan_publication_release_scans where release_id = $1`,
