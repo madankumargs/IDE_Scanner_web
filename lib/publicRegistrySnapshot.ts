@@ -6,9 +6,11 @@ import type {
   PublicSecurityFeedItem,
 } from "@/lib/productData";
 import {
+  getCloudflareRegistrySection,
   getCloudflareRegistryProduct,
   getCloudflareRegistrySnapshot,
 } from "@/lib/cloudflareRegistry";
+import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 
 const DEFAULT_SNAPSHOT_URL =
   "https://raw.githubusercontent.com/preethamak/IDE_Scanner_web/main/public/registry-snapshot.json";
@@ -56,6 +58,7 @@ export async function getPublicRegistrySnapshot(): Promise<PublicRegistrySnapsho
   const cloudflareSnapshot = await getCloudflareRegistrySnapshot<PublicRegistrySnapshot>();
   if (cloudflareSnapshot) {
     const value = cloudflareSnapshot as PublicRegistrySnapshot;
+    if (!hasAccuracyGateAttestation(value.inventory?.publication)) return null;
     cached = { expiresAt: Date.now() + SNAPSHOT_TTL_MS, value };
     return value;
   }
@@ -74,6 +77,7 @@ export async function getPublicRegistrySnapshot(): Promise<PublicRegistrySnapsho
       !body.metrics ||
       !Array.isArray(body.feed) ||
       !body.inventory ||
+      !hasAccuracyGateAttestation(body.inventory.publication) ||
       !Array.isArray(body.catalog) ||
       !body.benchmark ||
       !Array.isArray(body.benchmark.rows) ||
@@ -93,7 +97,10 @@ export async function getPublicRegistrySnapshot(): Promise<PublicRegistrySnapsho
 export async function getPublicRegistryProduct(
   id: string,
 ): Promise<PublicRegistryProduct | null> {
-  const cloudflareProduct = await getCloudflareRegistryProduct<PublicRegistryProduct>(id);
+  const cloudflareInventory = await getCloudflareRegistrySection<PublicInventory>("inventory");
+  const cloudflareProduct = hasAccuracyGateAttestation(cloudflareInventory?.publication)
+    ? await getCloudflareRegistryProduct<PublicRegistryProduct>(id)
+    : null;
   if (cloudflareProduct) return cloudflareProduct;
   const snapshot = await getPublicRegistrySnapshot();
   if (!snapshot) return null;
