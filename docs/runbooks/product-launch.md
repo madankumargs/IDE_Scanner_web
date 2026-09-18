@@ -22,6 +22,18 @@ accuracy claim. The gate artifact must also carry a separate
 Until that holdout exists, the registry may keep its current release but must
 not activate or bulk-publish a new cohort.
 
+## Cohort scaling
+
+Catalog refresh is intentionally separate from publication activation. After
+the holdout gate passes, dispatch a staged refresh with the workflow inputs
+`cohort_limit`, `marketplace_page_count`, and `scan_batch_limit` (for example
+`1000`, `10`, and `250`). These values are bounded by the refresh script and
+only queue exact Deep Scan jobs; they do not replace the active public release.
+Wait for every required report to be complete under one scanner build, build a
+new publication validation report, and activate it with the same accuracy gate.
+If the holdout or report-completeness gate fails, leave the existing release
+active and investigate the rule or worker evidence before increasing the cohort.
+
 ## Runner outage
 
 The public report remains available. Pause acquisition copy that promises a new

@@ -14,7 +14,9 @@ function databaseConnectionString() {
 // the direct Postgres path instead; it preserves the same writes without
 // routing the catalog refresh through the restricted service layer.
 const db = createPostgresClient(databaseConnectionString());
-const scanLimit = Number(process.env.SCAN_BATCH_LIMIT || 100);
+const scanLimit = boundedInteger("SCAN_BATCH_LIMIT", 100, 1, 5000);
+const cohortLimit = boundedInteger("CATALOG_COHORT_LIMIT", 250, 1, 5000);
+const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
 const refreshStartedAt = new Date().toISOString();
 const scannerBuild = process.env.SCANNER_BUILD_SHA || await currentScannerBuild();
 const chunks = (items, size = 60) => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
@@ -80,11 +82,14 @@ async function versionsFor(extension) {
   return (payload.results?.[0]?.extensions?.[0]?.versions || []).map((version, index) => ({ ...extension, version: version.version, published_at: version.lastUpdated || null, is_latest: index === 0, download_url: `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${encodeURIComponent(extension.publisher)}/vsextensions/${encodeURIComponent(extension.name)}/${encodeURIComponent(version.version)}/vspackage` }));
 }
 
-const [marketplacePages, openVsx] = await Promise.all([Promise.all([1, 2, 3].map(marketplacePage)), openVsxTop()]);
+const [marketplacePages, openVsx] = await Promise.all([
+  Promise.all(Array.from({ length: marketplacePageCount }, (_, index) => marketplacePage(index + 1))),
+  openVsxTop(),
+]);
 const marketplace = marketplacePages.flat().map(normalizeMarketplace);
 const combined = [...marketplace, ...openVsx];
 const unique = new Map(); for (const item of combined.sort((a, b) => b.installs - a.installs)) if (!unique.has(item.id.toLowerCase())) unique.set(item.id.toLowerCase(), item);
-const cohort = [...unique.values()].slice(0, 250).map((item, index) => ({ ...item, catalog_rank: index + 1 }));
+const cohort = [...unique.values()].slice(0, cohortLimit).map((item, index) => ({ ...item, catalog_rank: index + 1 }));
 
 // Watched extensions outside the top cohort must still be refreshed. Otherwise a
 // user can watch a long-tail extension that is never version-detected, scanned, or
@@ -212,6 +217,15 @@ for (const registry of ["vs-marketplace", "openvsx"]) {
 }
 
 console.log(JSON.stringify({ extensions: cohort.length, deep_scans_queued: queued }));
+
+function boundedInteger(name, fallback, minimum, maximum) {
+  const raw = String(process.env[name] || "").trim();
+  const value = raw ? Number(raw) : fallback;
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return value;
+}
 
 async function currentScannerBuild() {
   const repository = process.env.SCANNER_REPOSITORY || "preethamak/IDE_Scanner";

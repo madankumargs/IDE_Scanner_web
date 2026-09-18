@@ -9,6 +9,14 @@ on:
         description: Maximum new Deep Scans to dispatch
         required: false
         default: "100"
+      cohort_limit:
+        description: Maximum ranked extensions to refresh; increase only after the publication gate passes
+        required: false
+        default: "250"
+      marketplace_page_count:
+        description: Marketplace pages of 100 extensions to ingest
+        required: false
+        default: "3"
 
 permissions:
   contents: write
@@ -28,6 +36,8 @@ jobs:
         env:
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit || '100' }}
+          CATALOG_COHORT_LIMIT: ${{ inputs.cohort_limit || '250' }}
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
       - name: Export public registry mirror
         run: npx tsx scripts/export-public-registry.mjs
         env:
