@@ -42,7 +42,8 @@ describe("accuracy publication gate", () => {
   });
 
   it("rejects the synthetic regression gate when no fresh holdout is attached", () => {
-    const { holdout: _holdout, ...regressionOnly } = validGate;
+    const regressionOnly = { ...validGate };
+    delete regressionOnly.holdout;
     expect(validateAccuracyGate(regressionOnly, { scanner_build: "a".repeat(40) })).toContain(
       "publication requires a complete fresh-labeled holdout gate in addition to regression fixtures",
     );
