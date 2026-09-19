@@ -1,0 +1,150 @@
+name: Validate and promote scanner publication
+
+# This workflow is intentionally manual. The scanner's fresh labelled holdout
+# is a release prerequisite, but downloading an artifact from another
+# repository and changing the active public release are two separate trust
+# boundaries. Validation is the default; activation requires an explicit
+# boolean input after the validation step has passed.
+on:
+  workflow_dispatch:
+    inputs:
+      scanner_run_id:
+        description: Scanner workflow-run ID containing scanner-publication-accuracy-gate
+        required: true
+        type: string
+      scanner_build:
+        description: Full scanner commit SHA attested by the holdout run
+        required: true
+        type: string
+      expected_reports:
+        description: Exact number of complete D1 reports to promote
+        required: true
+        default: "100"
+        type: string
+      activate:
+        description: Activate the validated Cloudflare publication release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      validation_path: ${{ steps.validation.outputs.path }}
+    steps:
+      - name: Require cross-repository artifact credentials
+        env:
+          SCANNER_REPO_READ_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+        run: |
+          if [ -z "$SCANNER_REPO_READ_TOKEN" ]; then
+            echo "SCANNER_REPO_READ_TOKEN is required to download the scanner holdout artifact."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Download exact scanner accuracy gate
+        uses: actions/download-artifact@v4
+        with:
+          name: scanner-publication-accuracy-gate
+          path: scanner-accuracy-gate
+          repository: preethamak/IDE_Scanner
+          run-id: ${{ inputs.scanner_run_id }}
+          github-token: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+      - name: Validate gate identity
+        env:
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
+          EXPECTED_REPORTS: ${{ inputs.expected_reports }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          build = os.environ["SCANNER_BUILD"].strip().lower()
+          if not re.fullmatch(r"[0-9a-f]{40}", build):
+              raise SystemExit("scanner_build must be a full 40-character commit SHA")
+          expected = int(os.environ["EXPECTED_REPORTS"])
+          if expected < 1 or expected > 10000:
+              raise SystemExit("expected_reports must be between 1 and 10000")
+          gate_path = Path("scanner-accuracy-gate/publication-accuracy-gate.json")
+          gate = json.loads(gate_path.read_text(encoding="utf-8"))
+          identity = gate.get("report_identity") or {}
+          if str(identity.get("scanner_build", "")).lower() != build:
+              raise SystemExit("scanner_build does not match the downloaded accuracy gate")
+          if gate.get("holdout", {}).get("status") != "fresh-labeled":
+              raise SystemExit("downloaded gate is not a fresh-labeled holdout gate")
+          if gate.get("gate", {}).get("passed") is not True:
+              raise SystemExit("downloaded accuracy gate did not pass")
+          print(json.dumps({"scanner_build": build, "expected_reports": expected}))
+          PY
+      - name: Build Cloudflare publication validation
+        id: validation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
+          EXPECTED_REPORTS: ${{ inputs.expected_reports }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN is required for publication validation."
+            exit 1
+          fi
+          node scripts/build-cloudflare-publication-validation.mjs \
+            --scanner-build "$SCANNER_BUILD" \
+            --expected-reports "$EXPECTED_REPORTS" \
+            --accuracy-gate scanner-accuracy-gate/publication-accuracy-gate.json \
+            --out cloudflare-publication-validation.json
+          echo "path=cloudflare-publication-validation.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-publication-validation
+          path: |
+            cloudflare-publication-validation.json
+            scanner-accuracy-gate/publication-accuracy-gate.json
+          retention-days: 30
+
+  activate:
+    if: ${{ inputs.activate == true }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require production credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN is required for activation."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Download validated publication
+        uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-publication-validation
+          path: publication
+      - name: Activate immutable Cloudflare release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+        run: |
+          node scripts/activate-cloudflare-scan-publication.mjs \
+            --report publication/cloudflare-publication-validation.json \
+            --accuracy-gate publication/scanner-accuracy-gate/publication-accuracy-gate.json \
+            --apply
