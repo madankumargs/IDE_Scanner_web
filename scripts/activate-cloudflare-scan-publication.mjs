@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { assertAccuracyGate } from "./accuracy-gate.mjs";
+import { validatePublicationManifest } from "./publication-manifest.mjs";
 
 const args = process.argv.slice(2);
 const reportPath = valueAfter("--report");
@@ -13,12 +14,43 @@ const report = JSON.parse(await readFile(reportPath, "utf8"));
 const accuracyGateBytes = await readFile(accuracyGatePath);
 const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
 const extensions = Array.isArray(report.extensions) ? report.extensions : [];
+validatePublicationManifest(extensions);
 const scannerBuild = String(report.scanner_build || "");
 const policyVersion = String(report.policy_version || "");
 const rulesetVersion = String(report.ruleset_version || "");
 const scoreSchemaVersion = String(report.score_schema_version || "");
 if (!extensions.length || !/^[0-9a-f]{40}$/.test(scannerBuild) || !policyVersion || !rulesetVersion || !scoreSchemaVersion) {
   throw new Error("The Cloudflare validation report has no complete release identity.");
+}
+for (const item of extensions) {
+  if (String(item.policy_version || "") !== policyVersion
+    || String(item.ruleset_version || "") !== rulesetVersion
+    || String(item.score_schema_version || "") !== scoreSchemaVersion) {
+    throw new Error(`Cloudflare publication member identity does not match the release for ${String(item?.extension_id || "unknown")}@${String(item?.version || "")}.`);
+  }
+  const runtime = item && typeof item.runtime_contract === "object" && !Array.isArray(item.runtime_contract)
+    ? item.runtime_contract
+    : {};
+  const notApplicable = runtime.required === false
+    && runtime.provider_status === "not-applicable"
+    && runtime.executed === false
+    && runtime.execution === "policy-gated"
+    && runtime.runtime_policy === "capability-gated-v1"
+    && runtime.external_syscall_trace === false
+    && runtime.external_syscall_trace_available === true;
+  const completed = runtime.required === true
+    && runtime.provider_status === "completed"
+    && runtime.executed === true
+    && runtime.execution === "controlled-bubblewrap"
+    && runtime.runtime_policy === "capability-gated-v1"
+    && runtime.external_syscall_trace === true
+    && runtime.external_syscall_trace_available === true;
+  if (runtime.profile !== "deep"
+    || runtime.analysis_status !== "complete"
+    || runtime.coverage_status !== "complete"
+    || (!completed && !notApplicable)) {
+    throw new Error(`Cloudflare validation report is missing the per-extension runtime contract for ${String(item?.extension_id || "unknown")}.`);
+  }
 }
 assertAccuracyGate(accuracyGate, {
   scanner_build: scannerBuild,
@@ -40,7 +72,7 @@ const statements = [
   "UPDATE app_scan_publication_releases SET active=0 WHERE active=1;",
   `UPDATE app_scan_publication_releases SET active=1,activated_at=${quote(now)} WHERE id=${quote(releaseId)};`,
 ];
-const summary = { release_id: releaseId, reports: extensions.length, scanner_build: scannerBuild, policy_version: policyVersion, ruleset_version: rulesetVersion, score_schema_version: scoreSchemaVersion, accuracy_gate_corpus_id: String(accuracyGate.corpus_id), accuracy_gate_corpus_version: String(accuracyGate.corpus_version), accuracy_gate_sha256: accuracyGateSha256, holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated, holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated };
+const summary = { release_id: releaseId, reports: extensions.length, scanner_build: scannerBuild, policy_version: policyVersion, ruleset_version: rulesetVersion, score_schema_version: scoreSchemaVersion, accuracy_gate_corpus_id: String(accuracyGate.corpus_id), accuracy_gate_corpus_version: String(accuracyGate.corpus_version), accuracy_gate_sha256: accuracyGateSha256, holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated, holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated, holdout_safe_review_rate: accuracyGate.holdout.safe_review_rate, holdout_malicious_detection_rate: accuracyGate.holdout.malicious_detection_rate };
 if (!apply) {
   console.log(JSON.stringify({ ...summary, status: "validated-dry-run" }, null, 2));
   process.exit(0);
