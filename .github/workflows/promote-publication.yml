@@ -72,6 +72,50 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Verify scanner holdout run provenance
+        env:
+          SCANNER_REPO_READ_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+          SCANNER_RUN_ID: ${{ inputs.scanner_run_id }}
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.request
+
+          run_id = os.environ["SCANNER_RUN_ID"].strip()
+          build = os.environ["SCANNER_BUILD"].strip().lower()
+          if not re.fullmatch(r"[0-9]+", run_id):
+              raise SystemExit("scanner_run_id must be a numeric GitHub Actions run ID")
+          if not re.fullmatch(r"[0-9a-f]{40}", build):
+              raise SystemExit("scanner_build must be a full 40-character commit SHA")
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/preethamak/IDE_Scanner/actions/runs/{run_id}",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['SCANNER_REPO_READ_TOKEN']}",
+                  "User-Agent": "guardrails-publication-promoter",
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  run = json.load(response)
+          except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+              raise SystemExit(f"could not verify scanner workflow run: {exc}") from exc
+          if run.get("name") != "Publication accuracy holdout":
+              raise SystemExit("scanner run is not the publication accuracy holdout workflow")
+          if run.get("status") != "completed" or run.get("conclusion") != "success":
+              raise SystemExit("scanner holdout workflow run did not complete successfully")
+          if run.get("event") != "push" or run.get("head_branch") != "main":
+              raise SystemExit("scanner holdout run is not a main-branch push")
+          if (run.get("head_repository") or {}).get("full_name") != "preethamak/IDE_Scanner":
+              raise SystemExit("scanner holdout run did not originate in the trusted scanner repository")
+          if str(run.get("head_sha", "")).lower() != build:
+              raise SystemExit("scanner workflow run SHA does not match scanner_build")
+          print(json.dumps({"run_id": run_id, "head_sha": build, "workflow": run["name"]}))
+          PY
       - name: Download exact scanner accuracy gate
         uses: actions/download-artifact@v4
         with:

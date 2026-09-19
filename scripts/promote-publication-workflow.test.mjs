@@ -8,6 +8,9 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("scanner-publication-accuracy-gate");
     expect(workflow).toContain("repository: preethamak/IDE_Scanner");
     expect(workflow).toContain("run-id: ${{ inputs.scanner_run_id }}");
+    expect(workflow).toContain("Publication accuracy holdout");
+    expect(workflow).toContain('run.get("conclusion") != "success"');
+    expect(workflow).toContain('run.get("head_repository") or {}');
     expect(workflow).toContain("scanner_build does not match the downloaded accuracy gate");
     expect(workflow).toContain('gate.get("holdout", {}).get("status") != "fresh-labeled"');
   });
