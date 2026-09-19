@@ -2,11 +2,13 @@ import "server-only";
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { gunzipSync } from "node:zlib";
-import { parseCookies, privateDb, newId, nowIso, sessionHash, type AppAuthUser } from "@/lib/cloudflarePrivate";
+import { parseCookies, privateDb, newId, nowIso, requestIsSecure, sessionHash, type AppAuthUser } from "@/lib/cloudflarePrivate";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 import { resolveMarketplaceExtension } from "@/lib/marketplace";
 import { getCloudflareRegistryCatalogExtension, getCloudflareRegistryProduct } from "@/lib/cloudflareRegistry";
 import { markCloudflareRunnerClaimed, markCloudflareRunnerCompleted, markCloudflareRunnerError, recordCloudflareRunnerHeartbeat } from "@/lib/cloudflareRunnerStatus";
+import { dispatchGithubDeepScan } from "@/lib/cloudflareGithubDispatch";
+import { publicCanonicalError } from "@/lib/publicCanonicalContract";
 
 type Row = Record<string, unknown>;
 type Bundle = { metadata?: Row; extensions?: Row | Row[] };
@@ -31,8 +33,9 @@ export function guestTrialToken(request: Request): string {
   return parseCookies(request.headers.get("cookie") || "")[GUEST_TRIAL_COOKIE] || "";
 }
 
-export function guestTrialCookie(token: string, maxAge = GUEST_TRIAL_WINDOW_DAYS * 24 * 60 * 60): string {
-  return `${GUEST_TRIAL_COOKIE}=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+export function guestTrialCookie(token: string, maxAge = GUEST_TRIAL_WINDOW_DAYS * 24 * 60 * 60, request?: Request): string {
+  const secure = request ? requestIsSecure(request) : true;
+  return `${GUEST_TRIAL_COOKIE}=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
 }
 
 export async function cloudflareGuestTrialStatus(request: Request): Promise<GuestTrialStatus> {
@@ -129,7 +132,7 @@ export async function queueCloudflareDeepScan(extensionId: string, requestedVers
 
 export class GuestTrialLimitError extends Error {
   constructor() {
-    super("Your 5-scan free trial is used up. Sign in with GitHub to keep scanning and save your workspace history.");
+    super("Your 5-scan free trial is used up. Create a free GuardRails workspace to keep scanning and save your history.");
     this.name = "GuestTrialLimitError";
   }
 }
@@ -180,7 +183,7 @@ export async function dispatchCloudflareDeepScan(jobId: string, minimumIntervalS
   if (minimumIntervalSeconds > 0 && Number(job.dispatch_count || 0) > 0 && Date.now() - last < minimumIntervalSeconds * 1000) return false;
   const owner = runtimeEnv("GITHUB_REPO_OWNER") || "preethamak";
   const repository = runtimeEnv("GITHUB_SCANNER_REPO") || "IDE_Scanner";
-  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/actions/workflows/deep-scan.yml/dispatches`, { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json", "User-Agent": "guardrails-web" }, body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }), cache: "no-store", signal: AbortSignal.timeout(8_000) });
+  const response = await dispatchGithubDeepScan({ token, owner, repository }, jobId);
   if (!response.ok) {
     // The workflow also runs on a five-minute schedule. A token that can read
     // the repository but cannot dispatch workflows returns 401/403 here; the
@@ -243,6 +246,14 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
   if (!job) throw new Error("Scan job was not found.");
   const detail = singleExtension(bundle.extensions);
   if (!detail) throw new Error("Scanner bundle must contain exactly one extension detail.");
+  const metadata = jsonObject(bundle.metadata);
+  const scanPurpose = String(job.scan_purpose || "");
+  if (["public_intelligence", "benchmark"].includes(scanPurpose)) {
+    const expectedBuild = String(job.expected_scanner_build || "").trim().toLowerCase();
+    if (!/^[0-9a-f]{40}$/.test(expectedBuild)) throw new Error("Public scans require a job-bound scanner build.");
+    const canonicalError = publicCanonicalError(true, String(metadata.schema_version || "").trim(), detail, metadata, expectedBuild, String(job.extension_id || ""), String(job.version || ""));
+    if (canonicalError) throw new Error(canonicalError);
+  }
   const identity = jsonObject(detail.artifact_identity);
   const extensionId = String(detail.extension_id || identity.extension_id || job.extension_id || "");
   const version = String(detail.version || identity.version || job.version || "");
@@ -275,9 +286,22 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
   return scanId;
 }
 
-export async function getCloudflareScanProduct(extensionId: string, version: string, scanId: string): Promise<Row | null> {
+export async function getCloudflareScanProduct(extensionId: string, version: string, scanId: string, publishedOnly = false): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
-  const row = await privateDb().prepare("SELECT report_json,artifact_sha256,created_at FROM app_scan_reports WHERE scan_id=? AND extension_id=? AND version=? LIMIT 1").bind(scanId, extensionId, version).first<Row>();
+  const query = publishedOnly
+    ? `SELECT report.report_json,report.artifact_sha256,report.created_at
+       FROM app_scan_reports report
+       JOIN app_scan_publication_release_reports member ON member.scan_id=report.scan_id
+       JOIN app_scan_publication_releases release ON release.id=member.release_id
+       WHERE report.scan_id=? AND lower(report.extension_id)=lower(?) AND report.version=?
+         AND release.active=1
+         AND coalesce(release.accuracy_gate_corpus_id,'')<>''
+         AND coalesce(release.accuracy_gate_corpus_version,'')<>''
+         AND length(coalesce(release.accuracy_gate_sha256,''))=64
+         AND coalesce(release.accuracy_gate_sha256,'') NOT GLOB '*[^0-9a-f]*'
+       LIMIT 1`
+    : "SELECT report_json,artifact_sha256,created_at FROM app_scan_reports WHERE scan_id=? AND extension_id=? AND version=? LIMIT 1";
+  const row = await privateDb().prepare(query).bind(scanId, extensionId, version).first<Row>();
   if (!row?.report_json) return null;
   let bundle: Bundle;
   try { bundle = JSON.parse(String(row.report_json)) as Bundle; } catch { return null; }
@@ -336,7 +360,7 @@ export async function getCloudflareLatestScanProduct(extensionId: string, versio
     .prepare("SELECT scan_id FROM app_scan_reports WHERE extension_id=? AND version=? ORDER BY created_at DESC LIMIT 1")
     .bind(extensionId, version)
     .first<Row>();
-  return row?.scan_id ? getCloudflareScanProduct(extensionId, version, String(row.scan_id)) : null;
+  return row?.scan_id ? getCloudflareScanProduct(extensionId, version, String(row.scan_id), true) : null;
 }
 
 export async function getCloudflareScanSummary(extensionId: string, version: string): Promise<Row | null> {
@@ -362,10 +386,19 @@ export async function getCloudflareScanSummary(extensionId: string, version: str
       json_extract(extension.value, '$.ruleset_version') AS ruleset_version,
       json_extract(extension.value, '$.capability_assessment') AS capability_assessment
     FROM app_scan_reports report
+    JOIN app_scan_publication_release_reports member
+      ON member.scan_id = report.scan_id
+    JOIN app_scan_publication_releases release
+      ON release.id = member.release_id
     JOIN json_each(report.report_json, '$.extensions') extension
       ON extension.key = 'extensions/' || report.extension_id || '@' || report.version || '.json'
     WHERE lower(report.extension_id)=lower(?)
       AND report.version=?
+      AND release.active=1
+      AND coalesce(release.accuracy_gate_corpus_id,'')<>''
+      AND coalesce(release.accuracy_gate_corpus_version,'')<>''
+      AND length(coalesce(release.accuracy_gate_sha256,''))=64
+      AND coalesce(release.accuracy_gate_sha256,'') NOT GLOB '*[^0-9a-f]*'
     ORDER BY report.created_at DESC
     LIMIT 1
   `).bind(extensionId, version).first<Row>();
@@ -450,7 +483,9 @@ function isDuplicateCloudflareReport(error: unknown): boolean {
 }
 
 function requesterHash(request: Request): string {
-  const raw = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const raw = request.headers.get("cf-connecting-ip")?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || "unknown";
   return createHash("sha256").update(`${runtimeEnv("SCAN_RATE_LIMIT_SECRET") || "ide-scanner"}:${raw}`).digest("hex");
 }
 

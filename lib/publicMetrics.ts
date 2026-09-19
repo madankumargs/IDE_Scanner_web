@@ -1,5 +1,6 @@
 import { publicDb } from "@/lib/supabase";
 import { getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
+import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 import { unstable_cache } from "next/cache";
 
 export type PublicMetrics = {
@@ -38,11 +39,14 @@ async function fetchPublicMetrics(): Promise<PublicMetrics> {
   const mirror = async () => (await getPublicRegistrySnapshot())?.metrics || EMPTY;
   if (!db) return mirror();
   try {
-    const [aggregate, refreshes] = await Promise.all([
+    const [release, aggregate, refreshes] = await Promise.all([
+      db.from("scan_publication_releases").select("accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256").eq("active", true).maybeSingle(),
       db.rpc("public_intelligence_metrics"),
       db.from("registry_refreshes").select("registry,completed_at").eq("status", "complete").order("completed_at", { ascending: false }).limit(20)
     ]);
-    if (aggregate.error || !aggregate.data?.[0]) return mirror();
+    // Aggregate metrics are public trust claims. Never expose them unless the
+    // same active release has passed the accuracy gate used for publication.
+    if (release.error || !release.data || !hasAccuracyGateAttestation(release.data) || aggregate.error || !aggregate.data?.[0]) return mirror();
     const row = aggregate.data[0];
     const freshness: Record<string, string | null> = { "vs-marketplace": null, openvsx: null };
     for (const row of refreshes.data || []) if (!freshness[row.registry]) freshness[row.registry] = row.completed_at;

@@ -10,7 +10,7 @@ const validGate = {
     policy_version: "policy-1",
     ruleset_version: "rules-1",
   },
-  gate: { passed: true, checks: { required_pass_rate: true, safe_block_rate: true, malicious_allow_rate: true, incomplete_required: true } },
+  gate: { passed: true, checks: { required_pass_rate: true, safe_block_rate: true, safe_review_rate: true, malicious_allow_rate: true, incomplete_required: true } },
   summary: {
     required_artifacts: 8,
     required_passed: 8,
@@ -19,6 +19,7 @@ const validGate = {
     required_pass_rate: 1,
     safe_evaluated: 2,
     safe_block_rate: 0,
+    safe_review_rate: 0,
     malicious_evaluated: 4,
     malicious_allow_rate: 0,
   },
@@ -30,12 +31,17 @@ const validGate = {
     malicious_evaluated: 5,
     required_pass_rate: 1,
     safe_block_rate: 0,
+    safe_review_rate: 0,
     malicious_allow_rate: 0,
+    malicious_detection_rate: 1,
+    dynamic_required: 5,
+    dynamic_not_applicable: 5,
+    rule_matrix: { "filesystem-access": { fired_on_known_safe: 5, fired_on_known_malicious: 0 } },
     label_counts: { known_safe: 5, known_malicious: 5 },
     scanner_build: "a".repeat(40),
     policy_version: "policy-1",
     ruleset_version: "rules-1",
-    runtime_evidence: { required: true, runtime_enabled: true, profile: "deep" },
+    runtime_evidence: { required: true, runtime_enabled: true, profile: "deep", external_syscall_trace: true },
   },
 };
 
@@ -74,6 +80,14 @@ describe("accuracy publication gate", () => {
     expect(errors).toContain("fresh-labeled holdout allows known-malicious fixtures");
   });
 
+  it("rejects a holdout whose safe-review rate exceeds the noise ceiling", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, safe_review_rate: 0.4 },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout safe review rate exceeds the 20% noise ceiling");
+  });
+
   it("rejects a holdout with identity drift", () => {
     const errors = validateAccuracyGate({
       ...validGate,
@@ -87,7 +101,23 @@ describe("accuracy publication gate", () => {
       ...validGate,
       holdout: { ...validGate.holdout, runtime_evidence: { required: false, runtime_enabled: false, profile: "quick" } },
     }, { scanner_build: "a".repeat(40) });
-    expect(errors).toContain("fresh-labeled holdout must prove a required deep runtime scan");
+    expect(errors).toContain("fresh-labeled holdout must prove a required deep runtime scan with external syscall tracing");
+  });
+
+  it("rejects a holdout without external syscall tracing", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, runtime_evidence: { required: true, runtime_enabled: true, profile: "deep", external_syscall_trace: false } },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout must prove a required deep runtime scan with external syscall tracing");
+  });
+
+  it("rejects a holdout that exercises only one runtime surface", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, dynamic_not_applicable: 0 },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout must include both executable-capability and explicit runtime-not-applicable artifacts");
   });
 
   it("rejects a holdout that is too small to support a publication claim", () => {
@@ -104,6 +134,34 @@ describe("accuracy publication gate", () => {
       holdout: { ...validGate.holdout, label_counts: { known_safe: 5, known_malicious: 4 } },
     }, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout label counts do not match the frozen corpus");
+  });
+
+  it("rejects a holdout without labelled noise and recall metrics", () => {
+    const incomplete = { ...validGate, holdout: { ...validGate.holdout } };
+    delete incomplete.holdout.safe_review_rate;
+    delete incomplete.holdout.rule_matrix;
+    const errors = validateAccuracyGate(incomplete, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout safe_review_rate must be a number between 0 and 1");
+    expect(errors).toContain("fresh-labeled holdout must retain a labelled rule matrix");
+  });
+
+  it("rejects a holdout without rule-level evidence", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, rule_matrix: {} },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout must retain at least one labelled rule firing");
+  });
+
+  it("rejects rule-matrix counts that cannot come from the labelled corpus", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: {
+        ...validGate.holdout,
+        rule_matrix: { "filesystem-access": { fired_on_known_safe: 6, fired_on_known_malicious: 0 } },
+      },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout rule matrix overcounts known_safe artifacts");
   });
 
   it("rejects a passed-looking gate with an incomplete required check", () => {

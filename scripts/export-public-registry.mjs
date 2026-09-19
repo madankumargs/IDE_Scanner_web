@@ -51,7 +51,7 @@ try {
         order by s.scanned_at desc
       `, [scanIds, release.policy_version, release.ruleset_version, release.score_schema_version, release.scanner_build])).rows.map((row) => row.scan)
     : [];
-  const historyScans = (await client.query(`
+  const historyScans = scanIds.length ? (await client.query(`
     select jsonb_build_object(
       'id', s.id,
       'extension_id', s.extension_id,
@@ -75,12 +75,17 @@ try {
       'scanned_at', s.scanned_at
     ) as scan
     from public.scans s
-    where s.scan_purpose in ('public_intelligence', 'benchmark')
-      and s.analysis_status in ('complete', 'incomplete')
+    where s.id = any($1::uuid[])
+      and s.scan_purpose in ('public_intelligence', 'benchmark')
+      and s.analysis_status = 'complete'
+      and s.policy_version = $2
+      and s.ruleset_version = $3
+      and s.score_schema_version = $4
+      and s.scanner_build = $5
       and s.superseded_at is null
     order by s.scanned_at desc
     limit 5000
-  `)).rows.map((row) => row.scan);
+  `, [scanIds, release.policy_version, release.ruleset_version, release.score_schema_version, release.scanner_build])).rows.map((row) => row.scan) : [];
 
   const extensions = (await client.query(`
     select to_jsonb(e) as extension

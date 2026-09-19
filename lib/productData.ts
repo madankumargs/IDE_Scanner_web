@@ -58,7 +58,7 @@ async function fetchPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedIte
   if (!db) return mirror();
   try {
     const classification = await activePublicClassification(db);
-    if (!classification || classification.scanIds?.length === 0) return mirror();
+    if (!classification || !classification.scanIds || classification.scanIds.length === 0) return mirror();
     let request = db.from("scans").select("id,extension_id,version,severity,decision,public_outcome,decision_basis,evidence_confidence,scanned_at,coverage_percent,decision_reason").in("scan_purpose", ["public_intelligence", "benchmark"]).eq("score_schema_version", classification.scoreSchemaVersion).eq("analysis_status", "complete").eq("policy_version", classification.policyVersion).eq("ruleset_version", classification.rulesetVersion).eq("scanner_build", classification.scannerBuild).in("decision", ["review", "block"]).order("scanned_at", { ascending: false }).limit(80);
     request = classification.scanIds ? request.in("id", classification.scanIds) : request.is("superseded_at", null);
     const { data: scans, error: scanError } = await request;
@@ -99,7 +99,7 @@ async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInve
   if (!db) return mirror();
   try {
     const classification = await activePublicClassification(db);
-    if (!classification || classification.scanIds?.length === 0) return mirror();
+    if (!classification || !classification.scanIds || classification.scanIds.length === 0) return mirror();
     let request = db.from("scans").select("id,extension_id,version,artifact_sha256,severity,decision,decision_reason,public_outcome,decision_basis,evidence_confidence,provenance_tier,expected_profile_id,capability_assessment,score_schema_version,risk_score,malware_score,coverage_percent,scanner_build,ruleset_version,scanned_at").in("scan_purpose", ["public_intelligence", "benchmark"]).eq("score_schema_version", classification.scoreSchemaVersion).eq("analysis_status", "complete").eq("policy_version", classification.policyVersion).eq("ruleset_version", classification.rulesetVersion).eq("scanner_build", classification.scannerBuild).in("decision", ["allow", "review", "block"]).order("scanned_at", { ascending: false }).limit(Math.min(offset + limit, 10000));
     request = classification.scanIds ? request.in("id", classification.scanIds) : request.is("superseded_at", null);
     const { data: scans, error } = await request;
@@ -143,11 +143,17 @@ async function fetchPublicAnalysisHistory(limit = 24, offset = 0): Promise<Publi
   const db = publicDb();
   if (!db) return mirror();
   try {
+    const classification = await activePublicClassification(db);
+    if (!classification || !classification.scanIds || classification.scanIds.length === 0) return mirror();
     const { data, error } = await db.from("scans")
       .select("id,extension_id,version,artifact_sha256,severity,decision,decision_reason,public_outcome,decision_basis,evidence_confidence,provenance_tier,expected_profile_id,capability_assessment,score_schema_version,risk_score,malware_score,coverage_percent,scanner_build,ruleset_version,scanned_at")
       .in("scan_purpose", ["public_intelligence", "benchmark"])
       .in("analysis_status", ["complete", "incomplete"])
-      .is("superseded_at", null)
+      .eq("policy_version", classification.policyVersion)
+      .eq("ruleset_version", classification.rulesetVersion)
+      .eq("score_schema_version", classification.scoreSchemaVersion)
+      .eq("scanner_build", classification.scannerBuild)
+      .in("id", classification.scanIds)
       .order("scanned_at", { ascending: false })
       .limit(1000);
     if (error || !data?.length) return mirror();
@@ -351,7 +357,7 @@ export type VersionScanProductOptions = {
 };
 
 export async function getVersionScanProduct(id: string, version: string, scanId: string, client?: SupabaseClient, options: VersionScanProductOptions = {}): Promise<Record<string, unknown> | null> {
-  const cloudflareReport = await getCloudflareScanProduct(id, version, scanId).catch(() => null);
+  const cloudflareReport = await getCloudflareScanProduct(id, version, scanId, true).catch(() => null);
   if (cloudflareReport) return cloudflareReport;
   const cloudflareProduct = await getPublicRegistryProduct(id);
   if (cloudflareProduct) {
@@ -365,7 +371,15 @@ export async function getVersionScanProduct(id: string, version: string, scanId:
     const storedId = await resolveStoredExtensionId(db, id);
     if (storedId) {
       const { data: versionRow } = await db.from("extension_versions").select("*").eq("extension_id", storedId).eq("version", version).maybeSingle();
-      if (versionRow) return loadVersionScan(db, storedId, version, scanId, versionRow, options);
+      if (versionRow) {
+        // The immutable public route must not turn an arbitrary scan ID into
+        // a report. Resolve the exact version through attested publication
+        // membership (or the caller's RLS-protected owned scan) first.
+        const visible = await getVisibleScansByVersion(db, storedId, version);
+        const visibleScan = visible.get(version);
+        if (!visibleScan || String(visibleScan.id || "") !== scanId) return null;
+        return loadVersionScan(db, storedId, version, scanId, versionRow, options);
+      }
     }
   } catch {
     // Fall through to the read-only mirror.
@@ -719,11 +733,16 @@ async function fetchBadgeDecision(rawId: string, version: string | null): Promis
     const storedId = await resolveStoredExtensionId(db, rawId);
     if (!storedId) return mirror();
     const classification = await activePublicClassification(db).catch(() => null);
+    if (!classification || !classification.scanIds || classification.scanIds.length === 0) return mirror();
     let request = db.from("scans").select("id,extension_id,version,decision,verdict,public_outcome,analysis_status,analysis_coverage,capability_assessment,risk_score,malware_score,scanned_at")
       .eq("extension_id", storedId)
       .in("scan_purpose", ["public_intelligence", "benchmark"])
       .eq("analysis_status", "complete")
-      .is("superseded_at", null)
+      .eq("policy_version", classification.policyVersion)
+      .eq("ruleset_version", classification.rulesetVersion)
+      .eq("score_schema_version", classification.scoreSchemaVersion)
+      .eq("scanner_build", classification.scannerBuild)
+      .in("id", classification.scanIds)
       .order("scanned_at", { ascending: false })
       .limit(1);
     if (version) request = request.eq("version", version);

@@ -1,6 +1,7 @@
 export const ACCURACY_GATE_SCHEMA_VERSION = "1.0";
 export const MIN_FRESH_HOLDOUT_SAFE = 5;
 export const MIN_FRESH_HOLDOUT_MALICIOUS = 5;
+export const MAX_SAFE_REVIEW_RATE = 0.2;
 
 export function validateAccuracyGate(value, expected = {}) {
   const errors = [];
@@ -18,7 +19,7 @@ export function validateAccuracyGate(value, expected = {}) {
     errors.push("accuracy gate must identify a versioned labelled corpus");
   }
   if (object(gate.gate).passed !== true) errors.push("accuracy gate did not pass");
-  const requiredChecks = ["required_pass_rate", "safe_block_rate", "malicious_allow_rate", "incomplete_required"];
+  const requiredChecks = ["required_pass_rate", "safe_block_rate", "safe_review_rate", "malicious_allow_rate", "incomplete_required"];
   if (!checks || requiredChecks.some((key) => checks[key] !== true) || Object.values(checks).some((value) => value !== true)) {
     errors.push("accuracy gate contains a failed or missing check");
   }
@@ -36,7 +37,7 @@ export function validateAccuracyGate(value, expected = {}) {
   const incompleteRequired = number(summary.incomplete_required);
   const safeEvaluated = number(summary.safe_evaluated);
   const maliciousEvaluated = number(summary.malicious_evaluated);
-  for (const field of ["required_pass_rate", "safe_block_rate", "malicious_allow_rate"]) {
+  for (const field of ["required_pass_rate", "safe_block_rate", "safe_review_rate", "malicious_allow_rate"]) {
     if (!boundedRate(summary[field])) errors.push(`accuracy gate summary ${field} must be a number between 0 and 1`);
   }
   if (requiredArtifacts < 1 || requiredPassed !== requiredArtifacts || requiredFailed !== 0 || incompleteRequired !== 0) {
@@ -47,6 +48,9 @@ export function validateAccuracyGate(value, expected = {}) {
   }
   if (number(summary.required_pass_rate) < 1) errors.push("accuracy gate required pass rate is below 100 percent");
   if (number(summary.safe_block_rate) > 0) errors.push("accuracy gate has known-safe blocks");
+  if (number(summary.safe_review_rate) > MAX_SAFE_REVIEW_RATE) {
+    errors.push(`accuracy gate safe review rate exceeds the ${MAX_SAFE_REVIEW_RATE * 100}% noise ceiling`);
+  }
   if (number(summary.malicious_allow_rate) > 0) errors.push("accuracy gate allows known-malicious fixtures");
   if (holdout.status !== "fresh-labeled" || holdout.complete !== true) {
     errors.push("publication requires a complete fresh-labeled holdout gate in addition to regression fixtures");
@@ -62,22 +66,57 @@ export function validateAccuracyGate(value, expected = {}) {
   if (number(holdout.required_pass_rate) < 1) {
     errors.push("fresh-labeled holdout required pass rate is below 100 percent");
   }
-  for (const field of ["required_pass_rate", "safe_block_rate", "malicious_allow_rate"]) {
+  if (number(holdout.dynamic_required) < 1 || number(holdout.dynamic_not_applicable) < 1) {
+    errors.push("fresh-labeled holdout must include both executable-capability and explicit runtime-not-applicable artifacts");
+  }
+  for (const field of ["required_pass_rate", "safe_block_rate", "malicious_allow_rate", "safe_review_rate", "malicious_detection_rate"]) {
     if (!boundedRate(holdout[field])) errors.push(`fresh-labeled holdout ${field} must be a number between 0 and 1`);
   }
   if (number(holdout.safe_block_rate) > 0) {
     errors.push("fresh-labeled holdout has known-safe blocks");
   }
+  if (number(holdout.safe_review_rate) > MAX_SAFE_REVIEW_RATE) {
+    errors.push(`fresh-labeled holdout safe review rate exceeds the ${MAX_SAFE_REVIEW_RATE * 100}% noise ceiling`);
+  }
   if (number(holdout.malicious_allow_rate) > 0) {
     errors.push("fresh-labeled holdout allows known-malicious fixtures");
+  }
+  if (!holdout.rule_matrix || typeof holdout.rule_matrix !== "object" || Array.isArray(holdout.rule_matrix)) {
+    errors.push("fresh-labeled holdout must retain a labelled rule matrix");
+  } else {
+    const ruleRows = Object.entries(holdout.rule_matrix);
+    if (!ruleRows.length) {
+      errors.push("fresh-labeled holdout must retain at least one labelled rule firing");
+    }
+    for (const [ruleId, counts] of ruleRows) {
+      if (!ruleId.trim() || !counts || typeof counts !== "object" || Array.isArray(counts)) {
+        errors.push("fresh-labeled holdout rule matrix contains an invalid rule row");
+        continue;
+      }
+      for (const label of ["known_safe", "known_malicious"]) {
+        const key = `fired_on_${label}`;
+        const value = counts[key];
+        if (!Number.isInteger(value) || value < 0) {
+          errors.push(`fresh-labeled holdout rule matrix has an invalid ${label} count`);
+        } else if (value > number(holdout[`${label === "known_safe" ? "safe" : "malicious"}_evaluated`])) {
+          errors.push(`fresh-labeled holdout rule matrix overcounts ${label} artifacts`);
+        }
+      }
+      if (Object.keys(counts).some((key) => !["fired_on_known_safe", "fired_on_known_malicious"].includes(key))) {
+        errors.push("fresh-labeled holdout rule matrix contains unexpected fields");
+      }
+    }
   }
   const labelCounts = object(holdout.label_counts);
   if (number(labelCounts.known_safe) !== number(holdout.safe_evaluated)
     || number(labelCounts.known_malicious) !== number(holdout.malicious_evaluated)) {
     errors.push("fresh-labeled holdout label counts do not match the frozen corpus");
   }
-  if (runtimeEvidence.required !== true || runtimeEvidence.runtime_enabled !== true || String(runtimeEvidence.profile || "") !== "deep") {
-    errors.push("fresh-labeled holdout must prove a required deep runtime scan");
+  if (runtimeEvidence.required !== true
+    || runtimeEvidence.runtime_enabled !== true
+    || String(runtimeEvidence.profile || "") !== "deep"
+    || runtimeEvidence.external_syscall_trace !== true) {
+    errors.push("fresh-labeled holdout must prove a required deep runtime scan with external syscall tracing");
   }
   for (const field of ["scanner_build", "policy_version", "ruleset_version"]) {
     if (holdout[field] && String(holdout[field]) !== String(identity[field] || "")) {

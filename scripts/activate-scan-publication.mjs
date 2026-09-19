@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createClient } from "@supabase/supabase-js";
 import { assertAccuracyGate } from "./accuracy-gate.mjs";
+import { validatePublicationManifest } from "./publication-manifest.mjs";
+import { publicationRuntimeMismatch } from "./publication-runtime.mjs";
 
 const arguments_ = process.argv.slice(2);
 const reportPath = valueAfter("--report");
@@ -17,10 +19,12 @@ const report = JSON.parse(await readFile(reportPath, "utf8"));
 const accuracyGateBytes = await readFile(accuracyGatePath);
 const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
 const expected = Array.isArray(report.extensions) ? report.extensions : [];
+validatePublicationManifest(expected, { requireScanId: false });
 const scannerBuild = String(report.scanner_build || "");
 const policyVersion = String(report.policy_version || "");
 const rulesetVersion = String(report.ruleset_version || "");
-if (!expected.length || !/^[0-9a-f]{40}$/.test(scannerBuild) || !policyVersion || !rulesetVersion) {
+const scoreSchemaVersion = String(report.score_schema_version || "");
+if (!expected.length || !/^[0-9a-f]{40}$/.test(scannerBuild) || !policyVersion || !rulesetVersion || !scoreSchemaVersion) {
   throw new Error("The validation report has no complete release identity.");
 }
 assertAccuracyGate(accuracyGate, {
@@ -44,7 +48,7 @@ const { data, error } = await db.from("scans")
   .eq("ruleset_version", rulesetVersion)
   .is("superseded_at", null)
   .order("scanned_at", { ascending: false })
-  .limit(5000);
+  .limit(Math.max(5000, expected.length));
 if (error) throw error;
 
 const candidates = new Map();
@@ -67,6 +71,7 @@ for (const wanted of expected) {
     artifact_sha256: [String(wanted.artifact_hash || "").toLowerCase(), String(actual.artifact_sha256 || "").toLowerCase()],
     decision: [String(wanted.decision || ""), String(actual.decision || "")],
     severity: [String(wanted.severity || ""), String(actual.severity || "")],
+    score_schema_version: [scoreSchemaVersion, String(actual.score_schema_version || "")],
     analysis_status: ["complete", String(actual.analysis_status || "")],
     coverage_percent: ["100", String(actual.coverage_percent || 0)],
   };
@@ -75,6 +80,13 @@ for (const wanted of expected) {
   }
   const coverage = objectValue(actual.analysis_coverage);
   const providers = objectValue(coverage.providers);
+  const canonicalReport = objectValue(actual.canonical_report);
+  const runtimeMismatch = publicationRuntimeMismatch({
+    profile: objectValue(canonicalReport.metadata).profile,
+    metadata: objectValue(canonicalReport.metadata),
+    analysisCoverage: coverage,
+  });
+  if (runtimeMismatch) mismatches.push(`${key_}: ${runtimeMismatch}`);
   const expectedCoverage = objectValue(wanted.analysis_coverage);
   const expectedProviders = objectValue(expectedCoverage.providers);
   for (const provider of ["semgrep", "yara", "dependency_intelligence"]) {
@@ -102,7 +114,6 @@ for (const wanted of expected) {
   if (coverage.required_providers_complete !== true) {
     mismatches.push(`${key_}: required provider coverage is incomplete`);
   }
-  const canonicalReport = objectValue(actual.canonical_report);
   const embeddedRules = objectValue(canonicalReport.rules);
   const embeddedRuleRows = Array.isArray(embeddedRules.rules) ? embeddedRules.rules : [];
   if (String(embeddedRules.policy_version || "") !== policyVersion
@@ -115,8 +126,10 @@ for (const wanted of expected) {
 }
 
 if (new Set(scanIds).size !== expected.length) mismatches.push("The publication manifest does not contain one unique scan per exact artifact.");
-if (scoreSchemas.size !== 1 || ![...scoreSchemas][0]) mismatches.push("The publication manifest does not use one score schema.");
+if (scoreSchemas.size !== 1 || [...scoreSchemas][0] !== scoreSchemaVersion) mismatches.push("The publication manifest does not use the validated score schema.");
 if (mismatches.length) throw new Error(`Publication validation failed:\n- ${mismatches.join("\n- ")}`);
+
+validatePublicationManifest(expected.map((item, index) => ({ ...item, scan_id: scanIds[index] })));
 
 const summary = {
   reports: scanIds.length,
@@ -127,6 +140,8 @@ const summary = {
   accuracy_gate_corpus_id: String(accuracyGate.corpus_id),
   accuracy_gate_corpus_version: String(accuracyGate.corpus_version),
   accuracy_gate_sha256: accuracyGateSha256,
+  holdout_safe_review_rate: accuracyGate.holdout.safe_review_rate,
+  holdout_malicious_detection_rate: accuracyGate.holdout.malicious_detection_rate,
 };
 if (!apply) {
   console.log(JSON.stringify({ ...summary, status: "validated-dry-run" }, null, 2));
