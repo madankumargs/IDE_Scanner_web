@@ -19,6 +19,14 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("--apply");
   });
 
+  it("keeps bulk queueing opt-in and downstream of activation", () => {
+    expect(workflow).toContain("queue_bulk_scan:");
+    expect(workflow).toContain("default: false");
+    expect(workflow).toContain("if: ${{ inputs.activate == true && inputs.queue_bulk_scan == true }}");
+    expect(workflow).toContain("needs: activate");
+    expect(workflow).toContain("-f enable_bulk_scan=true");
+  });
+
   it("fails closed when either cross-repository or Cloudflare credentials are absent", () => {
     expect(workflow).toContain("SCANNER_REPO_READ_TOKEN is required");
     expect(workflow).toContain("CLOUDFLARE_API_TOKEN is required");

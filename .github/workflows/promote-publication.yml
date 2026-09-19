@@ -26,10 +26,30 @@ on:
         required: true
         default: false
         type: boolean
+      queue_bulk_scan:
+        description: Dispatch the bounded public catalog scan after activation
+        required: true
+        default: false
+        type: boolean
+      scan_batch_limit:
+        description: Maximum public Deep Scan jobs to queue
+        required: true
+        default: "100"
+        type: string
+      cohort_limit:
+        description: Maximum ranked extensions to refresh
+        required: true
+        default: "250"
+        type: string
+      marketplace_page_count:
+        description: Marketplace pages of 100 extensions to ingest
+        required: true
+        default: "3"
+        type: string
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 jobs:
   validate:
@@ -148,3 +168,24 @@ jobs:
             --report publication/cloudflare-publication-validation.json \
             --accuracy-gate publication/scanner-accuracy-gate/publication-accuracy-gate.json \
             --apply
+
+  queue-bulk-scan:
+    if: ${{ inputs.activate == true && inputs.queue_bulk_scan == true }}
+    needs: activate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch bounded catalog refresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
+          COHORT_LIMIT: ${{ inputs.cohort_limit }}
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
+        run: |
+          gh workflow run catalog-refresh.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f scan_batch_limit="$SCAN_BATCH_LIMIT" \
+            -f cohort_limit="$COHORT_LIMIT" \
+            -f marketplace_page_count="$MARKETPLACE_PAGE_COUNT" \
+            -f enable_bulk_scan=true
