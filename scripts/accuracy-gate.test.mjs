@@ -38,6 +38,12 @@ const validGate = {
     dynamic_not_applicable: 5,
     rule_matrix: { "filesystem-access": { fired_on_known_safe: 5, fired_on_known_malicious: 0 } },
     label_counts: { known_safe: 5, known_malicious: 5 },
+    provenance: {
+      source_sha256: "a".repeat(64),
+      advisory_snapshot_sha256: "b".repeat(64),
+      advisory_snapshot_version: "unit-test.1",
+      malicious_artifacts_with_exact_advisories: 5,
+    },
     scanner_build: "a".repeat(40),
     policy_version: "policy-1",
     ruleset_version: "rules-1",
@@ -143,6 +149,16 @@ describe("accuracy publication gate", () => {
     const errors = validateAccuracyGate(incomplete, { scanner_build: "a".repeat(40) });
     expect(errors).toContain("fresh-labeled holdout safe_review_rate must be a number between 0 and 1");
     expect(errors).toContain("fresh-labeled holdout must retain a labelled rule matrix");
+  });
+
+  it("rejects a holdout without exact evidence provenance", () => {
+    const errors = validateAccuracyGate({
+      ...validGate,
+      holdout: { ...validGate.holdout, provenance: { source_sha256: "a".repeat(64) } },
+    }, { scanner_build: "a".repeat(40) });
+    expect(errors).toContain("fresh-labeled holdout provenance requires advisory_snapshot_sha256");
+    expect(errors).toContain("fresh-labeled holdout provenance requires advisory_snapshot_version");
+    expect(errors).toContain("fresh-labeled holdout provenance must tie every malicious label to an exact advisory");
   });
 
   it("rejects a holdout without rule-level evidence", () => {

@@ -112,6 +112,18 @@ export function validateAccuracyGate(value, expected = {}) {
     || number(labelCounts.known_malicious) !== number(holdout.malicious_evaluated)) {
     errors.push("fresh-labeled holdout label counts do not match the frozen corpus");
   }
+  const provenance = object(holdout.provenance);
+  for (const field of ["source_sha256", "advisory_snapshot_sha256"]) {
+    if (!/^[0-9a-f]{64}$/i.test(String(provenance[field] || ""))) {
+      errors.push(`fresh-labeled holdout provenance requires ${field}`);
+    }
+  }
+  if (!String(provenance.advisory_snapshot_version || "").trim()) {
+    errors.push("fresh-labeled holdout provenance requires advisory_snapshot_version");
+  }
+  if (number(provenance.malicious_artifacts_with_exact_advisories) !== number(holdout.malicious_evaluated)) {
+    errors.push("fresh-labeled holdout provenance must tie every malicious label to an exact advisory");
+  }
   if (runtimeEvidence.required !== true
     || runtimeEvidence.runtime_enabled !== true
     || String(runtimeEvidence.profile || "") !== "deep"
