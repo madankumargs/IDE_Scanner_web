@@ -22,16 +22,20 @@ const scannerBuild = process.env.SCANNER_BUILD_SHA || await currentScannerBuild(
 const chunks = (items, size = 60) => Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
 const bulkScanRequested = String(process.env.CATALOG_BULK_SCAN_ENABLED || "").trim().toLowerCase() === "true";
 const activeRelease = await db.from("scan_publication_releases")
-  .select("id,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256")
+  .select("id,scanner_build,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256")
   .eq("active", true)
   .limit(1)
   .maybeSingle();
 if (activeRelease.error) throw activeRelease.error;
 const bulkCatalogReady = bulkScanRequested
   && Boolean(activeRelease.data?.id)
+  && String(activeRelease.data?.scanner_build || "").toLowerCase() === scannerBuild.toLowerCase()
   && Boolean(activeRelease.data?.accuracy_gate_corpus_id)
   && Boolean(activeRelease.data?.accuracy_gate_corpus_version)
   && /^[0-9a-f]{64}$/i.test(String(activeRelease.data?.accuracy_gate_sha256 || ""));
+if (bulkScanRequested && !bulkCatalogReady) {
+  throw new Error("Bulk scan was requested, but no active accuracy-attested release matches the scanner build. Activate the validated release before retrying.");
+}
 let terminating = false;
 process.on("uncaughtException", async (error) => {
   if (terminating) return;

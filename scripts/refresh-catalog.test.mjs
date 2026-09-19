@@ -8,7 +8,9 @@ describe("catalog refresh publication guard", () => {
   it("requires an explicit switch and an accuracy-attested active release before bulk scans", () => {
     expect(source).toContain("CATALOG_BULK_SCAN_ENABLED");
     expect(source).toContain("accuracy_gate_corpus_id");
+    expect(source).toContain("activeRelease.data?.scanner_build");
     expect(source).toContain("const bulkCatalogReady");
+    expect(source).toContain("Bulk scan was requested, but no active accuracy-attested release matches the scanner build");
     expect(source).toContain("if (!bulkCatalogReady && !monitoredRelease) continue;");
   });
 
