@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import {
   isFeedbackCategory,
   isFeedbackEmail,
@@ -8,6 +9,8 @@ import {
   feedbackEmailConfigured,
   feedbackEmailPayload,
 } from "@/lib/feedbackEmail";
+import { cloudflareEmail } from "@/lib/cloudflareEmail";
+import { runtimeEnv } from "@/lib/runtimeEnv";
 import { serviceDb } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -77,30 +80,53 @@ export async function POST(request: Request) {
 
   const requesterHash = hashRequester(request);
   try {
-    const db = serviceDb();
-    const result = await db.rpc("submit_feedback", {
-      p_category: category,
-      p_message: message,
-      p_contact_email: contactEmail || null,
-      p_page_path: pagePath,
-      p_requester_hash: requesterHash,
-    });
-    if (result.error) throw result.error;
+    const d1 = cloudflareFeedbackDb();
+    let id = "";
+    let createdAt = new Date().toISOString();
+    let markEmail: EmailMarker;
 
-    const feedback = one(result.data);
-    const id = typeof feedback.id === "string" ? feedback.id : "";
-    if (!id) throw new Error("Feedback record was not created.");
+    if (d1) {
+      const recent = await d1
+        .prepare("SELECT COUNT(*) AS count FROM feedback_submissions WHERE requester_hash=? AND created_at > datetime('now','-1 hour')")
+        .bind(requesterHash)
+        .first<{ count?: number | string }>();
+      if (Number(recent?.count || 0) >= 5) throw new Error("Feedback limit reached. Please try again later.");
 
-    const emailDelivered = await notifyCompany(db, {
+      id = randomUUID();
+      await d1
+        .prepare("INSERT INTO feedback_submissions (id,category,message,contact_email,page_path,requester_hash,email_status,created_at) VALUES (?,?,?,?,?,?,?,?)")
+        .bind(id, category, message, contactEmail || null, pagePath, requesterHash, "pending", createdAt)
+        .run();
+      markEmail = async (status, error) => {
+        await d1.prepare("UPDATE feedback_submissions SET email_status=?,email_error=?,emailed_at=? WHERE id=?")
+          .bind(status, error, status === "sent" ? new Date().toISOString() : null, id)
+          .run();
+      };
+    } else {
+      const db = serviceDb();
+      const result = await db.rpc("submit_feedback", {
+        p_category: category,
+        p_message: message,
+        p_contact_email: contactEmail || null,
+        p_page_path: pagePath,
+        p_requester_hash: requesterHash,
+      });
+      if (result.error) throw result.error;
+      const feedback = one(result.data);
+      id = typeof feedback.id === "string" ? feedback.id : "";
+      if (!id) throw new Error("Feedback record was not created.");
+      createdAt = typeof feedback.created_at === "string" ? feedback.created_at : createdAt;
+      markEmail = async (status, error) => markSupabaseEmail(db, id, status, error);
+    }
+
+    const emailDelivered = await notifyCompany({
       id,
       category,
       message,
       contactEmail: contactEmail || null,
       pagePath,
-      createdAt:
-        typeof feedback.created_at === "string"
-          ? feedback.created_at
-          : new Date().toISOString(),
+      createdAt,
+      markEmail,
     });
 
     return NextResponse.json({ ok: true, email_delivered: emailDelivered }, { status: 201 });
@@ -131,18 +157,32 @@ type FeedbackRow = {
   created_at?: unknown;
 };
 
-type FeedbackDb = ReturnType<typeof serviceDb>;
-
 function one(value: unknown): FeedbackRow {
   return (Array.isArray(value) ? value[0] : value || {}) as FeedbackRow;
 }
 
 async function notifyCompany(
-  db: FeedbackDb,
-  input: Parameters<typeof feedbackEmailPayload>[0],
+  input: Parameters<typeof feedbackEmailPayload>[0] & { markEmail: EmailMarker },
 ): Promise<boolean> {
+  const payload = feedbackEmailPayload(input);
+  const binding = cloudflareEmail();
+  if (binding) {
+    try {
+      await binding.send({
+        to: payload.to[0],
+        from: runtimeEnv("NOTIFICATION_FROM_EMAIL") || "hello@abscissa.dev",
+        subject: payload.subject,
+        text: payload.text,
+      });
+      await input.markEmail("sent", null);
+      return true;
+    } catch (error) {
+      console.error("[feedback-email-cloudflare]", error instanceof Error ? error.message : error);
+    }
+  }
+
   if (!feedbackEmailConfigured()) {
-    await markEmail(db, input.id, "skipped", null);
+    await input.markEmail("skipped", null);
     return false;
   }
 
@@ -152,7 +192,7 @@ async function notifyCompany(
       redirect: "error",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${runtimeEnv("RESEND_API_KEY")}`,
         "Content-Type": "application/json",
         "User-Agent": "GuardRails-Feedback/1.0",
       },
@@ -160,17 +200,21 @@ async function notifyCompany(
       signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`Resend returned HTTP ${response.status}.`);
-    await markEmail(db, input.id, "sent", null);
+    await input.markEmail("sent", null);
     return true;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Email delivery failed.";
     console.error("[feedback-email]", reason);
-    await markEmail(db, input.id, "failed", reason.slice(0, 500));
+    await input.markEmail("failed", reason.slice(0, 500));
     return false;
   }
 }
 
-async function markEmail(
+type EmailStatus = "sent" | "failed" | "skipped";
+type EmailMarker = (status: EmailStatus, error: string | null) => Promise<void>;
+type FeedbackDb = ReturnType<typeof serviceDb>;
+
+async function markSupabaseEmail(
   db: FeedbackDb,
   id: string,
   status: "sent" | "failed" | "skipped",
@@ -185,6 +229,15 @@ async function markEmail(
     })
     .eq("id", id);
   if (result.error) console.error("[feedback-email-status]", result.error.message);
+}
+
+function cloudflareFeedbackDb(): D1Database | null {
+  try {
+    const env = getCloudflareContext().env as unknown as Record<string, unknown>;
+    return (env.ABSCISSA_REGISTRY as D1Database | undefined) || null;
+  } catch {
+    return null;
+  }
 }
 
 function hashRequester(request: Request): string {
