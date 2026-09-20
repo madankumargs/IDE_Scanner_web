@@ -223,12 +223,21 @@ export async function deleteSession(request: Request): Promise<void> {
   await privateDb().prepare("DELETE FROM app_sessions WHERE token_hash=?").bind(sessionHash(token)).run();
 }
 
-export function sessionCookie(token: string, maxAge = 30 * 24 * 60 * 60): string {
-  return `gr_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+export function sessionCookie(
+  token: string,
+  maxAge = 30 * 24 * 60 * 60,
+  secure = true,
+): string {
+  return `gr_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax`;
 }
 
 export function clearSessionCookie(): string {
   return sessionCookie("", 0);
+}
+
+export function requestIsSecure(request: Request): boolean {
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  return new URL(request.url).protocol === "https:" || forwarded === "https";
 }
 
 export function safeNext(value: string | null | undefined): string {
