@@ -155,3 +155,7 @@ function key(row) {
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
+
+function objectValue(value) {
+  return object(value);
+}
