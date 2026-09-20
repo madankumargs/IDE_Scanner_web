@@ -213,9 +213,10 @@ jobs:
         run: |
           gh workflow run deep-scan.yml \
             --repo preethamak/IDE_Scanner \
-            --ref "$SCANNER_BUILD" \
+            --ref main \
             -f worker_count=16 \
-            -f jobs_per_worker=8
+            -f jobs_per_worker=8 \
+            -f scanner_build="$SCANNER_BUILD"
 
   activate:
     if: ${{ inputs.activate == true }}
@@ -282,6 +283,7 @@ jobs:
         run: |
           gh workflow run deep-scan.yml \
             --repo preethamak/IDE_Scanner \
-            --ref "$SCANNER_BUILD" \
+            --ref main \
             -f worker_count=16 \
-            -f jobs_per_worker=8
+            -f jobs_per_worker=8 \
+            -f scanner_build="$SCANNER_BUILD"
