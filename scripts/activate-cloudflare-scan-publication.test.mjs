@@ -22,4 +22,13 @@ describe("Cloudflare publication activation boundary", () => {
     expect(source).toContain('String(item.ruleset_version || "") !== rulesetVersion');
     expect(source).toContain('String(item.score_schema_version || "") !== scoreSchemaVersion');
   });
+
+  it("revalidates remote D1 rows before applying the active-release flip", () => {
+    expect(source).toContain('if (apply) {');
+    expect(source).toContain('from app_scan_reports r');
+    expect(source).toContain('join app_scan_jobs j on j.id=r.job_id');
+    expect(source).toContain("cloudflare-publication-revalidation.mjs");
+    expect(source).toContain("cloudflarePublicationMismatches");
+    expect(source).toContain("Cloudflare activation revalidation failed");
+  });
 });

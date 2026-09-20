@@ -2,6 +2,8 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { unstable_cache } from "next/cache";
 
 type RegistryChunk = { payload: string };
+type ActiveRegistryChunk = { payload?: string | null; active_publication_id?: string | null };
+type ActiveChunkRead = { active: boolean; payload: string | null };
 type RegistryCatalogEntry = Record<string, unknown>;
 type RegistryCatalogPayload = RegistryCatalogEntry[] | { catalog?: RegistryCatalogEntry[] };
 
@@ -31,22 +33,61 @@ async function readChunks(
   }
 }
 
+const ACTIVE_SECTION_QUERY = `
+  SELECT c.payload, s.publication_id AS active_publication_id
+  FROM registry_publication_state s
+  LEFT JOIN registry_section_chunks_v2 c
+    ON c.publication_id = s.publication_id AND c.section = ?
+  WHERE s.state_key = 'active'
+  ORDER BY c.chunk_index
+`;
+
+const ACTIVE_PRODUCT_QUERY = `
+  SELECT c.payload, s.publication_id AS active_publication_id
+  FROM registry_publication_state s
+  LEFT JOIN registry_product_chunks_v2 c
+    ON c.publication_id = s.publication_id AND lower(c.extension_id) = lower(?)
+  WHERE s.state_key = 'active'
+  ORDER BY c.chunk_index
+`;
+
 // Registry chunks are immutable between publication imports. Persisting the
 // assembled read in OpenNext's incremental cache avoids reparsing the entire
 // catalog on every public page request.
+const readActiveChunksCached = unstable_cache(
+  async (query: string, value: string): Promise<ActiveChunkRead> => {
+    const db = registryDb();
+    if (!db) return { active: false, payload: null };
+    try {
+      const result = await db.prepare(query).bind(value).all<ActiveRegistryChunk>();
+      const active = result.results.some((row) => Boolean(row.active_publication_id));
+      return {
+        active,
+        payload: active
+          ? result.results.map((row) => row.payload || "").join("") || null
+          : null,
+      };
+    } catch {
+      return { active: false, payload: null };
+    }
+  },
+  ["cloudflare-registry-active-chunks-v1"],
+  { revalidate: 300, tags: ["registry-catalog"] },
+);
+
 const readChunksCached = unstable_cache(
   async (query: string, value: string) => readChunks(query, value),
-  ["cloudflare-registry-chunks-v1"],
+  ["cloudflare-registry-chunks-v2"],
   { revalidate: 300, tags: ["registry-catalog"] },
 );
 
 export async function getCloudflareRegistrySection<T>(
   section: string,
 ): Promise<T | null> {
-  const payload = await readChunksCached(
-    "SELECT payload FROM registry_section_chunks WHERE section = ? ORDER BY chunk_index",
-    section,
-  );
+  const active = await readActiveChunksCached(ACTIVE_SECTION_QUERY, section);
+  const payload = active.active
+    ? active.payload
+    : await readChunksCached("SELECT payload FROM registry_section_chunks WHERE section = ? ORDER BY chunk_index", section);
   if (!payload) return null;
   try {
     return JSON.parse(payload) as T;
@@ -58,17 +99,14 @@ export async function getCloudflareRegistrySection<T>(
 export async function getCloudflareRegistryProduct<T>(
   extensionId: string,
 ): Promise<T | null> {
-  const payload = await readChunksCached(
-    "SELECT payload FROM registry_product_chunks WHERE extension_id = ? ORDER BY chunk_index",
-    extensionId,
-  );
-  const fallbackPayload = payload || await readChunksCached(
-    "SELECT payload FROM registry_product_chunks WHERE lower(extension_id) = lower(?) ORDER BY chunk_index",
-    extensionId,
-  );
-  if (!fallbackPayload) return null;
+  const active = await readActiveChunksCached(ACTIVE_PRODUCT_QUERY, extensionId);
+  const payload = active.active
+    ? active.payload
+    : await readChunksCached("SELECT payload FROM registry_product_chunks WHERE extension_id = ? ORDER BY chunk_index", extensionId)
+      || await readChunksCached("SELECT payload FROM registry_product_chunks WHERE lower(extension_id) = lower(?) ORDER BY chunk_index", extensionId);
+  if (!payload) return null;
   try {
-    return JSON.parse(fallbackPayload) as T;
+    return JSON.parse(payload) as T;
   } catch {
     return null;
   }

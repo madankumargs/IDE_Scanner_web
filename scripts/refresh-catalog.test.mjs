@@ -19,4 +19,13 @@ describe("catalog refresh publication guard", () => {
     expect(workflow).toContain('default: "false"');
     expect(workflow).toContain("CATALOG_BULK_SCAN_ENABLED: ${{ inputs.enable_bulk_scan || 'false' }}");
   });
+
+  it("supports a scanner-sha-bound candidate cohort without weakening normal bulk gating", () => {
+    expect(source).toContain("CATALOG_CANDIDATE_SCAN_ENABLED");
+    expect(source).toContain("Candidate scans require a full 40-character scanner build SHA.");
+    expect(source).toContain("candidateScanRequested");
+    expect(workflow).toContain("candidate_scan:");
+    expect(workflow).toContain("scanner_build:");
+    expect(workflow).toContain("SCANNER_BUILD_SHA: ${{ inputs.scanner_build || '' }}");
+  });
 });

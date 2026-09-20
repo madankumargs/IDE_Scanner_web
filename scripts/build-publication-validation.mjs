@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { assertAccuracyGate } from "./accuracy-gate.mjs";
+import { validatePublicationManifest } from "./publication-manifest.mjs";
+import { publicCanonicalMismatch, singleExtensionDetail } from "./publication-canonical.mjs";
+import { publicationRuntimeMismatch } from "./publication-runtime.mjs";
 
 const args = process.argv.slice(2);
 const scannerBuild = valueAfter("--scanner-build");
@@ -46,6 +49,24 @@ const failures = [];
 for (const row of rows) {
   const key = `${String(row.extension_id || "").toLowerCase()}@${String(row.version || "")}`;
   const report = object(row.canonical_report);
+  const detail = singleExtensionDetail(report.extensions);
+  const canonicalMismatch = publicCanonicalMismatch({
+    reportedSchemaVersion: object(report.metadata).schema_version,
+    detail,
+    metadata: object(report.metadata),
+    expectedScannerBuild: scannerBuild,
+    expectedExtensionId: row.extension_id,
+    expectedVersion: row.version,
+  });
+  const runtimeMismatch = publicationRuntimeMismatch({
+    profile: object(report.metadata).profile,
+    metadata: object(report.metadata),
+    analysisCoverage: row.analysis_coverage,
+  });
+  if (canonicalMismatch || runtimeMismatch) {
+    failures.push(`${key}: ${canonicalMismatch || runtimeMismatch}`);
+    continue;
+  }
   const rules = object(report.rules);
   const ruleRows = Array.isArray(rules.rules) ? rules.rules : [];
   if (String(rules.policy_version || "") !== String(row.policy_version || "")
@@ -81,7 +102,10 @@ const validation = {
     scanner_build: String(accuracyGate.report_identity.scanner_build),
     required_pass_rate: accuracyGate.summary.required_pass_rate,
     safe_block_rate: accuracyGate.summary.safe_block_rate,
+    safe_review_rate: accuracyGate.holdout.safe_review_rate,
+    max_safe_review_rate: accuracyGate.holdout.max_safe_review_rate ?? 0.2,
     malicious_allow_rate: accuracyGate.summary.malicious_allow_rate,
+    malicious_detection_rate: accuracyGate.holdout.malicious_detection_rate,
     holdout_status: String(accuracyGate.holdout.status),
     holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated,
     holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated,
@@ -95,6 +119,7 @@ const validation = {
     analysis_coverage: object(row.analysis_coverage),
   })),
 };
+validatePublicationManifest(validation.extensions, { requireScanId: false });
 await writeFile(output, `${JSON.stringify(validation, null, 2)}\n`, "utf8");
 console.log(JSON.stringify({ output, reports: validation.extensions.length, policy_version: validation.policy_version, ruleset_version: validation.ruleset_version }, null, 2));
 

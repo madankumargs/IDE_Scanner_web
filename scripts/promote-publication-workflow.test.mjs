@@ -30,6 +30,13 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("-f enable_bulk_scan=true");
   });
 
+  it("offers a separate candidate queue before activation", () => {
+    expect(workflow).toContain("queue_candidate_scan:");
+    expect(workflow).toContain("queue-candidate-scan:");
+    expect(workflow).toContain("candidate_scan=true");
+    expect(workflow).toContain("scanner_build=\"$SCANNER_BUILD\"");
+  });
+
   it("fails closed when either cross-repository or Cloudflare credentials are absent", () => {
     expect(workflow).toContain("SCANNER_REPO_READ_TOKEN is required");
     expect(workflow).toContain("CLOUDFLARE_API_TOKEN is required");

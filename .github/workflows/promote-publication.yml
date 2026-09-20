@@ -26,6 +26,11 @@ on:
         required: true
         default: false
         type: boolean
+      queue_candidate_scan:
+        description: Stage the bounded cohort under this scanner build before activation; rerun after reports complete to validate
+        required: true
+        default: false
+        type: boolean
       queue_bulk_scan:
         description: Dispatch the bounded public catalog scan after activation
         required: true
@@ -177,6 +182,30 @@ jobs:
             cloudflare-publication-validation.json
             scanner-accuracy-gate/publication-accuracy-gate.json
           retention-days: 30
+
+  queue-candidate-scan:
+    if: ${{ inputs.queue_candidate_scan == true }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch staged candidate catalog scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
+          SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
+          COHORT_LIMIT: ${{ inputs.cohort_limit }}
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
+        run: |
+          gh workflow run catalog-refresh.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f scan_batch_limit="$SCAN_BATCH_LIMIT" \
+            -f cohort_limit="$COHORT_LIMIT" \
+            -f marketplace_page_count="$MARKETPLACE_PAGE_COUNT" \
+            -f enable_bulk_scan=true \
+            -f candidate_scan=true \
+            -f scanner_build="$SCANNER_BUILD"
 
   activate:
     if: ${{ inputs.activate == true }}

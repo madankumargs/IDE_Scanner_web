@@ -74,6 +74,17 @@ describe("public canonical schema enforcement", () => {
       status: "complete",
       executable_file_coverage_percent: 100,
       required_providers_complete: true,
+      providers: {
+        dynamic_sandbox: {
+          provider: "dynamic_sandbox",
+          status: "not-applicable",
+          execution: "policy-gated",
+          executed: false,
+          required: false,
+          policy: "capability-gated-v1",
+          external_syscall_trace: false,
+        },
+      },
     },
   };
   const goodMeta = {
@@ -81,7 +92,16 @@ describe("public canonical schema enforcement", () => {
     scanner_build: build,
     ruleset_version: "rules-1",
     policy_version: "3.0.0",
+    profile: "deep",
     intelligence_snapshot: {
+      dynamic_sandbox: {
+        status: "executed",
+        execution: "controlled-bubblewrap",
+        executed: true,
+        runtime_policy: "capability-gated-v1",
+        external_syscall_trace: false,
+        external_syscall_trace_available: true,
+      },
       registry: {
         sha256: "c".repeat(64),
         payload: { enabled: true, mode: "batched", findings: [], errors: [] },
@@ -138,12 +158,41 @@ describe("public canonical schema enforcement", () => {
     expect(publicCanonicalError(true, "2.3", goodDetail, goodMeta, "b".repeat(40))).toContain("bound to this job");
   });
 
+  it("rejects a public report that is static-only or missing runtime evidence", () => {
+    expect(publicCanonicalError(true, "2.3", goodDetail, { ...goodMeta, profile: "standard" }, build)).toContain("deep runtime-enabled");
+    expect(publicCanonicalError(true, "2.3", goodDetail, {
+      ...goodMeta,
+      intelligence_snapshot: { ...goodMeta.intelligence_snapshot, dynamic_sandbox: { status: "not-requested" } },
+    }, build)).toContain("controlled runtime execution");
+    expect(publicCanonicalError(true, "2.3", {
+      ...goodDetail,
+      analysis_coverage: { ...goodDetail.analysis_coverage, providers: {} },
+    }, goodMeta, build)).toContain("explicit dynamic runtime provider");
+  });
+
+  it("requires completed runtime coverage for executable capabilities", () => {
+    const executableCoverage = {
+      ...goodDetail.analysis_coverage,
+      providers: {
+        dynamic_sandbox: {
+          provider: "dynamic_sandbox",
+          status: "failed",
+          execution: "controlled-bubblewrap",
+          executed: true,
+          required: true,
+          policy: "capability-gated-v1",
+        },
+      },
+    };
+    expect(publicCanonicalError(true, "2.3", { ...goodDetail, analysis_coverage: executableCoverage }, goodMeta, build)).toContain("completed controlled runtime coverage");
+  });
+
   it("rejects missing registry intelligence identity", () => {
     expect(publicCanonicalError(
       true,
       "2.3",
       goodDetail,
-      { ...goodMeta, intelligence_snapshot: {} },
+      { ...goodMeta, intelligence_snapshot: { dynamic_sandbox: goodMeta.intelligence_snapshot.dynamic_sandbox } },
       build,
     )).toContain("registry intelligence identity");
   });
@@ -155,7 +204,10 @@ describe("public canonical schema enforcement", () => {
       goodDetail,
       {
         ...goodMeta,
-        intelligence_snapshot: { registry: { sha256: "c".repeat(64) } },
+        intelligence_snapshot: {
+          dynamic_sandbox: goodMeta.intelligence_snapshot.dynamic_sandbox,
+          registry: { sha256: "c".repeat(64) },
+        },
       },
       build,
     )).toContain("replayable registry intelligence evidence");

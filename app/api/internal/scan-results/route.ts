@@ -116,6 +116,14 @@ export async function POST(request: Request) {
         { status: 503, headers: { "Retry-After": "2" } },
       );
     }
+    if (cloudflarePrivateAvailable() && callbackJobId) {
+      try {
+        await failCloudflareScan(callbackJobId, detail);
+      } catch {
+        return NextResponse.json({ error: "Scan rejection could not be recorded." }, { status: 503, headers: { "Retry-After": "2" } });
+      }
+      return NextResponse.json({ error: detail.slice(0, 2000) }, { status: 422 });
+    }
     if (receiptId) {
       const db = serviceDb();
       const rejected = await db.rpc("finish_scan_callback", {

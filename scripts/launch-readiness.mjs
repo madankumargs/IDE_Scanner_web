@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import "./verify-node-runtime.mjs";
 
 const commands = [
   ["npm", ["run", "lint"]],

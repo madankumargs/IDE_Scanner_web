@@ -5,6 +5,7 @@ import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb } from "@/lib/cloudflarePrivate";
 import { catalogFromReleaseReport, type ActiveRuleCatalog } from "@/lib/rules";
 import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
+import { publicRuntimeError } from "@/lib/publicRuntimeContract";
 
 /**
  * Reads the catalog embedded in the active immutable scanner release. The web
@@ -82,7 +83,9 @@ async function getCloudflareActiveRuleCatalog(): Promise<ActiveRuleCatalog | nul
     SELECT m.scan_id,m.extension_id,m.version,m.artifact_sha256,r.report_json
     FROM app_scan_publication_release_reports m
     JOIN app_scan_reports r ON r.scan_id=m.scan_id
+    JOIN app_scan_jobs j ON j.id=r.job_id
     WHERE m.release_id=?
+      AND j.scan_purpose IN ('public_intelligence','benchmark')
     ORDER BY m.extension_id,m.version
   `).bind(String(release.id)).all<Record<string, unknown>>();
   if (!expectedReports || members.results.length !== expectedReports) return null;
@@ -108,6 +111,16 @@ async function getCloudflareActiveRuleCatalog(): Promise<ActiveRuleCatalog | nul
     } catch {
       return null;
     }
+    const details = Object.values(objectValue(bundle.extensions));
+    const detail = details.length === 1 && details[0] && typeof details[0] === "object" && !Array.isArray(details[0])
+      ? details[0] as Record<string, unknown>
+      : null;
+    const coverage = objectValue(detail?.analysis_coverage);
+    if (!detail
+      || String(detail.analysis_status || "") !== "complete"
+      || coverage.status !== "complete"
+      || coverage.required_providers_complete !== true
+      || publicRuntimeError(objectValue(bundle.metadata), coverage)) return null;
     const candidate = catalogFromReleaseReport(bundle, expected);
     if (!candidate) return null;
     const candidateFingerprint = JSON.stringify(candidate);
@@ -120,4 +133,8 @@ async function getCloudflareActiveRuleCatalog(): Promise<ActiveRuleCatalog | nul
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

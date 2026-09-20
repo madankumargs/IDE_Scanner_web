@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { canonicalAnalysisStatus } from "@/lib/classificationContract";
+import { publicCanonicalError } from "@/lib/publicCanonicalContract";
 import { serviceDb } from "@/lib/supabase";
 import { benchmarkRows } from "@/lib/websiteBenchmarkRows";
+
+export { publicCanonicalError } from "@/lib/publicCanonicalContract";
 
 type Bundle = { metadata?: Record<string, unknown>; extensions?: Record<string, Record<string, unknown>> | Array<Record<string, unknown>> };
 
@@ -18,62 +21,6 @@ export function incompleteArtifactReason(bundle: Bundle): string | null {
   if (String(detail.decision || "") !== "incomplete" && String(detail.source || "") !== "marketplace-error") return null;
   const inventory = object(detail.artifact_inventory);
   return String(inventory.skipped_reason || detail.decision_reason || detail.verdict_reason || "Artifact acquisition did not complete or did not provide a valid SHA-256 identity.").slice(0, 1000);
-}
-
-// Gate for scans that will be published as canonical public/benchmark
-// intelligence. These must carry the exact canonical contract -- report
-// schema 2.3 and score schema v2 -- and must not be a hosted-static report
-// masquerading as a full engine result. Returns an error string when the
-// bundle cannot be published, or null when it is admissible. A non-public
-// scan is always admissible here.
-export function publicCanonicalError(
-  publicPurpose: boolean,
-  reportedSchemaVersion: string,
-  detail: Record<string, unknown>,
-  metadata: Record<string, unknown>,
-  expectedScannerBuild?: string,
-): string | null {
-  if (!publicPurpose) return null;
-  if (reportedSchemaVersion !== "2.3") return "Public scans require canonical report schema 2.3.";
-  if (String(detail.score_schema_version || "") !== "2") return "Public scans require canonical score schema v2.";
-  if (String(metadata.scanner_version || "").includes("hosted-static")) return "Hosted-static reports cannot be published as canonical scans.";
-  const identity = object(detail.artifact_identity);
-  const identityHash = String(identity.sha256 || "").trim();
-  const detailHash = String(detail.artifact_sha256 || "").trim();
-  if (!isSha256(identityHash || detailHash)) return "Public scans require canonical artifact SHA-256 identity.";
-  if (identityHash && detailHash && identityHash.toLowerCase() !== detailHash.toLowerCase()) {
-    return "Public scans require matching artifact SHA-256 identity fields.";
-  }
-  if (!metadata.policy_version || metadata.policy_version === "legacy") return "Public scans require an explicit non-legacy classification policy.";
-  if (!metadata.ruleset_version || metadata.ruleset_version === "unknown") return "Public scans require an explicit ruleset version.";
-  const intelligence = object(metadata.intelligence_snapshot);
-  const registryIntelligence = object(intelligence.registry);
-  if (!/^[0-9a-f]{64}$/.test(String(registryIntelligence.sha256 || ""))) {
-    return "Public scans require immutable registry intelligence identity.";
-  }
-  const registryPayload = object(registryIntelligence.payload);
-  if (!Array.isArray(registryPayload.findings) || !Array.isArray(registryPayload.errors)) {
-    return "Public scans require replayable registry intelligence evidence.";
-  }
-  const scannerBuild = String(metadata.scanner_build || "");
-  if (!expectedScannerBuild) return "Public scans require a job-bound scanner build.";
-  if (scannerBuild !== expectedScannerBuild) return "Scanner build does not match the build bound to this job.";
-  const status = canonicalAnalysisStatus(detail);
-  const decision = String(detail.decision || "incomplete");
-  const coverage = object(detail.analysis_coverage);
-  if (!detail.analysis_status) return "Public scans require canonical analysis status.";
-  if (coverage.status !== status && !(status === "failed" && coverage.status === "incomplete")) {
-    return "Canonical analysis status must agree with analysis coverage status.";
-  }
-  if (typeof coverage.executable_file_coverage_percent !== "number") {
-    return "Public scans require explicit executable-file coverage.";
-  }
-  if (status === "complete" && coverage.required_providers_complete !== true) {
-    return "A complete scan requires every required analyzer to complete.";
-  }
-  if (status === "complete" && !["allow", "review", "block"].includes(decision)) return "A complete scan requires an allow, review, or block decision.";
-  if (status !== "complete" && !["incomplete", "block"].includes(decision)) return "An incomplete or failed scan cannot publish an approval decision.";
-  return null;
 }
 
 export async function ingestScanBundle(jobId: string, bundle: Bundle, receiptId?: string): Promise<string> {
@@ -100,7 +47,7 @@ export async function ingestScanBundle(jobId: string, bundle: Bundle, receiptId?
   // while operational-intelligence migration 011 rolls out. A worker result
   // must never be rejected simply because an optional metrics column has not
   // been deployed yet.
-  const queuedJob = await db.from("scan_jobs").select("extension_id,version,scan_purpose,expected_scanner_build").eq("id", jobId).maybeSingle();
+  const queuedJob = await db.from("scan_jobs").select("extension_id,version,profile,scan_purpose,expected_scanner_build").eq("id", jobId).maybeSingle();
   if (queuedJob.error) throw new Error(`Scan job lookup failed: ${queuedJob.error.message}`);
   if (!queuedJob.data) throw new Error("Scan job was not found.");
   const expectedScannerBuild = String(queuedJob.data.expected_scanner_build || "").trim();
@@ -112,8 +59,9 @@ export async function ingestScanBundle(jobId: string, bundle: Bundle, receiptId?
   // queries all resolve the same row even when package.json uses display case.
   const extensionId = String(queuedJob.data.extension_id);
   const publicPurpose = ["public_intelligence", "benchmark"].includes(String(queuedJob.data.scan_purpose));
+  if (publicPurpose && String(queuedJob.data.profile || "") !== "deep") throw new Error("Public scans must be bound to a deep runtime-enabled job.");
   const reportedSchemaVersion = String(metadata.schema_version || "").trim();
-  const canonicalError = publicCanonicalError(publicPurpose, reportedSchemaVersion, detail, metadata, expectedScannerBuild);
+  const canonicalError = publicCanonicalError(publicPurpose, reportedSchemaVersion, detail, metadata, expectedScannerBuild, extensionId, version);
   if (canonicalError) throw new Error(canonicalError);
   const frozenBenchmarkArtifact = benchmarkRows.find((row) => row.id.toLowerCase() === extensionId.toLowerCase() && row.version === version);
   if (queuedJob.data.scan_purpose === "benchmark" && !frozenBenchmarkArtifact) throw new Error("Benchmark result is not part of the frozen corpus.");
