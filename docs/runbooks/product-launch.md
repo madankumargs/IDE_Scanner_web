@@ -25,19 +25,61 @@ known-malicious evaluation. A release must not be expanded merely because its
 scan jobs completed.
 
 The production corpus is a deterministic regression suite, not an ecosystem
-accuracy claim. The gate artifact must also carry a separate
+accuracy claim. Public/benchmark callbacks also require the deep profile and
+controlled Bubblewrap runtime evidence; static-only results are rejected at
+both callback backends. The gate artifact must also carry a separate
 `holdout` object with `status: "fresh-labeled"`, `complete: true`, and positive
 `safe_evaluated` and `malicious_evaluated` counts from exact retained artifacts.
+The holdout `safe_review_rate` must also be at or below the 20% noise ceiling;
+a safe extension routed to review is still publication noise even when it is not
+blocked.
+The holdout must include both at least one executable-capability artifact whose
+dynamic provider actually ran and at least one artifact explicitly classified as
+runtime-not-applicable. This proves that agentic/process-capable packages and
+non-executable packages are being routed through different evidence contracts.
 Until that holdout exists, the registry may keep its current release but must
 not activate or bulk-publish a new cohort.
+
+The scanner repository now starts the holdout automatically after a successful
+main-branch production gate. Use the `Validate and promote scanner publication`
+workflow with that scanner workflow-run ID. It downloads the immutable
+`publication-accuracy-gate.json`, validates the exact scanner SHA against the
+current Cloudflare D1 reports, and uploads a validation artifact. Leave
+`activate` disabled for a dry validation; enable it only after the validation
+job succeeds. Missing cross-repository or Cloudflare credentials fail the
+workflow rather than producing a successful no-op.
+
+The holdout workflow first runs
+`scripts/verify_holdout_provenance.py` against the versioned exact-hash
+advisory snapshot, then freezes the retained artifacts. Evidence must identify
+the exact extension id, version, and SHA-256, and its retrieval timestamp must
+not be later than the declared freeze time. Do not hand-edit the generated
+corpus or gate; regenerate them from the reviewed source manifest.
+
+The website repository must have `SCANNER_REPO_READ_TOKEN` with read access to
+the scanner repository's Actions artifacts, plus the existing
+`CLOUDFLARE_API_TOKEN` and account configuration for validation/activation.
+When Cloudflare activation runs with `--apply`, it re-reads every manifest scan
+from D1 and rechecks the job identity, exact artifact hash, canonical report,
+decision, policy/ruleset, and runtime contract immediately before flipping the
+release active. A previously generated validation artifact is not sufficient
+by itself.
+
+The public registry mirror uses generation-addressed D1 chunks. The import
+script stages all sections and products under a new publication ID, then flips
+one active pointer as its first visible write; cleanup runs only after the
+pointer is live. A failed or interrupted mirror import therefore leaves the
+previous complete registry snapshot readable.
 
 ## Cohort scaling
 
 Catalog refresh is intentionally separate from publication activation. After
-the holdout gate passes, dispatch a staged refresh with the workflow inputs
-`cohort_limit`, `marketplace_page_count`, and `scan_batch_limit` (for example
-`1000`, `10`, and `250`). These values are bounded by the refresh script and
-only queue exact Deep Scan jobs; they do not replace the active public release.
+the holdout gate passes, use the promotion workflow's optional
+`queue_bulk_scan` handoff, or dispatch a staged refresh with the workflow
+inputs `cohort_limit`, `marketplace_page_count`, and `scan_batch_limit` (for
+example `1000`, `10`, and `250`). These values are bounded by the refresh
+script and only queue exact Deep Scan jobs; they do not replace the active
+public release.
 Wait for every required report to be complete under one scanner build, build a
 new publication validation report, and activate it with the same accuracy gate.
 If the holdout or report-completeness gate fails, leave the existing release
