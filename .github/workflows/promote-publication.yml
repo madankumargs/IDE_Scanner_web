@@ -190,23 +190,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Dispatch staged candidate catalog scan
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Queue staged candidate scans in Cloudflare D1
         env:
-          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
-          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
         run: |
-          gh workflow run catalog-refresh.yml \
-            --repo "$GITHUB_REPOSITORY" \
+          node scripts/queue-cloudflare-candidate-scans.mjs
+      - name: Dispatch scanner deep-scan workers
+        env:
+          GH_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+        run: |
+          gh workflow run deep-scan.yml \
+            --repo preethamak/IDE_Scanner \
             --ref main \
-            -f scan_batch_limit="$SCAN_BATCH_LIMIT" \
-            -f cohort_limit="$COHORT_LIMIT" \
-            -f marketplace_page_count="$MARKETPLACE_PAGE_COUNT" \
-            -f enable_bulk_scan=true \
-            -f candidate_scan=true \
-            -f scanner_build="$SCANNER_BUILD"
+            -f worker_count=16
 
   activate:
     if: ${{ inputs.activate == true }}
@@ -249,17 +255,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Dispatch bounded catalog refresh
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Queue bounded public scans in Cloudflare D1
         env:
-          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
-          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
+          REQUIRE_ACTIVE_RELEASE: "true"
         run: |
-          gh workflow run catalog-refresh.yml \
-            --repo "$GITHUB_REPOSITORY" \
+          node scripts/queue-cloudflare-candidate-scans.mjs
+      - name: Dispatch scanner deep-scan workers
+        env:
+          GH_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+        run: |
+          gh workflow run deep-scan.yml \
+            --repo preethamak/IDE_Scanner \
             --ref main \
-            -f scan_batch_limit="$SCAN_BATCH_LIMIT" \
-            -f cohort_limit="$COHORT_LIMIT" \
-            -f marketplace_page_count="$MARKETPLACE_PAGE_COUNT" \
-            -f enable_bulk_scan=true
+            -f worker_count=16

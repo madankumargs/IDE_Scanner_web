@@ -27,14 +27,15 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("default: false");
     expect(workflow).toContain("if: ${{ inputs.activate == true && inputs.queue_bulk_scan == true }}");
     expect(workflow).toContain("needs: activate");
-    expect(workflow).toContain("-f enable_bulk_scan=true");
+    expect(workflow).toContain("Queue bounded public scans in Cloudflare D1");
+    expect(workflow).toContain('REQUIRE_ACTIVE_RELEASE: "true"');
   });
 
   it("offers a separate candidate queue before activation", () => {
     expect(workflow).toContain("queue_candidate_scan:");
     expect(workflow).toContain("queue-candidate-scan:");
-    expect(workflow).toContain("candidate_scan=true");
-    expect(workflow).toContain("scanner_build=\"$SCANNER_BUILD\"");
+    expect(workflow).toContain("Queue staged candidate scans in Cloudflare D1");
+    expect(workflow).toContain("SCANNER_BUILD: ${{ inputs.scanner_build }}");
   });
 
   it("fails closed when either cross-repository or Cloudflare credentials are absent", () => {

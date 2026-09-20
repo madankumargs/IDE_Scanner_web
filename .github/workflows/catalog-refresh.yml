@@ -21,14 +21,6 @@ on:
         description: Queue the broad public cohort only after an active accuracy-attested release exists
         required: false
         default: "false"
-      candidate_scan:
-        description: Stage reports for a validated scanner build before publication activation
-        required: false
-        default: "false"
-      scanner_build:
-        description: Full scanner commit SHA for a staged candidate scan
-        required: false
-        default: ""
 
 permissions:
   contents: write
@@ -51,8 +43,6 @@ jobs:
           CATALOG_COHORT_LIMIT: ${{ inputs.cohort_limit || '250' }}
           MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
           CATALOG_BULK_SCAN_ENABLED: ${{ inputs.enable_bulk_scan || 'false' }}
-          CATALOG_CANDIDATE_SCAN_ENABLED: ${{ inputs.candidate_scan || 'false' }}
-          SCANNER_BUILD_SHA: ${{ inputs.scanner_build || '' }}
       - name: Export public registry mirror
         run: npx tsx scripts/export-public-registry.mjs
         env:
