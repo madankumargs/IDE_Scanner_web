@@ -203,6 +203,7 @@ jobs:
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
         run: |
           node scripts/queue-cloudflare-candidate-scans.mjs
       - name: Dispatch scanner deep-scan workers
@@ -268,6 +269,7 @@ jobs:
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
           REQUIRE_ACTIVE_RELEASE: "true"
         run: |
           node scripts/queue-cloudflare-candidate-scans.mjs

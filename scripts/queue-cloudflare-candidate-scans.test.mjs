@@ -10,6 +10,8 @@ describe("Cloudflare candidate scan queue", () => {
     expect(source).toContain("expected_scanner_build");
     expect(source).toContain("public_intelligence");
     expect(source).toContain("registry_product_chunks");
+    expect(source).toContain("marketplace.visualstudio.com/_apis/public/gallery/extensionquery");
+    expect(source).toContain("MARKETPLACE_PAGE_COUNT");
     expect(source).toContain("status IN ('queued','running','complete')");
     expect(source).toContain("Bulk scans require an active accuracy-attested Cloudflare release");
     expect(source).toContain("accuracy_gate_sha256");

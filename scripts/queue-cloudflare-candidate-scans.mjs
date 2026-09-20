@@ -6,6 +6,7 @@ import { join } from "node:path";
 const scannerBuild = String(process.env.SCANNER_BUILD || "").trim().toLowerCase();
 const batchLimit = boundedInteger("SCAN_BATCH_LIMIT", 100, 1, 10_000);
 const cohortLimit = boundedInteger("COHORT_LIMIT", 250, 1, 10_000);
+const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
 const requireActiveRelease = String(process.env.REQUIRE_ACTIVE_RELEASE || "").trim().toLowerCase() === "true";
 if (!/^[0-9a-f]{40}$/.test(scannerBuild)) {
   throw new Error("SCANNER_BUILD must be a full 40-character scanner commit SHA.");
@@ -42,6 +43,7 @@ for (const row of rows) {
 }
 
 const candidates = [];
+const candidateByKey = new Map();
 for (const chunks of products.values()) {
   let product;
   try {
@@ -55,12 +57,32 @@ for (const chunks of products.values()) {
   const extensionId = String(extension.id || latest?.extension_id || "").trim();
   const version = String(latest?.version || "").trim();
   if (!extensionId || !version) continue;
-  candidates.push({
+  const candidate = {
     extensionId,
     version,
     rank: Number.isFinite(Number(extension.catalog_rank)) ? Number(extension.catalog_rank) : Number.MAX_SAFE_INTEGER,
-  });
+    source: "d1-catalog",
+  };
+  candidateByKey.set(`${extensionId.toLowerCase()}@${version}`, candidate);
 }
+
+// The legacy D1 mirror may contain only the last imported publication's
+// product rows. Fill a requested cohort from the authoritative Marketplace
+// ranking so publication cannot silently stop at a partial catalog.
+if (candidateByKey.size < Math.min(batchLimit, cohortLimit)) {
+  const marketplace = (await Promise.all(Array.from({ length: marketplacePageCount }, (_, index) => marketplacePage(index + 1)))).flat();
+  for (const item of marketplace) {
+    const key = `${item.extensionId.toLowerCase()}@${item.version}`;
+    const existing = candidateByKey.get(key);
+    if (existing) {
+      existing.rank = Math.min(existing.rank, item.rank);
+      continue;
+    }
+    candidateByKey.set(key, item);
+  }
+}
+
+candidates.push(...candidateByKey.values());
 
 candidates.sort((left, right) => left.rank - right.rank || `${left.extensionId}@${left.version}`.localeCompare(`${right.extensionId}@${right.version}`));
 const selected = candidates.slice(0, Math.min(batchLimit, cohortLimit));
@@ -94,7 +116,7 @@ try {
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
-console.log(JSON.stringify({ scanner_build: scannerBuild, require_active_release: requireActiveRelease, selected: selected.length, candidates: selected }, null, 2));
+console.log(JSON.stringify({ scanner_build: scannerBuild, require_active_release: requireActiveRelease, marketplace_page_count: marketplacePageCount, available: candidates.length, selected: selected.length, candidates: selected }, null, 2));
 
 function queryD1(command) {
   const raw = execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--command", command, "--json"], {
@@ -116,4 +138,28 @@ function boundedInteger(name, fallback, minimum, maximum) {
 
 function sql(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+async function marketplacePage(page) {
+  const response = await fetch("https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery?api-version=7.2-preview.1", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json;api-version=7.2-preview.1",
+      "User-Agent": "guardrails-public-publication-queue",
+    },
+    body: JSON.stringify({
+      filters: [{ criteria: [{ filterType: 8, value: "Microsoft.VisualStudio.Code" }], pageNumber: page, pageSize: 100, sortBy: 4 }],
+      flags: 914,
+    }),
+  });
+  if (!response.ok) throw new Error(`Marketplace catalog request failed with HTTP ${response.status} on page ${page}.`);
+  const payload = await response.json();
+  return (payload?.results?.[0]?.extensions || []).flatMap((extension, index) => {
+    const publisher = String(extension?.publisher?.publisherName || "").trim();
+    const name = String(extension?.extensionName || "").trim();
+    const version = String(extension?.versions?.[0]?.version || "").trim();
+    if (!publisher || !name || !version) return [];
+    return [{ extensionId: `${publisher}.${name}`, version, rank: (page - 1) * 100 + index + 1, source: "marketplace" }];
+  });
 }
