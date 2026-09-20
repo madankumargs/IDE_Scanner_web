@@ -113,8 +113,8 @@ jobs:
               raise SystemExit("scanner run is not the publication accuracy holdout workflow")
           if run.get("status") != "completed" or run.get("conclusion") != "success":
               raise SystemExit("scanner holdout workflow run did not complete successfully")
-          if run.get("event") != "push" or run.get("head_branch") != "main":
-              raise SystemExit("scanner holdout run is not a main-branch push")
+          if run.get("event") not in {"push", "workflow_run"} or run.get("head_branch") != "main":
+              raise SystemExit("scanner holdout run is not a trusted main-branch push or automatic workflow-run")
           if (run.get("head_repository") or {}).get("full_name") != "preethamak/IDE_Scanner":
               raise SystemExit("scanner holdout run did not originate in the trusted scanner repository")
           if str(run.get("head_sha", "")).lower() != build:
