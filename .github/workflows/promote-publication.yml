@@ -209,11 +209,13 @@ jobs:
       - name: Dispatch scanner deep-scan workers
         env:
           GH_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
         run: |
           gh workflow run deep-scan.yml \
             --repo preethamak/IDE_Scanner \
-            --ref main \
-            -f worker_count=16
+            --ref "$SCANNER_BUILD" \
+            -f worker_count=16 \
+            -f jobs_per_worker=8
 
   activate:
     if: ${{ inputs.activate == true }}
@@ -276,8 +278,10 @@ jobs:
       - name: Dispatch scanner deep-scan workers
         env:
           GH_TOKEN: ${{ secrets.SCANNER_REPO_READ_TOKEN }}
+          SCANNER_BUILD: ${{ inputs.scanner_build }}
         run: |
           gh workflow run deep-scan.yml \
             --repo preethamak/IDE_Scanner \
-            --ref main \
-            -f worker_count=16
+            --ref "$SCANNER_BUILD" \
+            -f worker_count=16 \
+            -f jobs_per_worker=8
