@@ -32,7 +32,7 @@ vi.mock("@/lib/cloudflareRegistry", () => ({
 }));
 vi.mock("@/lib/cloudflareGithubDispatch", () => ({ dispatchGithubDeepScan: vi.fn() }));
 
-import { saveCloudflareScanResult } from "@/lib/cloudflareDeepScan";
+import { claimCloudflareJob, saveCloudflareScanResult } from "@/lib/cloudflareDeepScan";
 
 const build = "a".repeat(40);
 const artifactSha = "d".repeat(64);
@@ -135,5 +135,30 @@ describe("Cloudflare canonical scan callback", () => {
     await expect(saveCloudflareScanResult("job-1", validBundle())).resolves.toEqual(expect.any(String));
     expect(db.batch).toHaveBeenCalledTimes(1);
     expect(harness.runnerCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a losing concurrent worker scan the same queued job", async () => {
+    const queued = {
+      id: "job-1",
+      extension_id: "publisher.extension",
+      version: "1.0.0",
+      status: "queued",
+    };
+    const first = vi.fn().mockResolvedValue(queued);
+    const run = vi.fn().mockResolvedValue({ meta: { changes: 0 } });
+    const db = {
+      prepare: vi.fn((query: string) => query.startsWith("SELECT * FROM app_scan_jobs")
+        ? { bind: vi.fn(() => ({ first })) }
+        : { bind: vi.fn(() => ({ run })) }),
+    };
+    harness.privateDb.mockReturnValue(db);
+
+    await expect(claimCloudflareJob({
+      runnerId: "runner-1",
+      jobId: null,
+      githubRunId: 123,
+      githubSha: build,
+    })).resolves.toBeNull();
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });

@@ -224,7 +224,12 @@ export async function claimCloudflareJob(input: { runnerId: string; jobId: strin
   const job = await db.prepare(`SELECT * FROM app_scan_jobs WHERE ${where} ORDER BY created_at LIMIT 1`).bind(...values).first<Row>();
   if (!job) return null;
   const now = nowIso();
-  await db.prepare("UPDATE app_scan_jobs SET status='running',lifecycle_stage='running',expected_scanner_build=COALESCE(expected_scanner_build,?),runner_id=?,github_run_id=?,attempt_count=attempt_count+1,started_at=COALESCE(started_at,?),updated_at=?,last_event_at=? WHERE id=? AND status='queued'").bind(input.githubSha, input.runnerId, input.githubRunId, now, now, now, String(job.id)).run();
+  const claimResult = await db.prepare("UPDATE app_scan_jobs SET status='running',lifecycle_stage='running',expected_scanner_build=COALESCE(expected_scanner_build,?),runner_id=?,github_run_id=?,attempt_count=attempt_count+1,started_at=COALESCE(started_at,?),updated_at=?,last_event_at=? WHERE id=? AND status='queued'").bind(input.githubSha, input.runnerId, input.githubRunId, now, now, now, String(job.id)).run();
+  // Multiple GitHub workers can select the same queued row before D1
+  // serializes their updates. Only the worker whose conditional UPDATE
+  // changed one row owns the claim; all other workers must return to the
+  // queue instead of scanning the same artifact concurrently.
+  if (claimResult?.meta && Number(claimResult.meta.changes) === 0) return null;
   await markCloudflareRunnerClaimed(db, now);
   const updated = await db.prepare("SELECT * FROM app_scan_jobs WHERE id=?").bind(String(job.id)).first<Row>();
   await addCloudflareScanEvent(String(job.id), "running", "claimed", { runner_id: input.runnerId, scanner_build: input.githubSha });
