@@ -1,0 +1,54 @@
+name: Migrate scan data
+
+on:
+  workflow_dispatch:
+    inputs:
+      scanner_build:
+        description: "Scanner build to move into the isolated scan database"
+        required: true
+        default: "02a0f71f61cd5b214f2d4785db876035d79b7d9c"
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_BUILD: ${{ inputs.scanner_build }}
+    steps:
+      - name: Require Cloudflare credentials
+        run: test -n "$CLOUDFLARE_API_TOKEN"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Export the registry database
+        run: |
+          mkdir -p .tmp
+          npx wrangler d1 export abscissa-registry --remote --skip-confirmation --output=.tmp/registry.sql
+          sqlite3 .tmp/registry-export.db < .tmp/registry.sql
+      - name: Build a bounded scan-data migration
+        run: |
+          node scripts/build-cloudflare-scan-migration.mjs \
+            --source-db .tmp/registry-export.db \
+            --output-db .tmp/scan-subset.db \
+            --parts-dir .tmp/scan-import \
+            --scanner-build "$SCANNER_BUILD"
+      - name: Import scan data into the isolated database
+        run: |
+          for part in .tmp/scan-import/part-*.sql; do
+            echo "Importing $part"
+            npx wrangler d1 execute abscissa-scan-data --remote --file="$part"
+          done
+      - name: Verify migrated scan state
+        run: |
+          npx wrangler d1 execute abscissa-scan-data --remote --command \
+            "SELECT expected_scanner_build, status, COUNT(*) AS count FROM app_scan_jobs GROUP BY expected_scanner_build, status ORDER BY expected_scanner_build, status;"
+          npx wrangler d1 execute abscissa-scan-data --remote --command \
+            "SELECT r.id, r.scanner_build, r.expected_reports, r.report_count_at_activation, r.active, COUNT(rr.scan_id) AS release_reports FROM app_scan_publication_releases r LEFT JOIN app_scan_publication_release_reports rr ON rr.release_id = r.id WHERE r.active = 1 GROUP BY r.id;"
