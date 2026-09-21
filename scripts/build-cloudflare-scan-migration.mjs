@@ -67,6 +67,7 @@ WHERE expected_scanner_build = ${sqlString(build)}
 CREATE TABLE app_scan_reports AS
   SELECT r.* FROM src.app_scan_reports r
   JOIN app_scan_jobs j ON j.id = r.job_id;
+CREATE INDEX app_scan_reports_scan_idx ON app_scan_reports(scan_id);
 CREATE TABLE app_scan_report_chunks (
   scan_id TEXT NOT NULL,
   chunk_index INTEGER NOT NULL,
