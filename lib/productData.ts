@@ -360,7 +360,7 @@ export async function getVersionScanProduct(id: string, version: string, scanId:
   const cloudflareReport = await getCloudflareScanProduct(id, version, scanId, true).catch(() => null);
   if (cloudflareReport) return cloudflareReport;
   const cloudflareProduct = await getPublicRegistryProduct(id);
-  if (cloudflareProduct) {
+  if (cloudflareProduct && cloudflareProduct.detail_state !== "summary_only") {
     const scan = cloudflareProduct.scans?.find((item) => String(item.version || "") === version && String(item.scan?.id || "") === scanId);
     return scan ? { version: cloudflareProduct.versions?.find((item) => String(item.version || "") === version) || { extension_id: id, version }, scan: scan.scan, findings: scan.findings || [], files: scan.files || [], dependencies: scan.dependencies || [] } : null;
   }
@@ -436,7 +436,7 @@ async function mirroredVersionProduct(id: string, version: string): Promise<Reco
 
 async function mirroredScanProduct(id: string, version: string, scanId: string): Promise<Record<string, unknown> | null> {
   const product = await getPublicRegistryProduct(id);
-  if (!product) return null;
+  if (!product || product.detail_state === "summary_only") return null;
   const versionRow = product.versions.find((item) => String(item.version) === version);
   const scan = product.scans.find((item) => item.version === version && String(item.scan.id) === scanId);
   if (!versionRow || !scan) return null;

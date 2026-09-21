@@ -29,6 +29,12 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("needs: activate");
     expect(workflow).toContain("Queue bounded public scans in Cloudflare D1");
     expect(workflow).toContain('REQUIRE_ACTIVE_RELEASE: "true"');
+    expect(workflow).toContain("publish-registry:");
+    expect(workflow).toContain("needs: [activate, publish-registry]");
+    expect(workflow).toContain("build-cloudflare-registry-snapshot.mjs");
+    expect(workflow).toContain("registry-state.json");
+    expect(workflow).toContain("jobs_per_worker=16");
+    expect(workflow).toContain("runs=$(( (SCAN_BATCH_LIMIT + 255) / 256 ))");
   });
 
   it("offers a separate candidate queue before activation", () => {

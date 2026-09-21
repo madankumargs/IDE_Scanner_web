@@ -17,6 +17,7 @@ const DEFAULT_SNAPSHOT_URL =
 const SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 
 export type PublicRegistryProduct = {
+  detail_state?: "complete" | "summary_only";
   extension: CatalogExtension;
   versions: Array<Record<string, unknown>>;
   scans: Array<{

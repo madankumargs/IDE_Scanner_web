@@ -94,10 +94,56 @@ export function buildRegistryImportSql(snapshot, {
   return { statements, publicationId: id, snapshotDigest, generatedAt };
 }
 
+export function splitSqlStatements(statements, maxBytes = 40_000_000) {
+  if (!Number.isInteger(maxBytes) || maxBytes < 1_000_000) throw new Error("SQL split size must be at least 1 MB.");
+  const parts = [];
+  let current = [];
+  let currentBytes = 0;
+  for (const statement of statements) {
+    const bytes = Buffer.byteLength(statement) + 1;
+    if (current.length && currentBytes + bytes > maxBytes) {
+      parts.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(statement);
+    currentBytes += bytes;
+  }
+  if (current.length) parts.push(current);
+  return parts;
+}
+
 function main() {
-  const [, , snapshotPath = "public/registry-snapshot.json", outputPath = ".tmp/public-registry-d1.sql"] = process.argv;
+  const args = process.argv.slice(2);
+  const positional = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index].startsWith("--")) { index += 1; continue; }
+    positional.push(args[index]);
+  }
+  const flagValue = (name, fallback = "") => {
+    const index = args.indexOf(name);
+    return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
+  };
+  const snapshotPath = positional[0] || "public/registry-snapshot.json";
+  const outputPath = positional[1] || ".tmp/public-registry-d1.sql";
+  const splitDir = flagValue("--split-dir");
+  const maxPartBytes = Number(flagValue("--max-part-bytes", "40000000"));
   const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
   const built = buildRegistryImportSql(snapshot);
+  if (splitDir) {
+    const parts = splitSqlStatements(built.statements, maxPartBytes);
+    fs.mkdirSync(splitDir, { recursive: true });
+    for (const entry of fs.readdirSync(splitDir)) {
+      if (/^part-\d+\.sql$/.test(entry)) fs.unlinkSync(path.join(splitDir, entry));
+    }
+    const files = parts.map((part, index) => {
+      const filePath = path.join(splitDir, `part-${String(index).padStart(4, "0")}.sql`);
+      fs.writeFileSync(filePath, `${part.join("\n")}\n`);
+      return { path: filePath, statements: part.length, bytes: fs.statSync(filePath).size };
+    });
+    console.log(JSON.stringify({ snapshotPath, splitDir, generatedAt: built.generatedAt, publicationId: built.publicationId, snapshotSha256: built.snapshotDigest, statements: built.statements.length, parts: files }, null, 2));
+    return;
+  }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${built.statements.join("\n")}\n`);
   console.log(JSON.stringify({ snapshotPath, outputPath, generatedAt: built.generatedAt, publicationId: built.publicationId, snapshotSha256: built.snapshotDigest, statements: built.statements.length, bytes: fs.statSync(outputPath).size }));

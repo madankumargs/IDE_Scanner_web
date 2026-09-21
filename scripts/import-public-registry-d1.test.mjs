@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRegistryImportSql, validateRegistrySnapshot } from "./import-public-registry-d1.mjs";
+import { buildRegistryImportSql, splitSqlStatements, validateRegistrySnapshot } from "./import-public-registry-d1.mjs";
 
 function snapshot() {
   return {
@@ -56,5 +56,16 @@ describe("atomic D1 registry import", () => {
     const invalid = snapshot();
     delete invalid.inventory.publication.accuracy_gate_sha256;
     expect(() => validateRegistrySnapshot(invalid)).toThrow("accuracy-attested publication identity");
+  });
+
+  it("can split a publication without moving the active pointer before the final part", () => {
+    const built = buildRegistryImportSql(snapshot(), { publicationId: "registry-split-publication" });
+    const parts = splitSqlStatements(built.statements, 1_000_000);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(parts.flat().join("\n")).toBe(built.statements.join("\n"));
+    const pointer = parts.flat().findIndex((statement) => statement.includes("INSERT OR REPLACE INTO registry_publication_state"));
+    const lastPart = parts.at(-1);
+    expect(pointer).toBeGreaterThanOrEqual(0);
+    expect(lastPart?.some((statement) => statement.includes("INSERT OR REPLACE INTO registry_publication_state"))).toBe(true);
   });
 });

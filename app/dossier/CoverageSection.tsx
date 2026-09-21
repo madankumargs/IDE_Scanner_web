@@ -10,7 +10,7 @@ export default function CoverageSection({ scan }: { scan: ReportScan }) {
   const declared = arrayLength(coverage.declared_entrypoints);
   const resolved = arrayLength(coverage.resolved_entrypoints);
   const executable = arrayLength(coverage.executable_candidates);
-  const files = arrayLength(inventory.files);
+  const files = Number(inventory.file_count || arrayLength(inventory.files));
   return <>
     <DossierSectionHead eyebrow="Analysis boundary" title="What was actually assessed" detail="Coverage shows the artifact scope behind this report. It is not a claim that the extension is safe." />
     <div className="coverageGrid coverageExplained">
