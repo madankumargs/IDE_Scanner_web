@@ -22,4 +22,11 @@ describe("Cloudflare publication validation boundary", () => {
     expect(source).toContain("validatePublicationManifest");
     expect(source).toContain("validatePublicationManifest(validation.extensions);");
   });
+
+  it("quarantines incomplete reports instead of publishing them", () => {
+    expect(source).toContain("const quarantined = [];");
+    expect(source).toContain("const analysisIncomplete =");
+    expect(source).toContain("quarantined.push({");
+    expect(source).toContain("quarantined,");
+  });
 });

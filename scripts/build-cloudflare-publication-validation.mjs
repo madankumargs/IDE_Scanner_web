@@ -33,6 +33,7 @@ const payload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", "ab
 const rows = Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
 const selected = new Map();
 const failures = [];
+const quarantined = [];
 for (const row of rows) {
   let bundle;
   try {
@@ -60,11 +61,20 @@ for (const row of rows) {
     metadata,
     analysisCoverage: coverage,
   });
+  const analysisIncomplete = String(detail.analysis_status || "") !== "complete"
+    || coverage.status !== "complete"
+    || coverage.required_providers_complete !== true;
+  if (analysisIncomplete) {
+    quarantined.push({
+      extension_id: String(row.extension_id || detail.extension_id || ""),
+      version: String(row.version || detail.version || ""),
+      scan_id: String(row.scan_id || ""),
+      reason: canonicalMismatch || runtimeMismatch || String(detail.decision_reason || "analysis did not complete"),
+    });
+    continue;
+  }
   if (canonicalMismatch
     || String(metadata.scanner_build || "") !== scannerBuild
-    || String(detail.analysis_status || "") !== "complete"
-    || coverage.status !== "complete"
-    || coverage.required_providers_complete !== true
     || String(identity.sha256 || "").length !== 64
     || String(row.artifact_sha256 || "").toLowerCase() !== String(identity.sha256 || "").toLowerCase()
     || String(rules.policy_version || "") !== String(metadata.policy_version || "")
@@ -137,11 +147,12 @@ const validation = {
     holdout_safe_evaluated: accuracyGate.holdout.safe_evaluated,
     holdout_malicious_evaluated: accuracyGate.holdout.malicious_evaluated,
   },
+  quarantined,
   extensions,
 };
 validatePublicationManifest(validation.extensions);
 await writeFile(output, `${JSON.stringify(validation, null, 2)}\n`, "utf8");
-console.log(JSON.stringify({ output, reports: extensions.length, policy_version: first.policy_version, ruleset_version: first.ruleset_version }, null, 2));
+console.log(JSON.stringify({ output, reports: extensions.length, quarantined: quarantined.length, policy_version: first.policy_version, ruleset_version: first.ruleset_version }, null, 2));
 
 function valueAfter(flag) {
   const index = args.indexOf(flag);
