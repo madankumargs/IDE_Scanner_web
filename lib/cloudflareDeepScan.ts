@@ -15,6 +15,9 @@ type Bundle = { metadata?: Row; extensions?: Row | Row[] };
 const GUEST_TRIAL_LIMIT = 5;
 const GUEST_TRIAL_WINDOW_DAYS = 30;
 const GUEST_TRIAL_COOKIE = "gr_trial";
+const MAX_STORED_PREVIEWS = 12;
+const MAX_STORED_PREVIEW_CHARS = 32_768;
+const MAX_STORED_FILE_ROWS = 2_000;
 export type CloudflareCanonicalJobInput = {
   extension_id: string;
   version: string;
@@ -267,9 +270,11 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
   if (String(job.extension_id).toLowerCase() !== extensionId.toLowerCase() || String(job.version) !== version) throw new Error("Scanner result does not match the claimed artifact.");
   const scanId = randomUUID();
   const now = nowIso();
+  const compacted = compactCloudflareBundle(bundle);
   try {
     await db.batch([
-      db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, JSON.stringify(bundle), now),
+      db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, JSON.stringify(compacted.bundle), now),
+      ...compacted.previews.map((preview) => db.prepare("INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at) VALUES(?,?,?,?,?,?)").bind(scanId, preview.path, preview.content, preview.content_sha256, preview.truncated ? 1 : 0, now)),
       db.prepare("UPDATE app_scan_jobs SET status='complete',lifecycle_stage='completed',result_received_at=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(now, now, now, now, jobId),
       db.prepare("INSERT INTO app_scan_job_events(job_id,stage,event_type,detail_json,created_at) VALUES(?,?,?,?,?)").bind(jobId, "completed", "result_published", JSON.stringify({ scan_id: scanId }), now),
     ]);
@@ -413,6 +418,18 @@ export async function getCloudflareScanSummary(extensionId: string, version: str
 
 export async function getCloudflareSourcePreview(extensionId: string, version: string, scanId: string | null, path: string): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
+  const stored = await privateDb().prepare(`
+    SELECT p.content,p.content_sha256,p.truncated
+    FROM app_scan_report_previews p
+    JOIN app_scan_reports report ON report.scan_id=p.scan_id
+    WHERE lower(report.extension_id)=lower(?)
+      AND report.version=?
+      AND (?='' OR report.scan_id=?)
+      AND p.path=?
+    ORDER BY report.created_at DESC
+    LIMIT 1
+  `).bind(extensionId, version, scanId || "", scanId || "", path).first<Row>();
+  if (stored?.content != null) return stored;
   const row = await privateDb().prepare(`
     SELECT
       json_extract(preview.value, '$.content') AS content,
@@ -476,6 +493,46 @@ function singleExtension(value: Bundle["extensions"]): Row | null {
   const entries = Array.isArray(value) ? value : value && typeof value === "object" ? Object.values(value) : [];
   const valid = entries.filter((item): item is Row => Boolean(item && typeof item === "object" && !Array.isArray(item)));
   return valid.length === 1 ? valid[0] : null;
+}
+
+type StoredPreview = { path: string; content: string; content_sha256: string; truncated: boolean };
+
+function compactCloudflareBundle(bundle: Bundle): { bundle: Bundle; previews: StoredPreview[] } {
+  const previews: StoredPreview[] = [];
+  const compactDetail = (detail: Row): Row => {
+    const inventory = jsonObject(detail.artifact_inventory);
+    const rawFiles = array(inventory.files);
+    const allHashes = array(inventory._all_file_hashes);
+    for (const raw of array(inventory.source_previews)) {
+      if (previews.length >= MAX_STORED_PREVIEWS) break;
+      const candidate = jsonObject(raw);
+      const path = String(candidate.path || "");
+      const content = String(candidate.content || "");
+      if (!path || !content || path.includes("\\") || path.split("/").some((part) => !part || part === "." || part === "..")) continue;
+      const clipped = content.slice(0, MAX_STORED_PREVIEW_CHARS);
+      previews.push({
+        path,
+        content: clipped,
+        content_sha256: createHash("sha256").update(clipped).digest("hex"),
+        truncated: Boolean(candidate.truncated) || clipped.length < content.length,
+      });
+    }
+    const compactInventory = { ...inventory };
+    delete compactInventory.source_previews;
+    delete compactInventory._all_file_hashes;
+    if (rawFiles.length > MAX_STORED_FILE_ROWS) {
+      compactInventory.files = rawFiles.slice(0, MAX_STORED_FILE_ROWS);
+      compactInventory.files_truncated = true;
+    }
+    compactInventory.file_count = Math.max(rawFiles.length, allHashes.length);
+    return { ...detail, artifact_inventory: compactInventory };
+  };
+  const extensions = Array.isArray(bundle.extensions)
+    ? bundle.extensions.map((detail) => compactDetail(jsonObject(detail)))
+    : bundle.extensions && typeof bundle.extensions === "object"
+      ? Object.fromEntries(Object.entries(bundle.extensions).map(([key, detail]) => [key, compactDetail(jsonObject(detail))]))
+      : bundle.extensions;
+  return { bundle: { ...bundle, extensions }, previews };
 }
 
 function jsonObject(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
