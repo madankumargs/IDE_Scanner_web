@@ -128,7 +128,9 @@ function parseReleaseRow(row) {
   delete compactInventory.source_previews;
   delete compactInventory._all_file_hashes;
   compactInventory.file_count = rawFiles.length;
-  const { findings: _findings, dependency_inventory: _dependencies, ...compactDetail } = detail;
+  const compactDetail = { ...detail };
+  delete compactDetail.findings;
+  delete compactDetail.dependency_inventory;
   const scan = {
     // The public product keeps findings, files, and dependencies in their
     // own typed collections below. Keeping those same arrays inside the scan

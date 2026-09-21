@@ -13,8 +13,8 @@ describe("Cloudflare registry snapshot builder", () => {
 
   it("does not duplicate unbounded report evidence into the catalogue", () => {
     expect(source).toContain("compactInventory.file_count = rawFiles.length");
-    expect(source).toContain("findings: _findings");
-    expect(source).toContain("dependency_inventory: _dependencies");
+    expect(source).toContain("delete compactDetail.findings;");
+    expect(source).toContain("delete compactDetail.dependency_inventory;");
     expect(source).toContain("latest_scan: null");
     expect(source).toContain('detail_state: "summary_only"');
     expect(source).toContain("findings: [],");
