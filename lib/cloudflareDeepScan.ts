@@ -18,6 +18,8 @@ const GUEST_TRIAL_COOKIE = "gr_trial";
 const MAX_STORED_PREVIEWS = 12;
 const MAX_STORED_PREVIEW_CHARS = 32_768;
 const MAX_STORED_FILE_ROWS = 2_000;
+const MAX_INLINE_REPORT_CHARS = 80_000;
+const REPORT_CHUNK_CHARS = 100_000;
 export type CloudflareCanonicalJobInput = {
   extension_id: string;
   version: string;
@@ -271,9 +273,17 @@ export async function saveCloudflareScanResult(jobId: string, bundle: Bundle): P
   const scanId = randomUUID();
   const now = nowIso();
   const compacted = compactCloudflareBundle(bundle);
+  const reportJson = JSON.stringify(compacted.bundle);
+  const reportChunks = splitReportText(reportJson);
+  const storedReportJson = reportChunks.length > 1
+    ? JSON.stringify({ chunked: true, chunk_count: reportChunks.length, sha256: createHash("sha256").update(reportJson).digest("hex") })
+    : reportJson;
   try {
     await db.batch([
-      db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, JSON.stringify(compacted.bundle), now),
+      db.prepare("INSERT INTO app_scan_reports(scan_id,job_id,extension_id,version,artifact_sha256,report_json,created_at) VALUES(?,?,?,?,?,?,?)").bind(scanId, jobId, extensionId, version, artifactSha, storedReportJson, now),
+      ...(reportChunks.length > 1
+        ? reportChunks.map((content, chunkIndex) => db.prepare("INSERT INTO app_scan_report_chunks(scan_id,chunk_index,content) VALUES(?,?,?)").bind(scanId, chunkIndex, content))
+        : []),
       ...compacted.previews.map((preview) => db.prepare("INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at) VALUES(?,?,?,?,?,?)").bind(scanId, preview.path, preview.content, preview.content_sha256, preview.truncated ? 1 : 0, now)),
       db.prepare("UPDATE app_scan_jobs SET status='complete',lifecycle_stage='completed',result_received_at=?,completed_at=?,updated_at=?,last_event_at=? WHERE id=?").bind(now, now, now, now, jobId),
       db.prepare("INSERT INTO app_scan_job_events(job_id,stage,event_type,detail_json,created_at) VALUES(?,?,?,?,?)").bind(jobId, "completed", "result_published", JSON.stringify({ scan_id: scanId }), now),
@@ -312,9 +322,12 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
        LIMIT 1`
     : "SELECT report_json,artifact_sha256,created_at FROM app_scan_reports WHERE scan_id=? AND extension_id=? AND version=? LIMIT 1";
   const row = await privateDb().prepare(query).bind(scanId, extensionId, version).first<Row>();
-  if (!row?.report_json) return null;
+  const reportRow = row;
+  if (!reportRow?.report_json) return null;
+  const reportJson = await loadCloudflareReportJson(scanId, String(reportRow.report_json));
+  if (!reportJson) return null;
   let bundle: Bundle;
-  try { bundle = JSON.parse(String(row.report_json)) as Bundle; } catch { return null; }
+  try { bundle = JSON.parse(reportJson) as Bundle; } catch { return null; }
   const detail = singleExtension(bundle.extensions);
   if (!detail) return null;
   const metadata = jsonObject(bundle.metadata);
@@ -331,7 +344,7 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
     job_id: null,
     extension_id: extensionId,
     version,
-    artifact_sha256: String(row.artifact_sha256 || identity.sha256 || ""),
+    artifact_sha256: String(reportRow.artifact_sha256 || identity.sha256 || ""),
     profile: String(metadata.profile || "deep"),
     schema_version: String(metadata.schema_version || "unknown"),
     scanner_version: String(metadata.scanner_version || "unknown"),
@@ -355,8 +368,8 @@ export async function getCloudflareScanProduct(extensionId: string, version: str
     malware_score: Number(detail.malware_score || 0),
     coverage_percent: Number(coverage.coverage_percent || 0),
     provider_coverage: jsonObject(coverage.providers),
-    created_at: String(row.created_at || metadata.created_at || nowIso()),
-    scanned_at: String(metadata.created_at || row.created_at || nowIso()),
+    created_at: String(reportRow.created_at || metadata.created_at || nowIso()),
+    scanned_at: String(metadata.created_at || reportRow.created_at || nowIso()),
   };
   const findings = array(detail.findings).map((item, index) => { const value = jsonObject(item); return { id: `${String(value.finding_id || value.rule_id || "finding")}-${index}`, rule_id: String(value.rule_id || "unknown"), category: String(value.category || "unknown"), severity: String(value.effective_severity || value.severity || "INFO"), confidence: Number(value.confidence || 0), evidence_class: String(value.evidence_class || "weak"), actionability: String(value.actionability || "contextual"), summary: String(value.evidence_summary || "Scanner evidence"), recommendation: String(value.recommendation || ""), file_refs: Array.isArray(value.file_refs) ? value.file_refs : [], evidence: jsonObject(value.evidence) }; });
   const files = array(inventory.files).map((item) => { const value = jsonObject(item); return { path: String(value.path || ""), sha256: String(value.sha256 || ""), size_bytes: Number(value.size_bytes || 0), kind: String(value.kind || "file") }; }).filter((item) => item.path);
@@ -376,34 +389,12 @@ export async function getCloudflareLatestScanProduct(extensionId: string, versio
 export async function getCloudflareScanSummary(extensionId: string, version: string): Promise<Row | null> {
   if (!cloudflarePrivateAvailable()) return null;
   const row = await privateDb().prepare(`
-    SELECT
-      report.scan_id AS id,
-      report.extension_id,
-      report.version,
-      report.artifact_sha256,
-      report.created_at,
-      json_extract(report.report_json, '$.metadata.created_at') AS scanned_at,
-      json_extract(extension.value, '$.analysis_status') AS analysis_status,
-      json_extract(extension.value, '$.decision') AS decision,
-      json_extract(extension.value, '$.decision_reason') AS decision_reason,
-      json_extract(extension.value, '$.public_outcome') AS public_outcome,
-      json_extract(extension.value, '$.decision_basis') AS decision_basis,
-      json_extract(extension.value, '$.evidence_confidence') AS evidence_confidence,
-      json_extract(extension.value, '$.coverage_percent.coverage_percent') AS coverage_percent,
-      json_extract(extension.value, '$.risk_score') AS risk_score,
-      json_extract(extension.value, '$.malware_score') AS malware_score,
-      json_extract(extension.value, '$.scanner_build') AS scanner_build,
-      json_extract(extension.value, '$.ruleset_version') AS ruleset_version,
-      json_extract(extension.value, '$.capability_assessment') AS capability_assessment
+    SELECT report.scan_id AS id, report.extension_id, report.version,
+      report.artifact_sha256, report.created_at
     FROM app_scan_reports report
-    JOIN app_scan_publication_release_reports member
-      ON member.scan_id = report.scan_id
-    JOIN app_scan_publication_releases release
-      ON release.id = member.release_id
-    JOIN json_each(report.report_json, '$.extensions') extension
-      ON extension.key = 'extensions/' || report.extension_id || '@' || report.version || '.json'
-    WHERE lower(report.extension_id)=lower(?)
-      AND report.version=?
+    JOIN app_scan_publication_release_reports member ON member.scan_id = report.scan_id
+    JOIN app_scan_publication_releases release ON release.id = member.release_id
+    WHERE lower(report.extension_id)=lower(?) AND report.version=?
       AND release.active=1
       AND coalesce(release.accuracy_gate_corpus_id,'')<>''
       AND coalesce(release.accuracy_gate_corpus_version,'')<>''
@@ -412,8 +403,30 @@ export async function getCloudflareScanSummary(extensionId: string, version: str
     ORDER BY report.created_at DESC
     LIMIT 1
   `).bind(extensionId, version).first<Row>();
-  if (!row) return null;
-  return { ...row, capability_assessment: parseJson(row.capability_assessment) };
+  if (!row?.id) return null;
+  const product = await getCloudflareScanProduct(extensionId, version, String(row.id), true);
+  if (!product?.scan) return null;
+  const scan = jsonObject(product.scan);
+  return {
+    id: row.id,
+    extension_id: row.extension_id,
+    version: row.version,
+    artifact_sha256: row.artifact_sha256,
+    created_at: row.created_at,
+    scanned_at: scan.scanned_at,
+    analysis_status: scan.analysis_status,
+    decision: scan.decision,
+    decision_reason: scan.decision_reason,
+    public_outcome: scan.public_outcome,
+    decision_basis: scan.decision_basis,
+    evidence_confidence: scan.evidence_confidence,
+    coverage_percent: scan.coverage_percent,
+    risk_score: scan.risk_score,
+    malware_score: scan.malware_score,
+    scanner_build: scan.scanner_build,
+    ruleset_version: scan.ruleset_version,
+    capability_assessment: scan.capability_assessment,
+  };
 }
 
 export async function getCloudflareSourcePreview(extensionId: string, version: string, scanId: string | null, path: string): Promise<Row | null> {
@@ -430,24 +443,30 @@ export async function getCloudflareSourcePreview(extensionId: string, version: s
     LIMIT 1
   `).bind(extensionId, version, scanId || "", scanId || "", path).first<Row>();
   if (stored?.content != null) return stored;
-  const row = await privateDb().prepare(`
-    SELECT
-      json_extract(preview.value, '$.content') AS content,
-      json_extract(preview.value, '$.content_sha256') AS content_sha256,
-      json_extract(preview.value, '$.truncated') AS truncated
+  const reports = await privateDb().prepare(`
+    SELECT report.scan_id, report.report_json
     FROM app_scan_reports report
-    JOIN json_each(report.report_json, '$.extensions') extension
-    JOIN json_each(json_extract(extension.value, '$.artifact_inventory.source_previews')) preview
-      ON true
-    WHERE report.extension_id=?
+    WHERE lower(report.extension_id)=lower(?)
       AND report.version=?
       AND (?='' OR report.scan_id=?)
-      AND json_extract(preview.value, '$.path')=?
     ORDER BY report.created_at DESC
-    LIMIT 1
-  `).bind(extensionId, version, scanId || "", scanId || "", path).first<Row>();
-  if (!row || typeof row.content !== "string") return null;
-  return row;
+  `).bind(extensionId, version, scanId || "", scanId || "").all<Row>();
+  for (const report of reports.results) {
+    const reportJson = await loadCloudflareReportJson(String(report.scan_id || ""), String(report.report_json || ""));
+    if (!reportJson) continue;
+    try {
+      const bundle = JSON.parse(reportJson) as Bundle;
+      const detail = singleExtension(bundle.extensions);
+      const inventory = jsonObject(jsonObject(detail).artifact_inventory);
+      const preview = array(inventory.source_previews)
+        .map((item) => jsonObject(item))
+        .find((item) => String(item.path || "") === path);
+      if (preview && typeof preview.content === "string") {
+        return { content: preview.content, content_sha256: preview.content_sha256, truncated: preview.truncated };
+      }
+    } catch { /* try the next report */ }
+  }
+  return null;
 }
 
 export async function failCloudflareScan(jobId: string, error: string): Promise<void> {
@@ -533,6 +552,33 @@ function compactCloudflareBundle(bundle: Bundle): { bundle: Bundle; previews: St
       ? Object.fromEntries(Object.entries(bundle.extensions).map(([key, detail]) => [key, compactDetail(jsonObject(detail))]))
       : bundle.extensions;
   return { bundle: { ...bundle, extensions }, previews };
+}
+
+function splitReportText(reportJson: string): string[] {
+  if (reportJson.length <= MAX_INLINE_REPORT_CHARS) return [reportJson];
+  const chunks: string[] = [];
+  for (let index = 0; index < reportJson.length;) {
+    let end = Math.min(index + REPORT_CHUNK_CHARS, reportJson.length);
+    if (end < reportJson.length && reportJson.charCodeAt(end - 1) >= 0xd800 && reportJson.charCodeAt(end - 1) <= 0xdbff) end -= 1;
+    chunks.push(reportJson.slice(index, end));
+    index = end;
+  }
+  return chunks;
+}
+
+async function loadCloudflareReportJson(scanId: string, storedReportJson: string): Promise<string | null> {
+  const markerValue = parseJson(storedReportJson);
+  if (!markerValue || typeof markerValue !== "object" || Array.isArray(markerValue)) return storedReportJson;
+  const marker = markerValue as Row;
+  if (!marker.chunked) return storedReportJson;
+  const expectedCount = Number(marker.chunk_count || 0);
+  if (!scanId || !Number.isInteger(expectedCount) || expectedCount < 1) return null;
+  const result = await privateDb().prepare("SELECT chunk_index,content FROM app_scan_report_chunks WHERE scan_id=? ORDER BY chunk_index").bind(scanId).all<Row>();
+  if (result.results.length !== expectedCount) return null;
+  const reportJson = result.results.map((row) => String(row.content || "")).join("");
+  const expectedSha = String(marker.sha256 || "");
+  if (expectedSha && createHash("sha256").update(reportJson).digest("hex") !== expectedSha) return null;
+  return reportJson;
 }
 
 function jsonObject(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }

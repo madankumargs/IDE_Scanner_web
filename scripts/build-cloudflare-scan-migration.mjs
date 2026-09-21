@@ -1,11 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_BUILD = "02a0f71f61cd5b214f2d4785db876035d79b7d9c";
 const DEFAULT_MAX_PART_BYTES = 40_000_000;
+const MAX_STORED_PREVIEWS = 12;
+const MAX_STORED_PREVIEW_CHARS = 32_768;
+const MAX_STORED_FILE_ROWS = 2_000;
+const MAX_INLINE_REPORT_CHARS = 80_000;
+const REPORT_CHUNK_CHARS = 100_000;
 
 function sqlString(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
@@ -61,6 +67,21 @@ WHERE expected_scanner_build = ${sqlString(build)}
 CREATE TABLE app_scan_reports AS
   SELECT r.* FROM src.app_scan_reports r
   JOIN app_scan_jobs j ON j.id = r.job_id;
+CREATE TABLE app_scan_report_chunks (
+  scan_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  PRIMARY KEY (scan_id, chunk_index)
+);
+CREATE TABLE app_scan_report_previews (
+  scan_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  content TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  truncated INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (scan_id, path)
+);
 CREATE TABLE app_scan_job_events AS
   SELECT e.* FROM src.app_scan_job_events e
   JOIN app_scan_jobs j ON j.id = e.job_id;
@@ -103,6 +124,107 @@ function runSqlite(database, sql) {
 function ensureEmptyDatabase(database) {
   if (fs.existsSync(database)) throw new Error(`Refusing to overwrite existing database: ${database}`);
   fs.mkdirSync(path.dirname(database), { recursive: true });
+}
+
+function jsonObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function array(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function splitText(value) {
+  if (value.length <= MAX_INLINE_REPORT_CHARS) return [value];
+  const chunks = [];
+  for (let index = 0; index < value.length;) {
+    let end = Math.min(index + REPORT_CHUNK_CHARS, value.length);
+    if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff) end -= 1;
+    chunks.push(value.slice(index, end));
+    index = end;
+  }
+  return chunks;
+}
+
+function compactBundle(bundle) {
+  const previews = [];
+  const compactDetail = (detail) => {
+    const inventory = jsonObject(detail.artifact_inventory);
+    const rawFiles = array(inventory.files);
+    const allHashes = array(inventory._all_file_hashes);
+    for (const raw of array(inventory.source_previews)) {
+      if (previews.length >= MAX_STORED_PREVIEWS) break;
+      const candidate = jsonObject(raw);
+      const previewPath = String(candidate.path || "");
+      const content = String(candidate.content || "");
+      if (!previewPath || !content || previewPath.includes("\\") || previewPath.split("/").some((part) => !part || part === "." || part === "..")) continue;
+      const clipped = content.slice(0, MAX_STORED_PREVIEW_CHARS);
+      previews.push({
+        path: previewPath,
+        content: clipped,
+        content_sha256: createHash("sha256").update(clipped).digest("hex"),
+        truncated: Boolean(candidate.truncated) || clipped.length < content.length,
+      });
+    }
+    const compactInventory = { ...inventory };
+    delete compactInventory.source_previews;
+    delete compactInventory._all_file_hashes;
+    if (rawFiles.length > MAX_STORED_FILE_ROWS) {
+      compactInventory.files = rawFiles.slice(0, MAX_STORED_FILE_ROWS);
+      compactInventory.files_truncated = true;
+    }
+    compactInventory.file_count = Math.max(rawFiles.length, allHashes.length);
+    return { ...detail, artifact_inventory: compactInventory };
+  };
+  const extensions = Array.isArray(bundle.extensions)
+    ? bundle.extensions.map((detail) => compactDetail(jsonObject(detail)))
+    : bundle.extensions && typeof bundle.extensions === "object"
+      ? Object.fromEntries(Object.entries(bundle.extensions).map(([key, detail]) => [key, compactDetail(jsonObject(detail))]))
+      : bundle.extensions;
+  return { bundle: { ...bundle, extensions }, previews };
+}
+
+function sqliteJsonRows(database, query) {
+  const result = spawnSync("sqlite3", ["-json", database, query], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`sqlite3 query failed: ${result.stderr || result.stdout || `exit ${result.status}`}`);
+  return result.stdout.trim() ? JSON.parse(result.stdout) : [];
+}
+
+function compactReportRows(database) {
+  const idsResult = spawnSync("sqlite3", [database, "SELECT scan_id FROM app_scan_reports ORDER BY scan_id;"], { encoding: "utf8" });
+  if (idsResult.status !== 0) throw new Error(`Could not list scan reports: ${idsResult.stderr || idsResult.stdout}`);
+  const ids = idsResult.stdout.trim() ? idsResult.stdout.trim().split("\n").filter(Boolean) : [];
+  let pending = [];
+  let pendingBytes = 0;
+  const flush = () => {
+    if (!pending.length) return;
+    runSqlite(database, pending.join("\n"));
+    pending = [];
+    pendingBytes = 0;
+  };
+  for (const scanId of ids) {
+    const rows = sqliteJsonRows(database, `SELECT report_json,created_at FROM app_scan_reports WHERE scan_id=${sqlString(scanId)} LIMIT 1;`);
+    if (rows.length !== 1) throw new Error(`Could not read report ${scanId}`);
+    const original = JSON.parse(rows[0].report_json);
+    const compacted = compactBundle(original);
+    const reportJson = JSON.stringify(compacted.bundle);
+    const chunks = splitText(reportJson);
+    const storedReportJson = chunks.length > 1
+      ? JSON.stringify({ chunked: true, chunk_count: chunks.length, sha256: createHash("sha256").update(reportJson).digest("hex") })
+      : reportJson;
+    const statements = [`UPDATE app_scan_reports SET report_json=${sqlString(storedReportJson)} WHERE scan_id=${sqlString(scanId)};`];
+    if (chunks.length > 1) {
+      chunks.forEach((content, chunkIndex) => statements.push(`INSERT INTO app_scan_report_chunks(scan_id,chunk_index,content) VALUES(${sqlString(scanId)},${chunkIndex},${sqlString(content)});`));
+    }
+    compacted.previews.forEach((preview) => statements.push(`INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at) VALUES(${sqlString(scanId)},${sqlString(preview.path)},${sqlString(preview.content)},${sqlString(preview.content_sha256)},${preview.truncated ? 1 : 0},${sqlString(rows[0].created_at)});`));
+    const text = statements.join("\n");
+    const bytes = Buffer.byteLength(text) + 1;
+    if (pending.length && pendingBytes + bytes > 20_000_000) flush();
+    pending.push(text);
+    pendingBytes += bytes;
+  }
+  flush();
+  return { reports: ids.length };
 }
 
 async function dumpIntoParts(database, partsDir, maxPartBytes) {
@@ -153,10 +275,11 @@ async function dumpIntoParts(database, partsDir, maxPartBytes) {
 export async function buildScanMigration({ sourceDb, outputDb, partsDir, scannerBuild = DEFAULT_BUILD, maxPartBytes = DEFAULT_MAX_PART_BYTES }) {
   ensureEmptyDatabase(outputDb);
   runSqlite(outputDb, buildSubsetSql(sourceDb, scannerBuild));
+  const compacted = compactReportRows(outputDb);
   const files = await dumpIntoParts(outputDb, partsDir, maxPartBytes);
   const counts = spawnSync("sqlite3", [outputDb, "SELECT 'jobs',COUNT(*) FROM app_scan_jobs UNION ALL SELECT 'reports',COUNT(*) FROM app_scan_reports UNION ALL SELECT 'queued',COUNT(*) FROM app_scan_jobs WHERE status='queued';"], { encoding: "utf8" });
   if (counts.status !== 0) throw new Error(`Could not validate migration subset: ${counts.stderr || counts.stdout}`);
-  return { sourceDb, outputDb, partsDir, scannerBuild, files, counts: counts.stdout.trim().split("\n") };
+  return { sourceDb, outputDb, partsDir, scannerBuild, compacted, files, counts: counts.stdout.trim().split("\n") };
 }
 
 async function main() {
