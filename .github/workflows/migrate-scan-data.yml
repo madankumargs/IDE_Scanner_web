@@ -39,7 +39,8 @@ jobs:
             --source-db .tmp/registry-export.db \
             --output-db .tmp/scan-subset.db \
             --parts-dir .tmp/scan-import \
-            --scanner-build "$SCANNER_BUILD"
+            --scanner-build "$SCANNER_BUILD" \
+            --max-part-bytes 5000000
       - name: Import scan data into the isolated database
         run: |
           for part in .tmp/scan-import/part-*.sql; do
