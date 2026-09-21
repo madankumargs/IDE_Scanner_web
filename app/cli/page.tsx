@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   title: "GuardRails CLI",
   description:
     "Scan extensions already installed in your IDE without uploading or executing their code.",
+  alternates: { canonical: "/cli" },
 };
 
 const comparison = [

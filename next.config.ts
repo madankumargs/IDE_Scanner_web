@@ -39,6 +39,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: process.env.CLOUDFLARE_BUILD === "1",
   },
+  experimental: {
+    // Next's CLI handoff produces empty --showConfig output with TypeScript 5.9.
+    useTypeScriptCli: false,
+  },
   poweredByHeader: false,
   turbopack: {
     root: process.cwd()
