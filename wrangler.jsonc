@@ -18,6 +18,7 @@
   "vars": {
     "GITHUB_OAUTH_CLIENT_ID": "Ov23liWQ5kElxVniE4tx",
     "GOOGLE_OAUTH_CLIENT_ID": "539877495650-9nrcag73os1umpgdi03lc2j4f9qien4s.apps.googleusercontent.com",
+    "GOOGLE_OAUTH_REDIRECT_URI": "https://abscissa.dev/api/auth/callback/google",
     "AUTH_EMAIL_FROM": "hello@abscissa.dev",
     "NOTIFICATION_FROM_EMAIL": "hello@abscissa.dev"
   },
@@ -36,6 +37,12 @@
       "binding": "ABSCISSA_REGISTRY",
       "database_name": "abscissa-registry",
       "database_id": "00dc29ae-0815-4393-a915-d0cc07b36556",
+      "migrations_dir": "d1/migrations-registry"
+    },
+    {
+      "binding": "ABSCISSA_SCAN_DATA",
+      "database_name": "abscissa-scan-data",
+      "database_id": "42467eb8-8beb-4fd8-8e5e-332458cac5f3",
       "migrations_dir": "d1/migrations"
     }
   ],

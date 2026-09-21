@@ -11,6 +11,7 @@ const scannerBuild = valueAfter("--scanner-build");
 const output = valueAfter("--out");
 const expectedReports = Number(valueAfter("--expected-reports") || 100);
 const accuracyGatePath = valueAfter("--accuracy-gate");
+const scanDatabase = process.env.CLOUDFLARE_SCAN_DATABASE || "abscissa-scan-data";
 if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !accuracyGatePath || !Number.isSafeInteger(expectedReports) || expectedReports < 1 || expectedReports > MAX_PUBLICATION_REPORTS) {
   throw new Error(`--scanner-build, --out, --accuracy-gate, and --expected-reports between 1 and ${MAX_PUBLICATION_REPORTS} are required.`);
 }
@@ -26,7 +27,7 @@ const sql = `
     and j.scan_purpose in ('public_intelligence','benchmark')
   order by r.created_at desc
 `;
-const payload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--command", sql, "--json"], {
+const payload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", sql, "--json"], {
   encoding: "utf8",
   maxBuffer: 128 * 1024 * 1024,
 }));

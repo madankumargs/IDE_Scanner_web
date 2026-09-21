@@ -9,6 +9,7 @@ import { cloudflarePublicationMismatches } from "./cloudflare-publication-revali
 const args = process.argv.slice(2);
 const reportPath = valueAfter("--report");
 const accuracyGatePath = valueAfter("--accuracy-gate");
+const scanDatabase = process.env.CLOUDFLARE_SCAN_DATABASE || "abscissa-scan-data";
 const apply = args.includes("--apply");
 if (!reportPath || !accuracyGatePath) throw new Error("--report and --accuracy-gate are required");
 const report = JSON.parse(await readFile(reportPath, "utf8"));
@@ -73,7 +74,7 @@ if (apply) {
     join app_scan_jobs j on j.id=r.job_id
     where r.scan_id in (${scanIds.map(quote).join(",")})
   `;
-  const raw = execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--command", sql, "--json"], {
+  const raw = execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", sql, "--json"], {
     encoding: "utf8",
     maxBuffer: 128 * 1024 * 1024,
   });
@@ -107,7 +108,7 @@ const temp = await mkdtemp(join("/tmp", "guardrails-d1-publication-"));
 const sqlPath = join(temp, "activate.sql");
 try {
   await writeFile(sqlPath, `${statements.join("\n")}\n`, "utf8");
-  execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--file", sqlPath], { stdio: "inherit" });
+  execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--file", sqlPath], { stdio: "inherit" });
 } finally {
   await rm(temp, { recursive: true, force: true });
 }

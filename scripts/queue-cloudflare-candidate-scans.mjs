@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 const scannerBuild = String(process.env.SCANNER_BUILD || "").trim().toLowerCase();
+const scanDatabase = process.env.CLOUDFLARE_SCAN_DATABASE || "abscissa-scan-data";
 const batchLimit = boundedInteger("SCAN_BATCH_LIMIT", 100, 1, 10_000);
 const cohortLimit = boundedInteger("COHORT_LIMIT", 250, 1, 10_000);
 const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
@@ -112,14 +113,14 @@ const temp = await mkdtemp(join("/tmp", "guardrails-candidate-d1-"));
 const sqlPath = join(temp, "queue.sql");
 try {
   await writeFile(sqlPath, `${statements.join("\n")}\n`, "utf8");
-  execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--file", sqlPath], { stdio: "inherit" });
+  execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--file", sqlPath], { stdio: "inherit" });
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
 console.log(JSON.stringify({ scanner_build: scannerBuild, require_active_release: requireActiveRelease, marketplace_page_count: marketplacePageCount, available: candidates.length, selected: selected.length, candidates: selected }, null, 2));
 
 function queryD1(command) {
-  const raw = execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--command", command, "--json"], {
+  const raw = execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", command, "--json"], {
     encoding: "utf8",
     maxBuffer: 128 * 1024 * 1024,
   });

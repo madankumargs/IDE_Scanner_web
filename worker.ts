@@ -11,6 +11,7 @@ import { isPublicRoutePath, isRscPrefetch } from "./lib/publicRequestPolicy";
 
 type WorkerEnvironment = Record<string, unknown> & {
   ABSCISSA_REGISTRY?: D1Database;
+  ABSCISSA_SCAN_DATA?: D1Database;
 };
 
 type WorkerContext = {
@@ -142,12 +143,13 @@ const worker = {
     controller: { scheduledTime: number; cron?: string },
     env: WorkerEnvironment,
   ): Promise<void> {
-    if (!env.ABSCISSA_REGISTRY) return;
+    const scanData = env.ABSCISSA_SCAN_DATA || env.ABSCISSA_REGISTRY;
+    if (!scanData) return;
     if (controller.cron === "*/5 * * * *") {
       try {
         await dispatchQueuedCloudflareScan(
           env,
-          env.ABSCISSA_REGISTRY as unknown as PrivateDatabase,
+          scanData as unknown as PrivateDatabase,
         );
       } catch (error) {
         console.error(
@@ -157,7 +159,7 @@ const worker = {
       }
       return;
     }
-    await reconcileCloudflareBadgeHealth(env.ABSCISSA_REGISTRY);
+    await reconcileCloudflareBadgeHealth(scanData);
   },
 };
 

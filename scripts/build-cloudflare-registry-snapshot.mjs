@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 
 const VALID_DECISIONS = new Set(["allow", "review", "block"]);
+const scanDatabase = process.env.CLOUDFLARE_SCAN_DATABASE || "abscissa-scan-data";
 
 const output = valueAfter("--out") || "public/registry-snapshot.json";
 const marketplacePageCount = boundedInteger("MARKETPLACE_PAGE_COUNT", 3, 1, 50);
@@ -293,7 +294,7 @@ function marketplaceDownloadUrl(id, version) {
 }
 
 function queryD1(command) {
-  const raw = execFileSync("npx", ["wrangler", "d1", "execute", "abscissa-registry", "--remote", "--command", command, "--json"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+  const raw = execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", command, "--json"], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   const payload = JSON.parse(raw);
   return Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
 }

@@ -48,7 +48,7 @@ export type AppAuthUser = AppUser & {
 export function privateDb(): PrivateDatabase {
   try {
     const env = getCloudflareContext().env as unknown as Record<string, unknown>;
-    const db = env.ABSCISSA_REGISTRY as PrivateDatabase | undefined;
+    const db = (env.ABSCISSA_SCAN_DATA || env.ABSCISSA_REGISTRY) as PrivateDatabase | undefined;
     if (db) return db;
   } catch {
     // Local tests and the Node dev server do not have a Cloudflare context.

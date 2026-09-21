@@ -163,6 +163,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           EXPECTED_REPORTS: ${{ inputs.expected_reports }}
         run: |
@@ -200,6 +201,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
@@ -247,6 +249,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
         run: |
           node scripts/activate-cloudflare-scan-publication.mjs \
             --report publication/cloudflare-publication-validation.json \
@@ -277,6 +280,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
           MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count }}
         run: |
           mkdir -p .tmp
@@ -337,6 +341,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
           SCANNER_BUILD: ${{ inputs.scanner_build }}
           SCAN_BATCH_LIMIT: ${{ inputs.scan_batch_limit }}
           COHORT_LIMIT: ${{ inputs.cohort_limit }}
