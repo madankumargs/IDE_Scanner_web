@@ -185,47 +185,70 @@ function compactBundle(bundle) {
   return { bundle: { ...bundle, extensions }, previews };
 }
 
-function sqliteJsonRows(database, query) {
-  const result = spawnSync("sqlite3", ["-json", database, query], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(`sqlite3 query failed: ${result.stderr || result.stdout || `exit ${result.status}`}`);
-  return result.stdout.trim() ? JSON.parse(result.stdout) : [];
-}
-
-function compactReportRows(database) {
-  const idsResult = spawnSync("sqlite3", [database, "SELECT scan_id FROM app_scan_reports ORDER BY scan_id;"], { encoding: "utf8" });
-  if (idsResult.status !== 0) throw new Error(`Could not list scan reports: ${idsResult.stderr || idsResult.stdout}`);
-  const ids = idsResult.stdout.trim() ? idsResult.stdout.trim().split("\n").filter(Boolean) : [];
+async function compactReportRows(database) {
+  const separator = "\u001f";
+  const updatesDatabase = `${database}.report-updates.sqlite`;
+  if (fs.existsSync(updatesDatabase)) throw new Error(`Refusing to overwrite existing report update database: ${updatesDatabase}`);
+  runSqlite(updatesDatabase, `
+CREATE TABLE app_scan_reports_compact (scan_id TEXT PRIMARY KEY, report_json TEXT NOT NULL);
+CREATE TABLE app_scan_report_chunks (scan_id TEXT NOT NULL, chunk_index INTEGER NOT NULL, content TEXT NOT NULL, PRIMARY KEY(scan_id, chunk_index));
+CREATE TABLE app_scan_report_previews (scan_id TEXT NOT NULL, path TEXT NOT NULL, content TEXT NOT NULL, content_sha256 TEXT NOT NULL, truncated INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(scan_id, path));
+`);
+  const child = spawn("sqlite3", ["-separator", separator, database, "SELECT scan_id,report_json,created_at FROM app_scan_reports ORDER BY scan_id;"], { stdio: ["ignore", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const input = readline.createInterface({ input: child.stdout });
   let pending = [];
   let pendingBytes = 0;
+  let reportCount = 0;
   const flush = () => {
     if (!pending.length) return;
-    runSqlite(database, pending.join("\n"));
+    runSqlite(updatesDatabase, pending.join("\n"));
     pending = [];
     pendingBytes = 0;
   };
-  for (const scanId of ids) {
-    const rows = sqliteJsonRows(database, `SELECT report_json,created_at FROM app_scan_reports WHERE scan_id=${sqlString(scanId)} LIMIT 1;`);
-    if (rows.length !== 1) throw new Error(`Could not read report ${scanId}`);
-    const original = JSON.parse(rows[0].report_json);
+  for await (const line of input) {
+    const firstSeparator = line.indexOf(separator);
+    const lastSeparator = line.lastIndexOf(separator);
+    if (firstSeparator <= 0 || lastSeparator <= firstSeparator) throw new Error("Could not parse the streamed scan report row.");
+    const scanId = line.slice(0, firstSeparator);
+    const original = JSON.parse(line.slice(firstSeparator + 1, lastSeparator));
+    const createdAt = line.slice(lastSeparator + 1);
     const compacted = compactBundle(original);
     const reportJson = JSON.stringify(compacted.bundle);
     const chunks = splitText(reportJson);
     const storedReportJson = chunks.length > 1
       ? JSON.stringify({ chunked: true, chunk_count: chunks.length, sha256: createHash("sha256").update(reportJson).digest("hex") })
       : reportJson;
-    const statements = [`UPDATE app_scan_reports SET report_json=${sqlString(storedReportJson)} WHERE scan_id=${sqlString(scanId)};`];
+    const statements = [`INSERT OR REPLACE INTO app_scan_reports_compact(scan_id,report_json) VALUES(${sqlString(scanId)},${sqlString(storedReportJson)});`];
     if (chunks.length > 1) {
       chunks.forEach((content, chunkIndex) => statements.push(`INSERT INTO app_scan_report_chunks(scan_id,chunk_index,content) VALUES(${sqlString(scanId)},${chunkIndex},${sqlString(content)});`));
     }
-    compacted.previews.forEach((preview) => statements.push(`INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at) VALUES(${sqlString(scanId)},${sqlString(preview.path)},${sqlString(preview.content)},${sqlString(preview.content_sha256)},${preview.truncated ? 1 : 0},${sqlString(rows[0].created_at)});`));
+    compacted.previews.forEach((preview) => statements.push(`INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at) VALUES(${sqlString(scanId)},${sqlString(preview.path)},${sqlString(preview.content)},${sqlString(preview.content_sha256)},${preview.truncated ? 1 : 0},${sqlString(createdAt)});`));
     const text = statements.join("\n");
     const bytes = Buffer.byteLength(text) + 1;
     if (pending.length && pendingBytes + bytes > 20_000_000) flush();
     pending.push(text);
     pendingBytes += bytes;
+    reportCount += 1;
   }
+  const exitCode = await new Promise((resolve) => child.once("close", resolve));
+  if (exitCode !== 0) throw new Error(`sqlite3 report stream failed: ${stderr || `exit ${exitCode}`}`);
   flush();
-  return { reports: ids.length };
+  runSqlite(database, `
+ATTACH DATABASE ${sqlString(path.resolve(updatesDatabase))} AS compact;
+UPDATE app_scan_reports
+SET report_json=(SELECT report_json FROM compact.app_scan_reports_compact WHERE scan_id=app_scan_reports.scan_id)
+WHERE scan_id IN (SELECT scan_id FROM compact.app_scan_reports_compact);
+INSERT INTO app_scan_report_chunks(scan_id,chunk_index,content)
+  SELECT scan_id,chunk_index,content FROM compact.app_scan_report_chunks;
+INSERT OR REPLACE INTO app_scan_report_previews(scan_id,path,content,content_sha256,truncated,created_at)
+  SELECT scan_id,path,content,content_sha256,truncated,created_at FROM compact.app_scan_report_previews;
+DETACH DATABASE compact;
+`);
+  fs.unlinkSync(updatesDatabase);
+  return { reports: reportCount };
 }
 
 async function dumpIntoParts(database, partsDir, maxPartBytes) {
@@ -276,7 +299,7 @@ async function dumpIntoParts(database, partsDir, maxPartBytes) {
 export async function buildScanMigration({ sourceDb, outputDb, partsDir, scannerBuild = DEFAULT_BUILD, maxPartBytes = DEFAULT_MAX_PART_BYTES }) {
   ensureEmptyDatabase(outputDb);
   runSqlite(outputDb, buildSubsetSql(sourceDb, scannerBuild));
-  const compacted = compactReportRows(outputDb);
+  const compacted = await compactReportRows(outputDb);
   const files = await dumpIntoParts(outputDb, partsDir, maxPartBytes);
   const counts = spawnSync("sqlite3", [outputDb, "SELECT 'jobs',COUNT(*) FROM app_scan_jobs UNION ALL SELECT 'reports',COUNT(*) FROM app_scan_reports UNION ALL SELECT 'queued',COUNT(*) FROM app_scan_jobs WHERE status='queued';"], { encoding: "utf8" });
   if (counts.status !== 0) throw new Error(`Could not validate migration subset: ${counts.stderr || counts.stdout}`);
