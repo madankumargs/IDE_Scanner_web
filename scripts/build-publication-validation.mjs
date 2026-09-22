@@ -10,8 +10,9 @@ const args = process.argv.slice(2);
 const scannerBuild = valueAfter("--scanner-build");
 const output = valueAfter("--out");
 const accuracyGatePath = valueAfter("--accuracy-gate");
-if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !accuracyGatePath) {
-  throw new Error("--scanner-build must be a full commit SHA, --out, and --accuracy-gate are required.");
+const expectedReports = integerAfter("--expected-reports");
+if (!/^[0-9a-f]{40}$/.test(scannerBuild) || !output || !accuracyGatePath || !Number.isSafeInteger(expectedReports) || expectedReports < 1 || expectedReports > 10_000) {
+  throw new Error("--scanner-build must be a full commit SHA, --expected-reports between 1 and 10000, --out, and --accuracy-gate are required.");
 }
 const accuracyGateBytes = await readFile(accuracyGatePath);
 const accuracyGate = JSON.parse(accuracyGateBytes.toString("utf8"));
@@ -81,6 +82,9 @@ for (const row of rows) {
 if (failures.length) throw new Error(`Publication manifest cannot be built:\n- ${failures.join("\n- ")}`);
 const selectedRows = [...selected.values()];
 if (!selectedRows.length) throw new Error("Publication manifest contains no complete reports.");
+if (selectedRows.length !== expectedReports) {
+  throw new Error(`Publication manifest contains ${selectedRows.length} complete reports; ${expectedReports} required.`);
+}
 const identities = new Set(selectedRows.map((row) => `${row.policy_version}\u0000${row.ruleset_version}\u0000${row.score_schema_version}`));
 if (identities.size !== 1) throw new Error("Replacement cohort does not use one policy, ruleset, and score schema.");
 const identity = selectedRows[0];
@@ -126,6 +130,11 @@ console.log(JSON.stringify({ output, reports: validation.extensions.length, poli
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : "";
+}
+
+function integerAfter(flag) {
+  const value = Number(valueAfter(flag));
+  return Number.isSafeInteger(value) ? value : NaN;
 }
 
 function object(value) {

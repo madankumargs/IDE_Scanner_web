@@ -33,6 +33,7 @@ export type FindingSummary = {
   category: string;
   severity: string;
   effective_severity?: string;
+  evidence_type?: string;
   confidence: number;
   evidence_summary: string;
   file_refs: string[];
@@ -98,6 +99,7 @@ export type ScannerFinding = FindingSummary & {
   evidence_refs?: string[];
   score?: number;
   evidence_type?: string;
+  evidence?: Record<string, unknown>;
   evidence_class?: string;
   actionability?: "contextual" | "low" | "review" | "investigate" | "block";
 };
@@ -205,6 +207,7 @@ export type ScannerBundleSummary = {
     max_context_score?: number;
     posture_status: string;
     decision_counts?: Record<Decision, number>;
+    analysis_status_counts?: Record<string, number>;
     incomplete?: number;
   };
   top_risk_extensions: BundleExtensionSummary[];

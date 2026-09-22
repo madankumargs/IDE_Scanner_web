@@ -18,6 +18,10 @@ describe("publication promotion workflow boundary", () => {
   it("keeps activation explicit and invokes the immutable activation script only after validation", () => {
     expect(workflow).toContain("if: ${{ inputs.activate == true }}");
     expect(workflow).toContain("needs: validate");
+    expect(workflow).toContain("Build Supabase publication validation");
+    expect(workflow).toContain("build-publication-validation.mjs");
+    expect(workflow).toContain("--expected-reports");
+    expect(workflow).toContain("activate-scan-publication.mjs");
     expect(workflow).toContain("activate-cloudflare-scan-publication.mjs");
     expect(workflow).toContain("--apply");
   });
@@ -40,6 +44,8 @@ describe("publication promotion workflow boundary", () => {
   it("offers a separate candidate queue before activation", () => {
     expect(workflow).toContain("queue_candidate_scan:");
     expect(workflow).toContain("queue-candidate-scan:");
+    expect(workflow).toContain("Reject candidate queue and activation in one run");
+    expect(workflow).toContain("queue_candidate_scan and activate are separate promotion phases");
     expect(workflow).toContain("Queue staged candidate scans in Cloudflare D1");
     expect(workflow).toContain("SCANNER_BUILD: ${{ inputs.scanner_build }}");
   });

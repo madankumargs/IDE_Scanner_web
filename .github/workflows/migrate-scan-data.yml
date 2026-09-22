@@ -40,7 +40,8 @@ jobs:
             --output-db .tmp/scan-subset.db \
             --parts-dir .tmp/scan-import \
             --scanner-build "$SCANNER_BUILD" \
-            --max-part-bytes 5000000
+            --max-part-bytes 5000000 \
+            --max-part-statements 500
       - name: Import scan data into the isolated database
         run: |
           for part in .tmp/scan-import/part-*.sql; do

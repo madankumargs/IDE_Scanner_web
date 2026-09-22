@@ -57,13 +57,16 @@ not be later than the declared freeze time. Do not hand-edit the generated
 corpus or gate; regenerate them from the reviewed source manifest.
 
 The website repository must have `SCANNER_REPO_READ_TOKEN` with read access to
-the scanner repository's Actions artifacts, plus the existing
-`CLOUDFLARE_API_TOKEN` and account configuration for validation/activation.
-When Cloudflare activation runs with `--apply`, it re-reads every manifest scan
-from D1 and rechecks the job identity, exact artifact hash, canonical report,
-decision, policy/ruleset, and runtime contract immediately before flipping the
-release active. A previously generated validation artifact is not sufficient
-by itself.
+the scanner repository's Actions artifacts, plus `SUPABASE_PASSWORD`,
+`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and the existing
+`CLOUDFLARE_API_TOKEN` and account configuration. The promotion workflow builds
+and activates both the Supabase publication consumed by the website export and
+the Cloudflare/D1 publication consumed by the runtime registry. Both manifests
+must contain exactly the requested cohort size. Each activation re-reads the
+manifest scans and rechecks the exact artifact identity, canonical report,
+decision, policy/ruleset, and runtime contract immediately before flipping its
+release active. A previously generated validation artifact is not sufficient by
+itself.
 
 The public registry mirror uses generation-addressed D1 chunks. The import
 script stages all sections and products under a new publication ID, then flips
