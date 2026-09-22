@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { Client } from "pg";
 import { assertAccuracyGate } from "./accuracy-gate.mjs";
 import { validatePublicationManifest } from "./publication-manifest.mjs";
 import { publicCanonicalMismatch, singleExtensionDetail } from "./publication-canonical.mjs";
@@ -39,12 +39,14 @@ const sql = `
   order by s.extension_id,s.version,s.scanned_at desc;
 `;
 
-const raw = execFileSync("npx", ["supabase@latest", "db", "query", "--linked", "--output-format", "json", sql], {
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
-const envelope = JSON.parse(raw.slice(raw.indexOf("{")));
-const rows = Array.isArray(envelope.rows) ? envelope.rows : [];
+const client = new Client({ connectionString: databaseConnectionString() });
+await client.connect();
+let rows;
+try {
+  rows = (await client.query(sql, [scannerBuild])).rows;
+} finally {
+  await client.end();
+}
 const selected = new Map();
 const failures = [];
 for (const row of rows) {
@@ -140,3 +142,11 @@ function integerAfter(flag) {
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
+
+function databaseConnectionString() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const password = String(process.env.SUPABASE_PASSWORD || "").trim();
+  if (!password) throw new Error("DATABASE_URL or SUPABASE_PASSWORD is required for Supabase publication validation.");
+  return `postgresql://postgres.kmdujtabqaxgoeltbxpq:${encodeURIComponent(password)}@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres?uselibpqcompat=true&sslmode=require`;
+}
+
