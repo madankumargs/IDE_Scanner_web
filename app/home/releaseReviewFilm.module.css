@@ -67,5 +67,5 @@
 .caption div { display: flex; gap: 5px; }
 .caption i { width: 17px; height: 3px; border-radius: 99px; background: var(--ledger-line, #dfe6ee); }
 .caption i.on { background: var(--ledger-signal, #2f7f76); }
-@media (max-width: 700px) { .side { display: none; } .drawer { display: none; } .workspace { padding: 22px 18px; } .film { border-radius: 18px; } .body { min-height: 365px; } .chrome > span { display: none; } .caption { font-size: 8px; } }
+@media (max-width: 700px) { .side { display: none; } .drawer { display: none; } .workspace { padding: 22px 18px; } .film { border-radius: 18px; } .body { min-height: 365px; } .chrome > span { display: none; } .caption { font-size: 8px; } .topline h3 small { display: block; margin: 5px 0 0; } }
 @media (prefers-reduced-motion: reduce) { .drawer { transition: none; } }

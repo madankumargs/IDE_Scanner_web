@@ -48,7 +48,7 @@ describe("GuardRails landing surface", () => {
     expect(landing()).toContain("DecisionMemoryFilm");
     const memory = read("./DecisionMemoryFilm.tsx");
     expect(memory).toContain("Approved with context");
-    expect(memory).toContain("Decision attached to this exact release");
+    expect(memory).toContain("Decision saved for this release");
     expect(memory).toContain("brings forward the last decision");
   });
 
@@ -66,15 +66,15 @@ describe("GuardRails landing surface", () => {
   it("explains the Sarvam relationship without overstating the product claim", () => {
     expect(landing()).toContain("SarvamProgramNote");
     const note = read("../SarvamProgramNote.tsx");
-    expect(note).toContain("accepted into Sarvam AI&apos;s Startup Program");
-    expect(note).toContain("exact artifacts, published evidence, and version-specific analysis");
-    expect(note).toContain('https://indus.sarvam.ai');
-    expect(note).toContain('https://docs.sarvam.ai');
+    expect(note).toContain("AI-assisted reviewer guide");
+    expect(note).toContain("Plain-language scan summaries");
+    expect(note).toContain("what should I do next?");
   });
 
-  it("leads visitors to public working surfaces rather than making workspace the primary CTA", () => {
+  it("leads new visitors to public working surfaces while exposing the team path", () => {
     expect(landing()).toContain('href="/registry"');
-    expect(landing()).not.toContain('href="/workspace"');
+    expect(landing()).toContain('href="/workspace"');
+    expect(landing()).toContain("Open the team workspace");
   });
 
   it("shows the release change interaction on the landing page", () => {

@@ -78,10 +78,7 @@ export default function AboutPage() {
           <h2>Supported through Sarvam AI&apos;s Startup Program</h2>
           <p>
             GuardRails has been accepted into the Sarvam AI Startup Program.
-            We&apos;re exploring Sarvam APIs as a bounded interpretation layer for three review jobs: decide whether to install, investigate a flagged release, or
-            prepare a publisher response. The guide cites exact report evidence
-            while the underlying evidence remains version-specific and inspectable;
-            the deterministic decision remains authoritative.
+            We&apos;re working with Sarvam AI through its Startup Program to make scan results easier to read. The guide helps with three common questions: Should I install this? What should I do about a flagged release? How should I answer a publisher? The scan remains the source of truth, and the guide says when it does not have enough information.
           </p>
           <p>
             <a href="https://indus.sarvam.ai" target="_blank" rel="noreferrer">

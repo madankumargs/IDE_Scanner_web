@@ -44,8 +44,9 @@ describe("company site surface", () => {
   it("describes the Sarvam Startup Program relationship accurately", () => {
     const about = read("./about/page.tsx");
     expect(about).toContain("Supported through Sarvam AI&apos;s Startup Program");
-    expect(about).toContain("exploring Sarvam APIs");
-    expect(about).toContain("version-specific and inspectable");
+    expect(about).toContain("make scan results easier to read");
+    expect(about).toContain("three common questions");
+    expect(about).toContain("The scan remains the source of truth");
   });
 
   it("describes integrations that exist in the product", () => {

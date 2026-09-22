@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import styles from "./demos.module.css";
 
 // The layout template already appends "· GuardRails"; never repeat it here.
 export const metadata: Metadata = {
@@ -9,9 +10,9 @@ export const metadata: Metadata = {
 
 const demos = [
   {
-    title: "Review a release",
-    description: "Search an extension and inspect the evidence behind a release decision.",
-    src: "/demos/guardrails-release-review-demo.mp4",
+    title: "Built-up context. Straight answers.",
+    description: "Watch a release move from monitoring to review, with its evidence and decision kept together.",
+    src: "/demos/guardrails-product-overview.mp4",
   },
   {
     title: "Audit local extensions",
@@ -27,22 +28,22 @@ const demos = [
 
 export default function DemosPage() {
   return (
-    <main style={{ maxWidth: 1180, margin: "0 auto", padding: "8rem 1.5rem 5rem" }}>
-      <header style={{ maxWidth: 720, marginBottom: "3rem" }}>
-        <p style={{ color: "#80e7bd", fontWeight: 700, letterSpacing: ".1em", fontSize: ".75rem" }}>PRODUCT DEMOS</p>
-        <h1 style={{ fontSize: "clamp(2.5rem, 6vw, 5rem)", lineHeight: 1, margin: "1rem 0" }}>See GuardRails work.</h1>
-        <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "#a9b6c7" }}>Short, silent walkthroughs recorded from the real product.</p>
+    <main className={styles.page}>
+      <header className={styles.hero}>
+        <p>PRODUCT WALKTHROUGHS</p>
+        <h1>See GuardRails work.</h1>
+        <span>Short walkthroughs from the real product: access, evidence, and decisions.</span>
       </header>
-      <section style={{ display: "grid", gap: "2rem" }}>
+      <section className={styles.grid}>
         {demos.map((demo) => (
-          <article key={demo.src} style={{ border: "1px solid rgba(255,255,255,.14)", borderRadius: 20, overflow: "hidden", background: "rgba(10,18,29,.72)" }}>
-            <video autoPlay muted loop playsInline controls preload="metadata" style={{ display: "block", width: "100%", background: "#07111d" }}>
+          <article className={styles.card} key={demo.src}>
+            <video autoPlay muted loop playsInline controls preload="metadata">
               <source src={demo.src} type="video/mp4" />
               Your browser does not support video playback.
             </video>
-            <div style={{ padding: "1.25rem 1.5rem 1.5rem" }}>
-              <h2 style={{ fontSize: "1.35rem", margin: 0 }}>{demo.title}</h2>
-              <p style={{ margin: ".45rem 0 0", color: "#a9b6c7" }}>{demo.description}</p>
+            <div className={styles.cardCopy}>
+              <h2>{demo.title}</h2>
+              <p>{demo.description}</p>
             </div>
           </article>
         ))}

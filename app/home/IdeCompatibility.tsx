@@ -14,7 +14,6 @@ export default function IdeCompatibility() {
   return (
     <section className={styles.section} aria-labelledby="ide-support-heading">
       <div className={styles.heading}>
-        <p className={styles.eyebrow}>Local CLI support</p>
         <h2 id="ide-support-heading">Scan from the editor you already use.</h2>
         <Link href="/cli">See the local workflow <ArrowUpRight /></Link>
       </div>

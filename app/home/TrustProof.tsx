@@ -13,7 +13,7 @@ export default async function TrustProof() {
   const stats = [
     {
       value: dataAvailable ? formatCount(metrics.exact_releases_indexed) : "—",
-      label: "Exact releases indexed",
+      label: "Releases indexed",
       icon: Database,
     },
     {
@@ -23,7 +23,7 @@ export default async function TrustProof() {
     },
     {
       value: dataAvailable ? formatCount(metrics.known_bad_artifacts) : "—",
-      label: "Known-bad artifacts confirmed",
+      label: "Unsafe extensions confirmed",
       icon: Bug,
     },
     {

@@ -1,0 +1,77 @@
+.page {
+  min-height: 100vh;
+  padding: 118px max(20px, calc((100vw - 1180px) / 2)) 88px;
+  background: var(--ledger-paper, #f7f9fc);
+  color: var(--ledger-ink, #182433);
+}
+
+.hero {
+  max-width: 720px;
+  margin-bottom: 48px;
+}
+
+.hero p {
+  margin: 0;
+  color: var(--ledger-signal, #2f7f76);
+  font: 800 11px var(--font-mono);
+  letter-spacing: .1em;
+}
+
+.hero h1 {
+  margin: 16px 0 12px;
+  font-size: clamp(48px, 7vw, 86px);
+  line-height: .9;
+  letter-spacing: -.075em;
+}
+
+.hero span {
+  color: var(--ledger-muted, #5b6878);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.grid {
+  display: grid;
+  gap: 28px;
+}
+
+.card {
+  overflow: hidden;
+  border: 1px solid var(--ledger-line, #dfe6ee);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgb(24 36 51 / 9%);
+}
+
+.card video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #eef5f3;
+  object-fit: cover;
+}
+
+.cardCopy {
+  padding: 22px 24px 25px;
+}
+
+.cardCopy h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -.04em;
+}
+
+.cardCopy p {
+  max-width: 680px;
+  margin: 7px 0 0;
+  color: var(--ledger-muted, #5b6878);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@media (max-width: 560px) {
+  .page { padding-top: 92px; }
+  .hero h1 { font-size: 54px; }
+  .hero span { font-size: 15px; }
+  .cardCopy { padding-inline: 18px; }
+}

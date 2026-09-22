@@ -11,15 +11,7 @@
 
 .heading {
   display: grid;
-  gap: 10px;
-}
-
-.eyebrow {
-  margin: 0;
-  color: var(--ledger-signal, #2f7f76);
-  font: 800 10px var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 12px;
 }
 
 .heading h2 {

@@ -23,7 +23,7 @@ export default function DecisionMemoryFilm() {
         <main>
           <div className={styles.title}><div><p>{nextRelease ? "NEXT REVIEW" : "TRUSTED BASELINE"}</p><h3>{nextRelease ? "Compare 3.0.0" : "Decision for 2.9.0"}</h3></div><span>{nextRelease ? "1 change" : "Saved"}</span></div>
           <div className={styles.rule} />
-          <article className={styles.decision}><header><span><Check /></span><div><b>Approved with context</b><small>Decision attached to this exact release</small></div></header><p>Terminal access is expected for this workspace. The reviewer confirmed the capability is required for the team’s workflow.</p><footer><span>Evidence retained</span><span>Workspace scope</span></footer></article>
+          <article className={styles.decision}><header><span><Check /></span><div><b>Approved with context</b><small>Decision saved for this release</small></div></header><p>Terminal access is expected for this workspace. The reviewer confirmed the capability is required for the team’s workflow.</p><footer><span>Review saved</span><span>Workspace scope</span></footer></article>
           <article className={styles.compare}><GitCompareArrows /><AnimatePresence mode="wait" initial={false}><motion.div key={nextRelease ? "next-release" : "trusted-baseline"} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={contentTransition}><b>{nextRelease ? "3.0.0 is ready to compare" : "This is the baseline for the next release"}</b><p>{nextRelease ? "GuardRails brings forward the last decision, then shows only what changed." : "A future update begins here, with context intact."}</p></motion.div></AnimatePresence><ChevronRight /></article>
         </main>
       </div>

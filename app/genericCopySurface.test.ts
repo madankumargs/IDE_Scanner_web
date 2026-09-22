@@ -67,10 +67,16 @@ describe("site copy audit", () => {
   it("anchors the Sarvam surface to the reviewer-guide contract", () => {
     const sarvam = read("./SarvamProgramNote.tsx");
     const about = read("./about/page.tsx");
+    expect(sarvam).toContain("what should I do next?");
+    expect(sarvam).toContain("The scan is the source of truth");
+    expect(about).toContain("three common questions");
+    expect(about).toContain("The scan remains the source of truth");
     for (const source of [sarvam, about]) {
-      expect(source).toContain("three review jobs");
-      expect(source).toContain("deterministic decision remains authoritative");
-      expect(source).toContain("exact report evidence");
+      expect(source).not.toContain("bounded interpretation layer");
+      expect(source).not.toContain("exact artifacts");
+      expect(source).not.toContain("version-specific analysis");
+      expect(source).not.toContain("deterministic decision remains authoritative");
+      expect(source).not.toContain("exact report evidence");
     }
   });
 
