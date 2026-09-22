@@ -352,7 +352,13 @@ export default function DeepScanButton({
 
   const unavailable = health === "configuration_unavailable";
   return (
-    <div className="deepScanAction">
+    <div
+      className={
+        showReportLink
+          ? "deepScanAction deepScanActionWithReport"
+          : "deepScanAction"
+      }
+    >
       <button
         className="button buttonDark"
         onClick={queue}

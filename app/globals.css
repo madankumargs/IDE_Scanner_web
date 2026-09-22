@@ -398,6 +398,7 @@ body.guardrails-workspace-mode .pageContent { padding: 0; max-width: none; }
 .deepScanAction { position: relative; display: grid; justify-items: end; gap: 7px; }
 .deepScanReportLink { display: inline-flex; align-items: center; min-height: 32px; border-bottom: 1px solid currentColor; color: var(--acid-dark); font-size: 12px; font-weight: 750; }
 .actionNotice, .actionError { position: absolute; top: 48px; right: 0; z-index: 10; width: 320px; border: 1px solid var(--line); border-radius: 5px; background: white; padding: 10px 12px; box-shadow: 0 10px 30px #1824331a; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.deepScanActionWithReport .actionNotice, .deepScanActionWithReport .actionError { position: static; width: min(320px, 100%); max-width: 100%; box-sizing: border-box; margin-top: 2px; box-shadow: none; }
 .actionError { border-color: #e4aeb2; color: var(--red); }
 .packageFacts { display: grid; grid-template-columns: 1.05fr repeat(5, 1fr); border-block: 1px solid var(--ink); }
 .packageFacts > div { min-height: 88px; border-right: 1px solid var(--line); padding: 15px 17px; }
