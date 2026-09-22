@@ -106,7 +106,7 @@ const statements = selected.map((item) => {
     now,
     now,
   ].map(sql);
-  return `INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requester_hash,scan_purpose,expected_scanner_build,created_at,updated_at,last_event_at) SELECT ${values.join(",")} WHERE NOT EXISTS (SELECT 1 FROM app_scan_jobs WHERE extension_id=${sql(item.extensionId)} AND version=${sql(item.version)} AND scan_purpose='public_intelligence' AND expected_scanner_build=${sql(scannerBuild)} AND status IN ('queued','running','complete'));`;
+  return `INSERT INTO app_scan_jobs(id,extension_id,version,profile,status,lifecycle_stage,requester_hash,scan_purpose,expected_scanner_build,created_at,updated_at,last_event_at) SELECT ${values.join(",")} WHERE NOT EXISTS (SELECT 1 FROM app_scan_jobs existing WHERE existing.extension_id=${sql(item.extensionId)} AND existing.version=${sql(item.version)} AND existing.scan_purpose='public_intelligence' AND existing.expected_scanner_build=${sql(scannerBuild)} AND (existing.status IN ('queued','running') OR (existing.status='complete' AND EXISTS (SELECT 1 FROM app_scan_reports report WHERE report.job_id=existing.id))));`;
 });
 
 const temp = await mkdtemp(join("/tmp", "guardrails-candidate-d1-"));
