@@ -33,7 +33,7 @@ const sql = `
   from active a
   join scans s on s.extension_id = a.extension_id and s.version = a.version
   where s.scan_purpose = 'public_intelligence'
-    and s.scanner_build = '${scannerBuild}'
+    and s.scanner_build = $1
     and s.analysis_status = 'complete'
     and s.superseded_at is null
   order by s.extension_id,s.version,s.scanned_at desc;
