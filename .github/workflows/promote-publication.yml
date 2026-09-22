@@ -183,29 +183,15 @@ jobs:
             --accuracy-gate scanner-accuracy-gate/publication-accuracy-gate.json \
             --out cloudflare-publication-validation.json
           echo "path=cloudflare-publication-validation.json" >> "$GITHUB_OUTPUT"
-      - name: Build Supabase publication validation
-        if: ${{ inputs.queue_candidate_scan != true }}
-        env:
-          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
-          SCANNER_BUILD: ${{ inputs.scanner_build }}
-          EXPECTED_REPORTS: ${{ inputs.expected_reports }}
-        run: |
-          if [ -z "$SUPABASE_PASSWORD" ]; then
-            echo "SUPABASE_PASSWORD is required for Supabase publication validation."
-            exit 1
-          fi
-          node scripts/build-publication-validation.mjs \
-            --scanner-build "$SCANNER_BUILD" \
-            --expected-reports "$EXPECTED_REPORTS" \
-            --accuracy-gate scanner-accuracy-gate/publication-accuracy-gate.json \
-            --out supabase-publication-validation.json
+      # Public runtime reports and the registry are Cloudflare D1-native. The
+      # Supabase tables remain a legacy compatibility mirror and are not used
+      # as a release prerequisite for reports produced by the D1 worker.
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.queue_candidate_scan != true }}
         with:
           name: cloudflare-publication-validation
           path: |
             cloudflare-publication-validation.json
-            supabase-publication-validation.json
             scanner-accuracy-gate/publication-accuracy-gate.json
           retention-days: 30
 
@@ -253,15 +239,9 @@ jobs:
       - name: Require production credentials
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "CLOUDFLARE_API_TOKEN is required for activation."
-            exit 1
-          fi
-          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SECRET_KEY" ]; then
-            echo "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY are required for Supabase activation."
             exit 1
           fi
       - uses: actions/checkout@v4
@@ -280,13 +260,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
           CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          node scripts/activate-scan-publication.mjs \
-            --report publication/supabase-publication-validation.json \
-            --accuracy-gate publication/scanner-accuracy-gate/publication-accuracy-gate.json \
-            --apply
           node scripts/activate-cloudflare-scan-publication.mjs \
             --report publication/cloudflare-publication-validation.json \
             --accuracy-gate publication/scanner-accuracy-gate/publication-accuracy-gate.json \
@@ -405,3 +379,4 @@ jobs:
               -f jobs_per_worker=16 \
               -f scanner_build="$SCANNER_BUILD"
           done
+

@@ -15,15 +15,14 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain('gate.get("holdout", {}).get("status") != "fresh-labeled"');
   });
 
-  it("keeps activation explicit and invokes the immutable activation script only after validation", () => {
+  it("keeps Cloudflare activation explicit and invokes the immutable activation script only after validation", () => {
     expect(workflow).toContain("if: ${{ inputs.activate == true }}");
     expect(workflow).toContain("needs: validate");
-    expect(workflow).toContain("Build Supabase publication validation");
-    expect(workflow).toContain("build-publication-validation.mjs");
     expect(workflow).toContain("--expected-reports");
-    expect(workflow).toContain("activate-scan-publication.mjs");
     expect(workflow).toContain("activate-cloudflare-scan-publication.mjs");
     expect(workflow).toContain("--apply");
+    expect(workflow).not.toContain("SUPABASE_SECRET_KEY");
+    expect(workflow).not.toContain("supabase-publication-validation.json");
   });
 
   it("keeps bulk queueing opt-in and downstream of activation", () => {
@@ -55,3 +54,4 @@ describe("publication promotion workflow boundary", () => {
     expect(workflow).toContain("CLOUDFLARE_API_TOKEN is required");
   });
 });
+
