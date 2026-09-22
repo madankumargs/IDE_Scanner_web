@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { assertAccuracyGate } from "./accuracy-gate.mjs";
 import { validatePublicationManifest } from "./publication-manifest.mjs";
 import { cloudflarePublicationMismatches } from "./cloudflare-publication-revalidation.mjs";
+import { chunkedCloudflareScanIds, mergeChunkedCloudflareReports } from "./cloudflare-report-storage.mjs";
 
 const args = process.argv.slice(2);
 const reportPath = valueAfter("--report");
@@ -84,7 +85,22 @@ if (apply) {
   } catch (error) {
     throw new Error(`Cloudflare activation could not parse the remote D1 revalidation response: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const rows = Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
+  const inlineRows = Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
+  const chunkRows = [];
+  for (const scanIds of batches(chunkedCloudflareScanIds(inlineRows), 100)) {
+    const chunkSql = `
+      select scan_id,chunk_index,content
+      from app_scan_report_chunks
+      where scan_id in (${scanIds.map(quote).join(",")})
+      order by scan_id,chunk_index
+    `;
+    const chunkPayload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", chunkSql, "--json"], {
+      encoding: "utf8",
+      maxBuffer: 128 * 1024 * 1024,
+    }));
+    if (Array.isArray(chunkPayload?.[0]?.results)) chunkRows.push(...chunkPayload[0].results);
+  }
+  const rows = mergeChunkedCloudflareReports(inlineRows, chunkRows);
   const mismatches = cloudflarePublicationMismatches({ extensions, rows, scannerBuild });
   if (mismatches.length) throw new Error(`Cloudflare activation revalidation failed:\n- ${mismatches.join("\n- ")}`);
 }
@@ -117,4 +133,10 @@ console.log(JSON.stringify({ ...summary, status: "activated" }, null, 2));
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : "";
+}
+
+function batches(values, size) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
 }

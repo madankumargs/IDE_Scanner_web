@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { cloudflarePublicationMismatches } from "./cloudflare-publication-revalidation.mjs";
+import { mergeChunkedCloudflareReports } from "./cloudflare-report-storage.mjs";
 
 const build = "a".repeat(40);
 const artifact = "d".repeat(64);
@@ -101,5 +103,16 @@ describe("Cloudflare publication D1 revalidation", () => {
       rows: [row({ job_status: "running", scan_purpose: "private" })],
       scannerBuild: build,
     })).toEqual([expect.stringContaining("D1 job identity or completion state is not release-eligible")]);
+  });
+
+  it("rehydrates and accepts a chunked canonical report", () => {
+    const reportJson = row().report_json;
+    const chunks = [reportJson.slice(0, 37), reportJson.slice(37)];
+    const marker = JSON.stringify({ chunked: true, chunk_count: chunks.length, sha256: createHash("sha256").update(reportJson).digest("hex") });
+    const hydrated = mergeChunkedCloudflareReports(
+      [row({ report_json: marker })],
+      chunks.map((content, chunk_index) => ({ scan_id: "scan-1", chunk_index, content })),
+    );
+    expect(cloudflarePublicationMismatches({ extensions: [item], rows: hydrated, scannerBuild: build })).toEqual([]);
   });
 });

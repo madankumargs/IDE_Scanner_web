@@ -7,6 +7,8 @@ describe("Cloudflare publication validation boundary", () => {
   it("selects only public or benchmark jobs", () => {
     expect(source).toContain("join app_scan_jobs j on j.id = r.job_id");
     expect(source).toContain("j.scan_purpose in ('public_intelligence','benchmark')");
+    expect(source).toContain("j.expected_scanner_build");
+    expect(source).toContain("mergeChunkedCloudflareReports");
   });
 
   it("requires the shared controlled-runtime publication contract", () => {

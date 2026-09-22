@@ -5,6 +5,7 @@ import { assertAccuracyGate } from "./accuracy-gate.mjs";
 import { MAX_PUBLICATION_REPORTS, validatePublicationManifest } from "./publication-manifest.mjs";
 import { publicCanonicalMismatch, singleExtensionDetail } from "./publication-canonical.mjs";
 import { publicationRuntimeMismatch } from "./publication-runtime.mjs";
+import { chunkedCloudflareScanIds, mergeChunkedCloudflareReports } from "./cloudflare-report-storage.mjs";
 
 const args = process.argv.slice(2);
 const scannerBuild = valueAfter("--scanner-build");
@@ -23,7 +24,7 @@ const sql = `
   select r.scan_id,r.extension_id,r.version,r.artifact_sha256,r.created_at,r.report_json
   from app_scan_reports r
   join app_scan_jobs j on j.id = r.job_id
-  where json_extract(r.report_json,'$.metadata.scanner_build')='${scannerBuild}'
+  where lower(coalesce(j.expected_scanner_build,''))='${scannerBuild}'
     and j.scan_purpose in ('public_intelligence','benchmark')
   order by r.created_at desc
 `;
@@ -31,7 +32,22 @@ const payload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", sca
   encoding: "utf8",
   maxBuffer: 128 * 1024 * 1024,
 }));
-const rows = Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
+const inlineRows = Array.isArray(payload?.[0]?.results) ? payload[0].results : [];
+const chunkRows = [];
+for (const scanIds of batches(chunkedCloudflareScanIds(inlineRows), 100)) {
+  const chunkSql = `
+    select scan_id,chunk_index,content
+    from app_scan_report_chunks
+    where scan_id in (${scanIds.map(sqlString).join(",")})
+    order by scan_id,chunk_index
+  `;
+  const chunkPayload = JSON.parse(execFileSync("npx", ["wrangler", "d1", "execute", scanDatabase, "--remote", "--command", chunkSql, "--json"], {
+    encoding: "utf8",
+    maxBuffer: 128 * 1024 * 1024,
+  }));
+  if (Array.isArray(chunkPayload?.[0]?.results)) chunkRows.push(...chunkPayload[0].results);
+}
+const rows = mergeChunkedCloudflareReports(inlineRows, chunkRows);
 const selected = new Map();
 const failures = [];
 const quarantined = [];
@@ -158,6 +174,16 @@ console.log(JSON.stringify({ output, reports: extensions.length, quarantined: qu
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : "";
+}
+
+function batches(values, size) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
+  return result;
+}
+
+function sqlString(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function key(row) {
