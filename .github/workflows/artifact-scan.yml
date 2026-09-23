@@ -1,0 +1,25 @@
+name: artifact-scan
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        required: true
+        type: string
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx scripts/artifact-scan-job.ts
+        env:
+          ARTIFACT_SCAN_JOB_ID: ${{ inputs.job_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
