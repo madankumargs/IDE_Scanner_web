@@ -3,16 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import { Activity, ArrowUpRight, BellRing, BookOpen, Bot, Boxes, Building2, ChevronDown, CircleHelp, Code2, FlaskConical, History, Menu, ShieldCheck, TerminalSquare, Users, X } from "lucide-react";
+import { Activity, ArrowUpRight, BellRing, BookOpen, Bot, Boxes, Building2, ChevronDown, CircleHelp, Code2, FlaskConical, History, Menu, PlugZap, ScanSearch, Server, ShieldCheck, TerminalSquare, Users, WandSparkles, X } from "lucide-react";
 
 type NavItem = readonly [string, string, string, ComponentType];
 
 // A deliberately small top row; everything secondary lives in one grouped menu.
 const topLinks: readonly (readonly [string, string])[] = [
-  ["/registry", "Registry"],
   ["/monitor", "Monitor"],
   ["/docs", "Docs"],
   ["/pricing", "Pricing"],
+];
+const registryItems: readonly NavItem[] = [
+  ["/registry", "VS Code Extensions", "Inspect exact releases before installation", Boxes],
+  ["/registry/plugins", "Plugins", "Review plugin capabilities and source", PlugZap],
+  ["/registry/skills", "Skills", "Inspect instructions before they run", WandSparkles],
+  ["/registry/mcp-servers", "MCP Servers", "Review tools and declared access", Server],
 ];
 
 const moreGroups: readonly { label: string; items: readonly NavItem[] }[] = [
@@ -39,7 +44,7 @@ const moreGroups: readonly { label: string; items: readonly NavItem[] }[] = [
 
 export default function SiteNav() {
   const pathname = usePathname();
-  const [open, setOpen] = useState<"more" | "mobile" | null>(null);
+  const [open, setOpen] = useState<"registry" | "more" | "mobile" | null>(null);
   const root = useRef<HTMLElement>(null);
   const active = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   useEffect(() => {
@@ -50,9 +55,16 @@ export default function SiteNav() {
   }, []);
   const menuLink = ([href, label, detail, Icon]: NavItem, inMenu = false) => <Link role={inMenu ? "menuitem" : undefined} href={href} key={`${href}-${label}`} onClick={() => setOpen(null)}><Icon/><span><strong>{label}</strong><small>{detail}</small></span><ArrowUpRight/></Link>;
   const moreActive = moreGroups.some((group) => group.items.some(([href]) => active(href)));
+  const registryActive = registryItems.some(([href]) => active(href));
   return <nav className="primaryNav guardrailsNav" aria-label="Primary navigation" ref={root}>
     <button className="mobileNavToggle" aria-expanded={open === "mobile"} aria-label={open === "mobile" ? "Close navigation" : "Open navigation"} onClick={() => setOpen(open === "mobile" ? null : "mobile")}>{open === "mobile" ? <X/> : <Menu/>}</button>
     <div className="desktopNav">
+      <div className="navMenu">
+        <button className={registryActive ? "active" : ""} aria-expanded={open === "registry"} aria-controls="registry-menu" onClick={() => setOpen(open === "registry" ? null : "registry")}>Registry<ChevronDown/></button>
+        <div id="registry-menu" role="menu" aria-label="Registry" className={`navPopover groupedNavPopover ${open === "registry" ? "isOpen" : ""}`}>
+          <div className="mobileNavGroup">{registryItems.map((item) => menuLink(item, true))}</div>
+        </div>
+      </div>
       {topLinks.map(([href, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}>{label}</Link>)}
       <div className="navMenu">
         <button className={moreActive ? "active" : ""} aria-expanded={open === "more"} aria-controls="more-menu" onClick={() => setOpen(open === "more" ? null : "more")}>More<ChevronDown/></button>
@@ -63,7 +75,7 @@ export default function SiteNav() {
     </div>
     <div className={`mobileNavPanel ${open === "mobile" ? "isOpen" : ""}`}>
       <div className="mobileNavGroup"><span>Explore</span>
-        {menuLink(["/registry", "Extension Registry", "Inspect exact releases before installation", Boxes])}
+        {registryItems.map((item) => menuLink(item))}
         {menuLink(["/docs", "Docs and API", "Gate releases in CI and from AI agents", BookOpen])}
         {menuLink(["/pricing", "Pricing", "Plans and product availability", History])}
       </div>
