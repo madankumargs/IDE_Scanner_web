@@ -1,7 +1,6 @@
 import { serviceDb } from "../lib/supabase";
-import { scanArtifactSource } from "../lib/artifactScan/runScan";
-import { persistArtifactResult } from "../lib/artifactScan/runScan";
-import type { ArtifactKind, ArtifactLocator } from "../lib/artifactScan/types";
+import { scanArtifactSource, persistArtifactResult } from "../lib/artifactScan/runScan";
+import type { ArtifactKind, ArtifactLocator } from "../lib/artifactScan/runScan";
 
 const jobId = process.env.ARTIFACT_SCAN_JOB_ID;
 if (!jobId) throw new Error("ARTIFACT_SCAN_JOB_ID is required.");
