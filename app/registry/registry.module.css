@@ -32,3 +32,5 @@
 .recCardBody>span{overflow:hidden;color:var(--ledger-muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 .recCardBody small{color:var(--ledger-muted);font:600 11px var(--mono);text-transform:uppercase}
 .recCard>svg{width:13px;color:var(--ledger-muted);flex:none}
+.artifactSearch{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:9px;border:1px solid #cbd3ca;border-radius:10px;background:#f8faf7;padding:6px 6px 6px 13px}.artifactSearch>svg{width:16px;color:#177d69}.artifactSearch input{min-width:0;height:43px;border:0;outline:0;background:transparent;color:#17191f;font-size:14px}.artifactSearch button{min-height:41px;border:1px solid var(--ledger-signal-strong);border-radius:7px;padding:0 15px;background:var(--ledger-signal-soft);color:var(--ledger-signal-ink);font-size:13px;font-weight:750;cursor:pointer}
+@media(max-width:680px){.artifactSearch{grid-template-columns:18px 1fr}.artifactSearch button{grid-column:1/-1}}
