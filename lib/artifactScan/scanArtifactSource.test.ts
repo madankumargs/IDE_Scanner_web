@@ -2,7 +2,7 @@ import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scanArtifactSource } from "./runScan";
 
-function response(body: unknown, init?: ResponseInit) { return new Response(body instanceof Uint8Array || typeof body === "string" ? body : JSON.stringify(body), init); }
+function response(body: unknown, init?: ResponseInit) { return new Response((body instanceof Uint8Array || typeof body === "string" ? body : JSON.stringify(body)) as BodyInit, init); }
 function npmTarball(path: string, content: string) {
   const header = Buffer.alloc(512); header.write(`package/${path}`, 0, "utf8"); header.write(`${content.length.toString(8).padStart(11, "0")}\0`, 124, "ascii"); header.write("0000644\0", 100, "ascii");
   const body = Buffer.from(content); const padded = Buffer.alloc(Math.ceil(body.length / 512) * 512); body.copy(padded); return gzipSync(Buffer.concat([header, padded, Buffer.alloc(1024)]));
