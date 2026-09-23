@@ -52,4 +52,19 @@ describe("public product status", () => {
     });
     expect(value.overall).toBe("degraded");
   });
+
+  it("uses the active Cloudflare registry publication timestamp for freshness", () => {
+    const value = evaluatePublicStatus({
+      runner: ready,
+      newestRegistryRefresh: "2026-08-07T10:00:00.000Z",
+      scanFailureRate: 0,
+      notificationFailureRate: 0,
+      databaseReachable: true,
+      now: new Date("2026-08-07T11:00:00.000Z"),
+    });
+    expect(value.services.find((item) => item.id === "registry")).toMatchObject({
+      state: "operational",
+      detail: "Last successful refresh 1 hr ago.",
+    });
+  });
 });

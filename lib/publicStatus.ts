@@ -1,5 +1,6 @@
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
 import { getPublicRegistrySnapshot } from "@/lib/publicRegistrySnapshot";
+import { getCloudflareRegistryPublication } from "@/lib/cloudflareRegistry";
 import { serviceDb } from "@/lib/supabase";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb, type PrivateDatabase } from "@/lib/cloudflarePrivate";
@@ -252,9 +253,7 @@ async function fetchCloudflarePublicStatus(
 ): Promise<PublicStatus> {
   const probe = await db.prepare("SELECT 1 AS ok").first<{ ok?: number }>();
   if (!probe) throw new Error("Cloudflare D1 health probe returned no result.");
-  const refreshPromise = db
-      .prepare("SELECT MAX(generated_at) AS completed_at FROM registry_section_chunks")
-      .first<{ completed_at?: string | null }>(),
+  const refreshPromise = getCloudflareRegistryPublication(),
     scansPromise = db
       .prepare("SELECT status,error FROM app_scan_jobs WHERE profile='deep' AND status IN ('complete','failed') AND COALESCE(completed_at,updated_at)>=?")
       .bind(since)
@@ -282,7 +281,7 @@ async function fetchCloudflarePublicStatus(
   return evaluatePublicStatus({
     runner,
     databaseReachable: true,
-    newestRegistryRefresh: refresh?.completed_at ? String(refresh.completed_at) : null,
+    newestRegistryRefresh: refresh?.generated_at ? String(refresh.generated_at) : null,
     scanFailureRate: ratio(scanFailures, analyzedScans.length),
     notificationFailureRate: ratio(
       deliveryRows.filter((row) => row.status === "failed").length,

@@ -141,3 +141,24 @@ export async function getCloudflareRegistrySnapshot<T extends Record<string, unk
   const values = Object.fromEntries(sections) as Record<string, unknown>;
   return { ...values, products: {} } as unknown as T;
 }
+
+export async function getCloudflareRegistryPublication(): Promise<{ id: string; generated_at: string } | null> {
+  const db = registryDb();
+  if (!db) return null;
+  try {
+    const row = await db
+      .prepare(`
+        SELECT state.publication_id AS id, publication.generated_at
+        FROM registry_publication_state state
+        JOIN registry_publications publication ON publication.id = state.publication_id
+        WHERE state.state_key = 'active'
+        LIMIT 1
+      `)
+      .first<{ id?: unknown; generated_at?: unknown }>();
+    return row?.id
+      ? { id: String(row.id), generated_at: String(row.generated_at || "") }
+      : null;
+  } catch {
+    return null;
+  }
+}
