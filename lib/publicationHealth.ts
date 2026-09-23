@@ -1,6 +1,7 @@
 import { getDeepScanHealth } from "@/lib/deepScanHealth";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { privateDb } from "@/lib/cloudflarePrivate";
+import { getCloudflareRegistrySection } from "@/lib/cloudflareRegistry";
 import { serviceDb } from "@/lib/supabase";
 
 export type PublicationHealth = {
@@ -52,6 +53,33 @@ export function summarizeReleaseMemberScans(rows: ReleaseMemberScan[]): Pick<Pub
   return { current_report_count: unique.size, newest_scan_at: scannedAt };
 }
 
+export function summarizeRegistryPublication(input: {
+  publication?: {
+    release_id?: unknown;
+    accuracy_gate_corpus_id?: unknown;
+    accuracy_gate_corpus_version?: unknown;
+    accuracy_gate_sha256?: unknown;
+  } | null;
+  items?: Array<{ scan_id?: unknown; scanned_at?: unknown }>;
+}, activatedAt = ""): Pick<PublicationHealth, "active_release" | "current_report_count" | "newest_scan_at"> | null {
+  const publication = input.publication;
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (!publication?.release_id || !hasAccuracyGateAttestation(publication) || !items.length) return null;
+  const memberSummary = summarizeReleaseMemberScans(items.map((item, index) => ({
+    id: String(item.scan_id || `registry-member-${index}`),
+    scanned_at: item.scanned_at ? String(item.scanned_at) : null,
+  })));
+  return {
+    active_release: {
+      id: String(publication.release_id),
+      expected_reports: items.length,
+      activated_at: activatedAt,
+      accuracy_gate_verified: true,
+    },
+    ...memberSummary,
+  };
+}
+
 export async function getPublicationHealth(): Promise<PublicationHealth> {
   if (cloudflarePrivateAvailable()) return getCloudflarePublicationHealth();
   const db = serviceDb();
@@ -87,6 +115,21 @@ async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
   const db = privateDb();
   const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const release = await db.prepare("SELECT id,accuracy_gate_corpus_id,accuracy_gate_corpus_version,accuracy_gate_sha256,expected_reports,activated_at FROM app_scan_publication_releases WHERE active=1 LIMIT 1").first<Record<string, unknown>>();
+  const registryInventory = release
+    ? null
+    : await getCloudflareRegistrySection<{
+        publication?: Record<string, unknown>;
+        items?: Array<{ scan_id?: unknown; scanned_at?: unknown }>;
+      }>("inventory");
+  const registryMetrics = release
+    ? null
+    : await getCloudflareRegistrySection<{ as_of?: unknown }>("metrics");
+  const registryFallback = release
+    ? null
+    : summarizeRegistryPublication(
+        { publication: registryInventory?.publication, items: registryInventory?.items },
+        String(registryMetrics?.as_of || ""),
+      );
   const releaseId = release?.id ? String(release.id) : "";
   const [reports, jobs, deliveries, runner] = await Promise.all([
     releaseId
@@ -96,8 +139,10 @@ async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
     db.prepare("SELECT status, COUNT(*) AS count FROM app_notification_deliveries WHERE created_at>=? GROUP BY status").bind(since).all<Record<string, unknown>>(),
     getDeepScanHealth(),
   ]);
-  const currentReportCount = Number(reports?.count || 0);
-  const newestScanAt = reports?.newest_scan_at ? String(reports.newest_scan_at) : null;
+  const currentReportCount = releaseId ? Number(reports?.count || 0) : Number(registryFallback?.current_report_count || 0);
+  const newestScanAt = releaseId
+    ? (reports?.newest_scan_at ? String(reports.newest_scan_at) : null)
+    : registryFallback?.newest_scan_at || null;
   const jobRows = jobs.results || [];
   const deliveryRows = deliveries.results || [];
   const jobCount = jobRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
@@ -110,7 +155,7 @@ async function getCloudflarePublicationHealth(): Promise<PublicationHealth> {
       expected_reports: Number(release.expected_reports || 0),
       activated_at: String(release.activated_at || ""),
       accuracy_gate_verified: hasAccuracyGateAttestation(release),
-    } : null,
+    } : registryFallback?.active_release || null,
     current_report_count: currentReportCount,
     newest_scan_at: newestScanAt,
     runner_status: runner.status,

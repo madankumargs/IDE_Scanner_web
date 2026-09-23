@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePublicationHealth, hasAccuracyGateAttestation, summarizeReleaseMemberScans } from "@/lib/publicationHealth";
+import { evaluatePublicationHealth, hasAccuracyGateAttestation, summarizeRegistryPublication, summarizeReleaseMemberScans } from "@/lib/publicationHealth";
 
 describe("hasAccuracyGateAttestation", () => {
   it("requires corpus identity and a full gate digest", () => {
@@ -35,5 +35,24 @@ describe("evaluatePublicationHealth", () => {
       { id: "scan-b", scanned_at: "2026-08-01T01:00:00.000Z" },
       { id: "scan-a", scanned_at: "2026-08-01T00:00:00.000Z" },
     ])).toEqual({ current_report_count: 2, newest_scan_at: "2026-08-01T01:00:00.000Z" });
+  });
+
+  it("accepts an active attested Cloudflare registry as the public release fallback", () => {
+    expect(summarizeRegistryPublication({
+      publication: {
+        release_id: "registry-release",
+        accuracy_gate_corpus_id: "holdout",
+        accuracy_gate_corpus_version: "1",
+        accuracy_gate_sha256: "a".repeat(64),
+      },
+      items: [
+        { scan_id: "scan-a", scanned_at: "2026-08-01T00:00:00.000Z" },
+        { scan_id: "scan-b", scanned_at: "2026-08-01T01:00:00.000Z" },
+      ],
+    }, "2026-08-01T02:00:00.000Z")).toMatchObject({
+      active_release: { id: "registry-release", expected_reports: 2, accuracy_gate_verified: true },
+      current_report_count: 2,
+      newest_scan_at: "2026-08-01T01:00:00.000Z",
+    });
   });
 });
