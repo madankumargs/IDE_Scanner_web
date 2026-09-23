@@ -53,21 +53,47 @@ jobs:
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Build public registry mirror from the active Cloudflare release
+      - name: Select the active Cloudflare publication source
+        id: publication_source
         if: ${{ steps.d1_credentials.outputs.configured == 'true' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+        run: |
+          mkdir -p .tmp
+          npx wrangler d1 execute abscissa-scan-data --remote --json \
+            --command "SELECT id FROM app_scan_publication_releases WHERE active=1 LIMIT 1;" \
+            > .tmp/active-scan-publication.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(".tmp/active-scan-publication.json", "utf8"));
+          const active = payload.flatMap((item) => item.results || [])[0];
+          const source = active?.id ? "scan" : "registry";
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `source=${source}\n`);
+          console.log(`Using ${source} as the Cloudflare registry source.`);
+          NODE
+      - name: Build public registry mirror from the active Cloudflare release
+        if: ${{ steps.publication_source.outputs.source == 'scan' }}
         run: npx tsx scripts/build-cloudflare-registry-snapshot.mjs --out public/registry-snapshot.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
           CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
           MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
+      - name: Re-export the active registry publication when scan data is legacy
+        if: ${{ steps.publication_source.outputs.source == 'registry' }}
+        run: npx tsx scripts/export-cloudflare-registry-snapshot.mjs --out public/registry-snapshot.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_REGISTRY_DATABASE: abscissa-registry
       - name: Export legacy Supabase registry mirror
         if: ${{ steps.d1_credentials.outputs.configured != 'true' }}
         run: npx tsx scripts/export-public-registry.mjs
         env:
           SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       - name: Sync public registry to Cloudflare D1
-        if: ${{ steps.d1_credentials.outputs.configured == 'true' }}
+        if: ${{ steps.publication_source.outputs.source == 'scan' }}
         run: |
           node scripts/import-public-registry-d1.mjs public/registry-snapshot.json .tmp/public-registry-d1.sql
           npx wrangler d1 execute abscissa-registry --remote --file=.tmp/public-registry-d1.sql
@@ -77,6 +103,9 @@ jobs:
       - name: Warn when Cloudflare D1 sync is not configured
         if: ${{ steps.d1_credentials.outputs.configured != 'true' }}
         run: echo "::warning::Cloudflare D1 sync is waiting for the CLOUDFLARE_API_TOKEN repository secret."
+      - name: Warn when the scan publication is legacy
+        if: ${{ steps.publication_source.outputs.source == 'registry' }}
+        run: echo "::warning::The Cloudflare scan database has no active release; preserved the active registry publication until a validated scan release is activated."
       - name: Publish public registry mirror
         run: |
           if [ -z "$(git status --short -- public/registry-snapshot.json)" ]; then
