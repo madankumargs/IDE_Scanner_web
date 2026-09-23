@@ -1,0 +1,2 @@
+import type { Finding, SourceFile } from "../types"; import { finding, isDocFile, matches } from "./helpers";
+export function checkDynamicExecution(file: SourceFile): Finding[] { if (isDocFile(file.name)) return []; return matches(file.content, /(?:\beval\s*\(|\bnew\s+Function\s*\(|\b(?:vm\.runInNewContext|exec)\s*\()/gi).map(m => finding(file, "dynamic_execution", "Dynamic code execution", "The artifact evaluates code constructed at runtime.", "Remove dynamic evaluation and replace it with explicit, statically reviewable operations.", "critical", m.index!)); }

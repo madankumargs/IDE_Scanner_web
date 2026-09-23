@@ -1,0 +1,1 @@
+{"name":"mcp-server-ordinary","description":"Reads a file","implementation":"return readFile(path)"}

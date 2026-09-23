@@ -18,6 +18,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:public-corpus": "vitest run lib/publicCorpusConsistency.test.ts",
+    "test:artifact-scan": "vitest run lib/artifactScan/eval.test.ts",
     "test:typography": "node scripts/typography-audit.mjs",
     "test:e2e": "playwright test",
     "launch:readiness": "node scripts/launch-readiness.mjs"
