@@ -189,4 +189,37 @@ describe("public publication boundaries", () => {
     await expect(getVersionScanProduct("publisher.extension", "1.0.0", "unpublished-scan")).resolves.toBeNull();
     expect(harness.calls.some((call) => call.table === "scans")).toBe(false);
   });
+
+  it("serves an attested registry snapshot when the private report is not on the active join", async () => {
+    harness.snapshot.mockReset().mockResolvedValue(null);
+    harness.product.mockReset().mockResolvedValue({
+      detail_state: "summary_only",
+      extension: { id: "publisher.extension" },
+      versions: [{ extension_id: "publisher.extension", version: "1.0.0" }],
+      scans: [{
+        version: "1.0.0",
+        scan: {
+          id: "published-scan",
+          extension_id: "publisher.extension",
+          version: "1.0.0",
+          artifact_sha256: "a".repeat(64),
+          analysis_status: "complete",
+          decision: "allow",
+        },
+        findings: [],
+        files: [],
+        dependencies: [],
+      }],
+    });
+    configureDatabase(null);
+
+    const result = await getVersionScanProduct("publisher.extension", "1.0.0", "published-scan");
+
+    expect(result?.scan).toMatchObject({
+      id: "published-scan",
+      extension_id: "publisher.extension",
+      version: "1.0.0",
+    });
+    expect(result?.findings).toEqual([]);
+  });
 });

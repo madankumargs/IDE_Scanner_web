@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, FileText, ShieldCheck } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import ExtensionIdentity from "@/app/ExtensionIdentity";
-import DeepScanButton from "@/app/DeepScanButton";
+import PublicAnalysisCallout from "@/app/PublicAnalysisCallout";
 import { decisionExplanation, decisionLabel } from "@/lib/dossierPresentation";
 import { scanDecision } from "@/lib/extensionPageModel";
-import { publicAnalysisAction } from "@/lib/publicAnalysisAction";
 import type { CatalogExtension } from "@/lib/productData";
 import PermissionPassport from "@/app/extensions/PermissionPassport";
 import { buildPermissionPassport } from "@/lib/permissionPassport";
@@ -32,13 +31,6 @@ export default function PublicSecuritySummary({
   const reason = scanned
     ? String(scan?.decision_reason || decisionExplanation(decision))
     : "No completed security analysis exists for this exact version. This is not a safety verdict.";
-  const action = publicAnalysisAction({
-    extensionId: extension.id,
-    version,
-    fullAnalysisHref,
-    scanned,
-    signedIn,
-  });
   return (
     <main className="securitySummary">
       <Link
@@ -82,46 +74,13 @@ export default function PublicSecuritySummary({
           </strong>
         </article>
       </section>
-      <section className="summaryBody">
-        <div>
-          <span className="kicker">Decision context</span>
-          <h1>
-            {scanned
-              ? "Use this completed analysis before you install."
-              : "Read the published evidence before you install."}
-          </h1>
-          <p>
-            {scanned
-              ? signedIn
-                ? "Open the full analysis to inspect the evidence and make a workspace decision."
-                : "This is a plain-language summary of the completed analysis for this exact extension version. Technical evidence and workspace actions are available after sign-in."
-              : "Publisher documentation and release history are public. Request a Deep Scan when you need security evidence for this version."}
-          </p>
-        </div>
-        <aside>
-          {scanned ? (
-            action.requiresSignIn ? (
-              <Link className="button buttonDark" href={action.href}>
-                {action.label}
-                <ArrowRight size={16} />
-              </Link>
-            ) : (
-              <a className="button buttonDark" href={action.href}>
-                {action.label}
-                <ShieldCheck size={16} />
-              </a>
-            )
-          ) : (
-            <DeepScanButton extensionId={extension.id} version={version} />
-          )}
-          <Link
-            className="button buttonQuiet"
-            href={`/extensions/${encodeURIComponent(extension.id)}`}
-          >
-            Read README and releases <FileText size={16} />
-          </Link>
-        </aside>
-      </section>
+      <PublicAnalysisCallout
+        extensionId={extension.id}
+        version={version}
+        scanned={scanned}
+        fullAnalysisHref={fullAnalysisHref}
+        initialSignedIn={signedIn}
+      />
       <PermissionPassport
         compact
         passport={buildPermissionPassport({

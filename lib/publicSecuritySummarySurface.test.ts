@@ -5,21 +5,23 @@ const summary = readFileSync(
   new URL("../app/PublicSecuritySummary.tsx", import.meta.url),
   "utf8",
 );
+const callout = readFileSync(
+  new URL("../app/PublicAnalysisCallout.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("public security summary auth boundary", () => {
-  it("uses a document navigation for an authenticated full-analysis report", () => {
-    expect(summary).toContain("action.requiresSignIn ? (");
-    expect(summary).toContain(
-      '<Link className="button buttonDark" href={action.href}>',
-    );
-    expect(summary).toContain(
-      '<a className="button buttonDark" href={action.href}>',
-    );
+  it("resolves the session in the browser before choosing the full-analysis action", () => {
+    expect(summary).toContain("<PublicAnalysisCallout");
+    expect(callout).toContain('fetch("/api/auth/session", { cache: "no-store" })');
+    expect(callout).toContain('sessionState === "checking"');
+    expect(callout).toContain("Checking sign-in…");
+    expect(callout).toContain("publicAnalysisAction");
   });
 
   it("uses the canonical Deep Scan control for an unscanned exact version", () => {
-    expect(summary).toContain("<DeepScanButton");
-    expect(summary).toContain("extensionId={extension.id}");
-    expect(summary).toContain("version={version}");
+    expect(callout).toContain("<DeepScanButton");
+    expect(callout).toContain("extensionId={extensionId}");
+    expect(callout).toContain("version={version}");
   });
 });

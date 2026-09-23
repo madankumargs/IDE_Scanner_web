@@ -360,9 +360,26 @@ export async function getVersionScanProduct(id: string, version: string, scanId:
   const cloudflareReport = await getCloudflareScanProduct(id, version, scanId, true).catch(() => null);
   if (cloudflareReport) return cloudflareReport;
   const cloudflareProduct = await getPublicRegistryProduct(id);
-  if (cloudflareProduct && cloudflareProduct.detail_state !== "summary_only") {
+  if (cloudflareProduct) {
     const scan = cloudflareProduct.scans?.find((item) => String(item.version || "") === version && String(item.scan?.id || "") === scanId);
-    return scan ? { version: cloudflareProduct.versions?.find((item) => String(item.version || "") === version) || { extension_id: id, version }, scan: scan.scan, findings: scan.findings || [], files: scan.files || [], dependencies: scan.dependencies || [] } : null;
+    if (scan) {
+      // The registry snapshot is the public authorization boundary for an
+      // immutable report. If the active private publication has rotated, try
+      // the exact stored report once more without the active-release join,
+      // then serve the attested compact snapshot rather than a misleading
+      // 404. The scan ID must match the public product before this fallback
+      // can expose anything.
+      const storedReport = await getCloudflareScanProduct(id, version, scanId, false).catch(() => null);
+      if (storedReport) return storedReport;
+      return {
+        version: cloudflareProduct.versions?.find((item) => String(item.version || "") === version) || { extension_id: id, version },
+        scan: scan.scan,
+        findings: scan.findings || [],
+        files: scan.files || [],
+        dependencies: scan.dependencies || [],
+      };
+    }
+    if (cloudflareProduct.detail_state !== "summary_only") return null;
   }
   if (!options.skipCloudflareCatalog && await getCloudflareRegistryCatalogExtension<Record<string, unknown>>(id)) return null;
   const db = client || publicDb();
