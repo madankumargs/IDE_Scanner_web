@@ -1,7 +1,8 @@
 import { Search, ScanSearch, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
 import styles from "./registry.module.css";
 
-export default function ArtifactRegistryPage({ kind, title, description, placeholder }: { kind: string; title: string; description: string; placeholder: string }) {
+export default function ArtifactRegistryPage({ kind, title, description, placeholder }: { kind: string; title: ReactNode; description: string; placeholder: string }) {
   return <main className={styles.page}>
     <section className={styles.hero}>
       <div className={styles.heroCopy}><span className={styles.eyebrow}><i/> {kind} intelligence</span><h1>{title}</h1><p>{description}</p></div>
