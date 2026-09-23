@@ -28,4 +28,5 @@ export interface ArtifactScanResult {
 
 export interface SourceFile { path: string; name: string; content: string; }
 
-export type ArtifactKind = "skill" | "plugin" | "mcp" | "npm" | "unknown";
+export type ArtifactKind = "skill" | "plugin" | "mcp" | "unknown";
+export type ArtifactSourceType = "github" | "npm";
