@@ -43,10 +43,6 @@ jobs:
           CATALOG_COHORT_LIMIT: ${{ inputs.cohort_limit || '250' }}
           MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
           CATALOG_BULK_SCAN_ENABLED: ${{ inputs.enable_bulk_scan || 'false' }}
-      - name: Export public registry mirror
-        run: npx tsx scripts/export-public-registry.mjs
-        env:
-          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       - name: Check Cloudflare D1 credentials
         id: d1_credentials
         env:
@@ -57,6 +53,19 @@ jobs:
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Build public registry mirror from the active Cloudflare release
+        if: ${{ steps.d1_credentials.outputs.configured == 'true' }}
+        run: npx tsx scripts/build-cloudflare-registry-snapshot.mjs --out public/registry-snapshot.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 26e873c5d55e5e386df482c9dbe8bcd7
+          CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data
+          MARKETPLACE_PAGE_COUNT: ${{ inputs.marketplace_page_count || '3' }}
+      - name: Export legacy Supabase registry mirror
+        if: ${{ steps.d1_credentials.outputs.configured != 'true' }}
+        run: npx tsx scripts/export-public-registry.mjs
+        env:
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       - name: Sync public registry to Cloudflare D1
         if: ${{ steps.d1_credentials.outputs.configured == 'true' }}
         run: |

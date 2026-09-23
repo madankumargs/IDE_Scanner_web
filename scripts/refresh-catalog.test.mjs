@@ -19,4 +19,12 @@ describe("catalog refresh publication guard", () => {
     expect(workflow).toContain('default: "false"');
     expect(workflow).toContain("CATALOG_BULK_SCAN_ENABLED: ${{ inputs.enable_bulk_scan || 'false' }}");
   });
+
+  it("builds the public mirror from the active Cloudflare release when D1 is configured", () => {
+    expect(workflow).toContain("build-cloudflare-registry-snapshot.mjs");
+    expect(workflow).toContain("CLOUDFLARE_SCAN_DATABASE: abscissa-scan-data");
+    expect(workflow).toContain("if: ${{ steps.d1_credentials.outputs.configured == 'true' }}");
+    expect(workflow).toContain("if: ${{ steps.d1_credentials.outputs.configured != 'true' }}");
+    expect(workflow).toContain("Export legacy Supabase registry mirror");
+  });
 });
