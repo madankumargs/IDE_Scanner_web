@@ -24,7 +24,7 @@ export async function resolve(raw: string, kind: ArtifactKind, version?: string)
 
 async function resolveGithubHeadSha(owner: string, repo: string): Promise<string> {
   const token = process.env.GITHUB_TOKEN || process.env.GITHUB_ACTIONS_TOKEN;
-  const headers = token ? { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" } : { Accept: "application/vnd.github+json" };
+  const headers: Record<string, string> = token ? { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28" } : { Accept: "application/vnd.github+json" };
   const repoInfo = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers, cache: "no-store" });
   if (!repoInfo.ok) throw new Error(`Could not resolve repository ${owner}/${repo}.`);
   const { default_branch } = await repoInfo.json() as { default_branch?: string };
