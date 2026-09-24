@@ -4,7 +4,7 @@ import { resolve, type ResolvedArtifact } from "@/lib/artifactSources";
 import type { ArtifactKind } from "@/lib/artifactScan";
 
 export async function queueArtifactScan(raw: string, kind: ArtifactKind, requestedBy: string, version?: string) {
-  const resolved = resolve(raw, kind, version); const db = serviceDb();
+  const resolved = await resolve(raw, kind, version); const db = serviceDb();
   const artifact = await db.from("artifacts").upsert({ kind: resolved.kind, display_name: resolved.display_name, source: resolved.source, source_ref: resolved.source_ref, owner: resolved.owner, updated_at: new Date().toISOString() }, { onConflict: "kind,source,source_ref" }).select("*").single();
   if (artifact.error) throw artifact.error;
   const artifactId = String(artifact.data.id);

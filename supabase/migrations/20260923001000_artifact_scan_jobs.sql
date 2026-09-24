@@ -5,7 +5,7 @@ create table if not exists public.artifact_scan_jobs (
   requested_by uuid, status text not null default 'queued' check (status in ('queued','running','complete','failed')),
   lifecycle_stage text not null default 'queued', error text, dispatch_succeeded_at timestamptz,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(), started_at timestamptz, completed_at timestamptz,
-  unique (artifact_id, artifact_version, requested_by)
+  unique (artifact_id, artifact_version)
 );
 create index if not exists artifact_scan_jobs_status_idx on public.artifact_scan_jobs (status, created_at);
 create table if not exists public.artifact_scan_job_events (
