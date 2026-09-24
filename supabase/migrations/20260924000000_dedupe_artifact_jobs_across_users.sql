@@ -1,0 +1,2 @@
+alter table public.artifact_scan_jobs drop constraint if exists artifact_scan_jobs_artifact_id_artifact_version_requested_by_key;
+create unique index if not exists artifact_scan_jobs_artifact_version_unique on public.artifact_scan_jobs (artifact_id, artifact_version);
