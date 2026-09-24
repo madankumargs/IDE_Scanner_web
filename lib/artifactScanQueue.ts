@@ -10,7 +10,7 @@ export async function queueArtifactScan(raw: string, kind: ArtifactKind, request
   const artifactId = String(artifact.data.id);
   const artifactVersion = await db.from("artifact_versions").upsert({ artifact_id: artifactId, version: resolved.version }, { onConflict: "artifact_id,version" }).select("*").single();
   if (artifactVersion.error) throw artifactVersion.error;
-  const active = await db.from("artifact_scan_jobs").select("*").eq("artifact_id", artifactId).eq("version", resolved.version).in("status", ["queued", "running"]).maybeSingle();
+  const active = await db.from("artifact_scan_jobs").select("*").eq("artifact_id", artifactId).eq("artifact_version", resolved.version).in("status", ["queued", "running"]).maybeSingle();
   if (active.error) throw active.error;
   if (active.data) { if (active.data.status === "queued") await dispatchArtifactScan(String(active.data.id)); return { ...active.data, deduplicated: true }; }
   const job = await db.from("artifact_scan_jobs").insert({ artifact_id: artifactId, artifact_version: resolved.version, kind: resolved.kind, source: resolved.source, source_ref: resolved.source_ref, locator: resolved.locator, requested_by: requestedBy, status: "queued", lifecycle_stage: "queued" }).select("*").single();
