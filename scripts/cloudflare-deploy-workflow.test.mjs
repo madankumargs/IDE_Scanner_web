@@ -14,4 +14,9 @@ describe("Cloudflare production deployment boundary", () => {
   it("uses the repository-pinned Node runtime", () => {
     expect(workflow).toContain("node-version-file: .nvmrc");
   });
+
+  it("verifies public routes after the Worker deploys", () => {
+    expect(workflow).toContain("Verify production routes");
+    expect(workflow).toContain("node scripts/verify-production-deployment.mjs");
+  });
 });

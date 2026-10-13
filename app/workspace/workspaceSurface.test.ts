@@ -7,6 +7,10 @@ const workspace = fs.readFileSync(
   path.join(root, "app/TeamWorkspace.tsx"),
   "utf8",
 );
+const extensionsView = fs.readFileSync(
+  path.join(root, "app/workspace/views/ExtensionsView.tsx"),
+  "utf8",
+);
 const page = fs.readFileSync(path.join(root, "app/workspace/page.tsx"), "utf8");
 const css = fs.readFileSync(
   path.join(root, "app/workspace/teamWorkspace.module.css"),
@@ -67,11 +71,11 @@ describe("GuardRails workspace product surface", () => {
   });
 
   it("surfaces observable monitoring health and cadence", () => {
-    expect(workspace).toContain("Registry checks are healthy");
-    expect(workspace).toContain("Last registry check");
-    expect(workspace).toContain("Next expected check");
-    expect(workspace).toContain("Refresh status");
-    expect(workspace).toContain("last_event_at");
+    expect(extensionsView).toContain("Registry checks are healthy");
+    expect(extensionsView).toContain("Last registry check");
+    expect(extensionsView).toContain("Next expected check");
+    expect(extensionsView).toContain("Refresh status");
+    expect(extensionsView).toContain("last_event_at");
   });
 
   it("makes monitoring health and the review queue visible", () => {

@@ -1,11 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Plus, Radar, RefreshCw } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  CircleAlert,
+  LoaderCircle,
+  Plus,
+  Radar,
+  RefreshCw,
+} from "lucide-react";
+import { useState } from "react";
+import ExtensionSearch from "@/app/ExtensionSearch";
 import type {
   MonitoringHealth,
   WatchItem,
 } from "@/app/workspace/types";
+import type { DiscoveryResult } from "@/lib/types";
 import {
   formatWorkspaceTime,
   humanize,
@@ -20,12 +31,89 @@ export default function ExtensionsView({
   badges,
   health,
   onRefresh,
+  teamId,
+  role,
+  getAuthHeaders,
+  initialExtension,
 }: {
   watches: WatchItem[];
   badges: Array<{ extension_id: string; version?: string; status?: string }>;
   health: MonitoringHealth;
   onRefresh: () => Promise<void>;
+  teamId: string;
+  role: string;
+  getAuthHeaders: () => Promise<Record<string, string>>;
+  initialExtension?: string;
 }) {
+  const canManage = ["owner", "admin", "analyst"].includes(role);
+  const [adding, setAdding] = useState(Boolean(initialExtension));
+  const [selected, setSelected] = useState<DiscoveryResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  async function monitorSelected() {
+    if (!selected) return;
+    setSaving(true);
+    setNotice("");
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
+      const productResponse = await fetch(
+        `/api/extensions/${encodeURIComponent(selected.extension_id)}`,
+      );
+      const product = await productResponse.json().catch(() => ({}));
+      if (!productResponse.ok) {
+        throw new Error(
+          String(product.error || "This extension could not be prepared for monitoring."),
+        );
+      }
+      const scan =
+        product.scan && typeof product.scan === "object"
+          ? (product.scan as Record<string, unknown>)
+          : null;
+      const payload: Record<string, string> = {
+        extension_id: selected.extension_id,
+        version: selected.version,
+      };
+      if (scan?.id) payload.baseline_scan_id = String(scan.id);
+      let response = await fetch(
+        `/api/teams/${encodeURIComponent(teamId)}/watchlist`,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (!response.ok && payload.baseline_scan_id) {
+        delete payload.baseline_scan_id;
+        response = await fetch(
+          `/api/teams/${encodeURIComponent(teamId)}/watchlist`,
+          {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+      }
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          String(body.error || "Could not start monitoring this extension."),
+        );
+      }
+      setNotice(
+        `${selected.display_name} is now monitored from ${body.baseline_version || selected.version}.`,
+      );
+      setSelected(null);
+      setAdding(false);
+      await onRefresh();
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "Could not start monitoring this extension.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const current = watches.filter(
     (item) => item.baseline_version && item.monitoring_state === "monitoring",
   ).length;
@@ -42,11 +130,72 @@ export default function ExtensionsView({
         title="Extensions under watch."
         copy="Every baseline stays tied to the exact release your team reviewed."
         action={
-          <Link className={styles.primaryAction} href="/registry">
-            <Plus /> Monitor extension
-          </Link>
+          canManage ? (
+            <button
+              className={styles.primaryAction}
+              onClick={() => setAdding(true)}
+            >
+              <Plus /> Monitor extension
+            </button>
+          ) : undefined
         }
       />
+      {adding && canManage ? (
+        <section
+          className={styles.monitorAdd}
+          aria-labelledby="monitor-extension-title"
+        >
+          <header>
+            <div>
+              <span>New baseline</span>
+              <h2 id="monitor-extension-title">
+                Choose an exact extension release.
+              </h2>
+              <p>
+                GuardRails records the selected release as the baseline and brings
+                the team back only when a later release changes.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setAdding(false);
+                setSelected(null);
+                setNotice("");
+              }}
+            >
+              Cancel
+            </button>
+          </header>
+          <ExtensionSearch
+            initialQuery={initialExtension || ""}
+            onSelect={setSelected}
+            submitLabel="Find extension"
+          />
+          {selected ? (
+            <div className={styles.monitorSelection}>
+              <div>
+                <strong>{selected.display_name}</strong>
+                <code>{selected.extension_id}@{selected.version}</code>
+              </div>
+              <button disabled={saving} onClick={() => void monitorSelected()}>
+                {saving ? <LoaderCircle className={styles.spin} /> : <CheckCircle2 />}
+                {saving ? "Saving baseline…" : "Start monitoring"}
+              </button>
+            </div>
+          ) : null}
+          {notice ? (
+            <p
+              className={
+                notice.includes("now monitored")
+                  ? styles.monitorSuccess
+                  : styles.monitorError
+              }
+            >
+              <CircleAlert /> {notice}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <section className={styles.monitorHealthPanel}>
         <header>
           <div>
