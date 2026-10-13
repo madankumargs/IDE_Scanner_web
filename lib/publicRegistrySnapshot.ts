@@ -53,8 +53,8 @@ let cached: { expiresAt: number; value: PublicRegistrySnapshot | null } | null =
  * by GitHub Actions through the direct Postgres connection and is only used
  * when Supabase's REST service is unavailable.
  */
-export async function getPublicRegistrySnapshot(): Promise<PublicRegistrySnapshot | null> {
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+export async function getPublicRegistrySnapshot(retry = false): Promise<PublicRegistrySnapshot | null> {
+  if (!retry && cached && cached.expiresAt > Date.now()) return cached.value;
 
   const cloudflareSnapshot = await getCloudflareRegistrySnapshot<PublicRegistrySnapshot>();
   if (cloudflareSnapshot) {
@@ -69,6 +69,7 @@ export async function getPublicRegistrySnapshot(): Promise<PublicRegistrySnapsho
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) throw new Error(`Registry mirror returned ${response.status}`);
     const body = (await response.json()) as Partial<PublicRegistrySnapshot>;

@@ -67,7 +67,7 @@ export default function RootLayout({
                 <Link className="headerProductCta" href="/registry">
                   Check an extension
                 </Link>
-                <HeaderAccount />
+                <div className="desktopHeaderAccount"><HeaderAccount /></div>
               </div>
             </div>
           </header>
@@ -118,7 +118,7 @@ export default function RootLayout({
                 <div>
                   <strong>Company</strong>
                   <Link href="/about">About GuardRails</Link>
-                  <Link href="/#sarvam-ai">Sarvam AI program</Link>
+                  <Link href="/about#sarvam-ai">Sarvam AI program</Link>
                   <Link href="/contact">Contact</Link>
                   <Link href="/changelog">Changelog</Link>
                   <Link href="/faq">FAQ</Link>

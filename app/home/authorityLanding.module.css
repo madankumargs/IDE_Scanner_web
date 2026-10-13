@@ -626,3 +626,17 @@
 @media (prefers-reduced-motion: reduce) {
   .heroPrimary { transition: none; }
 }
+
+.trialHint { margin-top: 14px !important; color: var(--ledger-muted); font-size: 13px; line-height: 1.5; }
+.searchExamples { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; font-size: 12px; }
+.searchExamples a { color: var(--ledger-signal-ink); text-decoration: underline; text-underline-offset: 3px; }
+.reportExample { align-self: center; min-width: 0; padding: 24px; border: 1px solid var(--ledger-line); background: var(--ledger-white); box-shadow: 8px 8px 0 var(--ledger-signal-strong); }
+.reportExample h2 { margin-top: 18px; font-size: 25px; letter-spacing: -.03em; }
+.reportExample p { margin-top: 12px; color: var(--ledger-muted); font-size: 13px; line-height: 1.6; }
+.exampleOutcome { display: inline-block; margin-top: 18px; padding: 8px 12px; background: #fff0d2; color: #815000; font-size: 13px; }
+.reportExample dl { margin: 20px 0; }
+.reportExample dl div { padding: 12px 0; border-top: 1px solid var(--ledger-line); }
+.reportExample dt { color: var(--ledger-muted); font-size: 11px; font-weight: 700; }
+.reportExample dd { margin: 6px 0 0; font-size: 14px; line-height: 1.5; }
+.reportExample > a { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; color: var(--ledger-signal-ink); font-size: 13px; font-weight: 700; }
+.reportExample > a svg { width: 16px; }

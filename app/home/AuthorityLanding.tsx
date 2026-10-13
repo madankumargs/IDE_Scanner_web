@@ -21,22 +21,28 @@ export default async function AuthorityLanding() {
         <div className={`${styles.heroCopy} productLandingCopy`}>
           <h1>Know what an extension can do <em>before you let it in.</em></h1>
           <p className={styles.heroLead}>GuardRails turns every release into a clear install decision: what changed, what it can reach, and whether the evidence supports a yes.</p>
-          <div className={styles.actions}>
-            <Link className={styles.heroPrimary} href="/registry">Check an extension <ArrowRight /></Link>
-            <Link className={styles.heroTextLink} href="#how">See how it works <ArrowUpRight /></Link>
-          </div>
           <div className={styles.heroSearch}>
-            <span className={styles.heroSearchLabel}>Or search Marketplace / Open VSX</span>
+            <span className={styles.heroSearchLabel}>Search Marketplace / Open VSX</span>
             <ExtensionSearch submitLabel="Check extension" />
+            <p className={styles.trialHint}>Five Deep Scans per 30 days. No account required.</p>
+            <div className={styles.searchExamples} aria-label="Example extension searches">
+              <span>Try:</span>{["GitHub Copilot", "Cline", "ESLint"].map((name) => <Link key={name} href={`/registry?q=${encodeURIComponent(name)}`}>{name}</Link>)}
+            </div>
           </div>
+          <div className={styles.actions}><Link className={styles.heroTextLink} href="#how">See how it works <ArrowUpRight /></Link></div>
         </div>
-        <aside className={`${styles.heroAside} productLandingAside`}>
-          <p>One place to inspect package behavior, compare releases, and keep the reason behind the decision.</p>
+        <aside className={styles.reportExample} aria-label="Illustrative extension report">
+          <span className={styles.sectionKicker}>Illustrative report · fictional extension</span>
+          <h2>Workspace Assistant</h2>
+          <p>Example release <code>2.9.0</code></p>
+          <strong className={styles.exampleOutcome}>Needs review</strong>
           <dl>
-            <div><dt>01</dt><dd>Exact release</dd></div>
-            <div><dt>02</dt><dd>Observed access</dd></div>
-            <div><dt>03</dt><dd>Reusable decision</dd></div>
+            <div><dt>Finding</dt><dd>This update adds terminal execution.</dd></div>
+            <div><dt>Access</dt><dd>Workspace files, terminal, outbound network.</dd></div>
+            <div><dt>Coverage</dt><dd>Static package analysis shown. Runtime behavior unverified.</dd></div>
           </dl>
+          <p>This demonstrates the report layout. It is not a real scan or security decision.</p>
+          <Link href="#how">Explore the review example <ArrowRight /></Link>
         </aside>
       </div>
       <nav className="productPath" aria-label="GuardRails review path">

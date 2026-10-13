@@ -9,7 +9,7 @@ describe("pricing and solution surfaces", () => {
     expect(pricing).toContain('price: "$19"');
     expect(pricing).toContain('price: "$99"');
     expect(pricing).not.toContain('price: "Free"');
-    expect(pricing).toContain("Not billed until billing opens");
+    expect(pricing).toContain("Early access · billing not yet open");
     expect(pricing.toLowerCase()).toContain("no payment is possible yet");
     expect(pricing).not.toContain("mailto:");
   });

@@ -23,13 +23,13 @@ export default function ReleaseReviewFilm() {
     <header className={styles.chrome}><div><i /><i /><i /></div><b>GuardRails</b><span>Acme workspace <ChevronRight /> Review queue</span><small>Live preview</small></header>
     <div className={styles.body} style={{ position: "relative" }}>
       <aside className={styles.side}><b>WORKSPACE</b><span className={styles.active}>Review queue <i>1</i></span><span>Inventory</span><span>Decisions</span><span>Monitoring</span><footer><i /> Connected</footer></aside>
-      <main className={styles.workspace}>
+      <div className={styles.workspace}>
         <div className={styles.topline}><div><p>RELEASE UPDATE</p><h3>Workspace assistant <small>2.8.0 → 2.9.0</small></h3></div><span className={styles.pending}><i /> Needs review</span></div>
         <div className={styles.tabs}><span className={styles.selected}>What changed <i>1</i></span><span>Previous decision</span><span>Evidence</span></div>
         <article className={styles.change}><div className={styles.changeIcon}><CircleAlert /></div><div><p>NEW CAPABILITY</p><h4>Terminal access</h4><span>Can run commands in the current workspace</span></div><b>Added</b></article>
         <article className={styles.note}><GitCompareArrows /><div><b>New compared with your approved version</b><p>Open the context before you decide.</p></div><ChevronRight /></article>
         <footer className={styles.actions}><span aria-live="polite"><i /> Evidence is attached to this release</span><button type="button" onClick={reviewChange} disabled={stage === "saved"}>{stage === "saved" ? <><Check /> Decision saved</> : "Review change"}</button></footer>
-      </main>
+      </div>
       <AnimatePresence initial={false}>
         {stage !== "arrived" ? <motion.aside
           key="release-explanation"

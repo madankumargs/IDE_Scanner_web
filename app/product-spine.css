@@ -1411,3 +1411,18 @@
     animation: none;
   }
 }
+
+/* Keep search and the report example together in the first review step. */
+.productLandingHeroGrid { grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr) !important; gap: clamp(32px, 5vw, 72px) !important; align-items: center !important; }
+.productLandingCopy .extensionSearch { margin-top: 0; }
+@media (max-width: 940px) {
+  .productLandingHeroGrid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 640px) {
+  .desktopHeaderAccount { display: none; }
+  .siteHeader .wordmark { flex-shrink: 0; }
+  .siteHeader .wordmark strong { max-width: none; overflow: visible; text-overflow: clip; font-size: 23px; }
+  .headerInner { gap: 8px; }
+  .headerCommands { flex-shrink: 0; }
+  .headerProductCta { padding-inline: 9px; font-size: 11px; }
+}

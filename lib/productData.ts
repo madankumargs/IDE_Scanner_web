@@ -33,11 +33,11 @@ export type CatalogExtension = {
 export type ScanDecision = "allow" | "review" | "block" | "incomplete";
 export type PublicSecurityFeedItem = { scan_id: string; extension_id: string; version: string; display_name: string; severity: string; decision: ScanDecision; public_outcome: string; decision_basis: string; evidence_confidence: string; scanned_at: string; coverage_percent: number; decision_reason: string };
 export type PublicInventoryItem = PublicSecurityFeedItem & { publisher: string; publisher_verified: boolean; description: string; icon_url: string; risk_score: number; malware_score: number; artifact_sha256: string; provenance_tier: string; expected_profile_id: string; capability_assessment: Record<string, unknown>; scanner_build: string; ruleset_version: string; score_schema_version: string };
-export type PublicInventory = { items: PublicInventoryItem[]; totals: { extensions: number; releases: number; complete: number; allowed: number; expected: number; investigate: number; review: number; blocked: number; lastScannedAt: string | null }; publication?: { accuracy_gate_corpus_id?: unknown; accuracy_gate_corpus_version?: unknown; accuracy_gate_sha256?: unknown } };
+export type PublicInventory = { availability?: "unavailable"; lastSuccessfulRefresh?: string | null; items: PublicInventoryItem[]; totals: { extensions: number; releases: number; complete: number; allowed: number; expected: number; investigate: number; review: number; blocked: number; lastScannedAt: string | null }; publication?: { accuracy_gate_corpus_id?: unknown; accuracy_gate_corpus_version?: unknown; accuracy_gate_sha256?: unknown } };
 export type PublicAnalysisHistory = { items: PublicInventoryItem[]; total: number; complete: number; pending: number };
 
 const cachedSecurityFeed=unstable_cache(async(limit:number)=>fetchPublicSecurityFeed(limit).catch(() => []),["public-feed-v1"],{revalidate:300,tags:["public-intel"]});
-const cachedPublicInventory=unstable_cache(async(limit:number,offset:number)=>fetchPublicInventory(limit,offset).catch(() => emptyInventory()),["public-inventory-v2"],{revalidate:300,tags:["public-intel"]});
+const cachedPublicInventory=unstable_cache(async(limit:number,offset:number)=>fetchPublicInventory(limit,offset).catch(() => emptyInventory()),["public-inventory-v3"],{revalidate:300,tags:["public-intel"]});
 const cachedPublicAnalysisHistory=unstable_cache(async(limit:number,offset:number)=>fetchPublicAnalysisHistory(limit,offset).catch(() => emptyAnalysisHistory()),["public-analysis-history-v1"],{revalidate:300,tags:["public-intel"]});
 const cachedCatalog=unstable_cache(async(query:string,limit:number)=>fetchCatalog(query,limit),["public-catalog-v1"],{revalidate:300,tags:["public-intel","catalog"]});
 const cachedRegistryExtension = unstable_cache(
@@ -49,8 +49,19 @@ const cachedRegistryExtension = unstable_cache(
 export function getPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedItem[]> { return cachedSecurityFeed(limit); }
 
 /** Current-policy reproducible scans only. Development and private work never enter this catalog. */
-export function getPublicInventory(limit = 240, offset = 0): Promise<PublicInventory> {
-  return cachedPublicInventory(Math.min(Math.max(Math.floor(limit), 1), 240), Math.max(Math.floor(offset), 0));
+let lastSuccessfulInventoryRefresh: string | null = null;
+export async function getPublicInventory(limit = 240, offset = 0, retry = false): Promise<PublicInventory> {
+  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 240);
+  const boundedOffset = Math.max(Math.floor(offset), 0);
+  const inventory = await (retry
+    ? fetchPublicInventory(boundedLimit, boundedOffset, true).catch(() => emptyInventory())
+    : cachedPublicInventory(boundedLimit, boundedOffset));
+  if (inventory.availability !== "unavailable") {
+    lastSuccessfulInventoryRefresh = inventory.totals.lastScannedAt || lastSuccessfulInventoryRefresh;
+  }
+  return inventory.availability === "unavailable"
+    ? { ...inventory, lastSuccessfulRefresh: lastSuccessfulInventoryRefresh }
+    : inventory;
 }
 
 export function getPublicAnalysisHistory(limit = 24, offset = 0): Promise<PublicAnalysisHistory> {
@@ -85,7 +96,7 @@ async function fetchPublicSecurityFeed(limit = 6): Promise<PublicSecurityFeedIte
 }
 
 /** Current-policy reproducible scans only. Development and private work never enter this catalog. */
-async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInventory> {
+async function fetchPublicInventory(limit = 240, offset = 0, retry = false): Promise<PublicInventory> {
   // Public pages should use the compact D1 publication mirror first. It is
   // already bounded and immutable between imports, while the Supabase query
   // below remains the compatibility path for local/legacy deployments.
@@ -97,7 +108,7 @@ async function fetchPublicInventory(limit = 240, offset = 0): Promise<PublicInve
     };
   }
   const mirror = async () => {
-    const inventory = (await getPublicRegistrySnapshot())?.inventory;
+    const inventory = (await getPublicRegistrySnapshot(retry))?.inventory;
     return inventory && hasAccuracyGateAttestation(inventory.publication)
       ? { ...inventory, items: inventory.items.slice(offset, offset + limit) }
       : emptyInventory();
@@ -848,7 +859,7 @@ function badgeDecisionFromScan(id: string, row: Record<string, unknown>, fallbac
 
 
 function emptyInventory(): PublicInventory {
-  return { items: [], totals: { extensions: 0, releases: 0, complete: 0, allowed: 0, expected: 0, investigate: 0, review: 0, blocked: 0, lastScannedAt: null } };
+  return { availability: "unavailable", items: [], totals: { extensions: 0, releases: 0, complete: 0, allowed: 0, expected: 0, investigate: 0, review: 0, blocked: 0, lastScannedAt: null } };
 }
 
 function emptyAnalysisHistory(): PublicAnalysisHistory {

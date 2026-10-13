@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import HeaderAccount from "./HeaderAccount";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Activity, ArrowUpRight, BellRing, BookOpen, Bot, Boxes, Building2, ChevronDown, CircleHelp, Code2, FlaskConical, History, Menu, ShieldCheck, TerminalSquare, Users, X } from "lucide-react";
@@ -68,6 +69,7 @@ export default function SiteNav() {
         {menuLink(["/docs", "Docs and API", "Gate releases in CI and from AI agents", BookOpen])}
         {menuLink(["/pricing", "Pricing", "Plans and product availability", History])}
       </div>
+      <div className="mobileNavGroup"><span>Account</span><HeaderAccount /></div>
       {moreGroups.map((group) => <div className="mobileNavGroup" key={group.label}><span>{group.label}</span>{group.items.map((item) => menuLink(item))}</div>)}
     </div>
   </nav>;

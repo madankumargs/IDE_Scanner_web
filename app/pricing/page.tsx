@@ -48,7 +48,7 @@ const plans = [
     price: "$19",
     suffix: "per month",
     tableSuffix: "$19/month",
-    later: "Not billed until billing opens — early access locks this price in",
+    later: "Early access · billing not yet open",
     description:
       "Stop re-reviewing releases from scratch. Every update arrives analyzed, with only meaningful capability changes surfaced.",
     action: "Join early access",
@@ -71,7 +71,7 @@ const plans = [
     price: "$99",
     suffix: "per month, up to 25 seats",
     tableSuffix: "$99/month",
-    later: "Not billed until billing opens — early access locks this price in",
+    later: "Early access · billing not yet open",
     description:
       "Roll extension policy out organization-wide, with decisions your auditor can read and a direct line to the founder.",
     action: "Talk to the founder",
@@ -117,7 +117,7 @@ const comparison: Array<{
   {
     group: "Team workflow",
     rows: [
-      ["Seats included", "1", "Up to 25", "Custom"],
+      ["Seats included", "1", "Up to 25", "Up to 25"],
       ["Shared review inbox and assignments", false, true, true],
       ["Allow, block, and exception rationale", false, false, true],
       ["Decision memory across releases", false, false, true],
@@ -202,7 +202,7 @@ export default function PricingPage() {
               <small>{plan.suffix}</small>
             </div>
             {plan.later ? (
-              <small className={styles.planLater}>Then {plan.later}</small>
+              <small className={styles.planLater}>{plan.later}</small>
             ) : null}
             <p>{plan.description}</p>
             <ul>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SarvamProgramNote from "@/app/SarvamProgramNote";
 import type { Metadata } from "next";
 import { ArrowRight, ExternalLink, Fingerprint, ScanSearch, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -105,6 +106,7 @@ export default function AboutPage() {
           Open Extension Registry <ArrowRight />
         </Link>
       </section>
+      <SarvamProgramNote />
     </main>
   );
 }
