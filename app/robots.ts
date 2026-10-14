@@ -8,5 +8,6 @@ export default function robots(): MetadataRoute.Robots {
       disallow: ["/api/", "/auth/", "/account", "/settings", "/reports/", "/history", "/inventory", "/extensions/"],
     },
     sitemap: "https://abscissa.dev/sitemap.xml",
+    host: "https://abscissa.dev",
   };
 }
