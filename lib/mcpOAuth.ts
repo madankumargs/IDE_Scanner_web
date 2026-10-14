@@ -7,10 +7,12 @@ export const MCP_RESOURCE = "https://abscissa.dev/api/mcp";
 export const MCP_SCOPES = ["mcp:read", "workspace:read"] as const;
 const CODE_TTL_MS = 5 * 60_000;
 const TOKEN_TTL_MS = 60 * 60_000;
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60_000;
 
 type OAuthClientRow = { client_id: string; client_name: string; redirect_uris_json: string };
 type CodeRow = { client_id: string; user_id: string; redirect_uri: string; scope: string; resource: string; code_challenge: string; expires_at: string };
 type TokenRow = { client_id: string; user_id: string; scope: string; resource: string; expires_at: string };
+type RefreshTokenRow = TokenRow;
 
 export type OAuthClient = { clientId: string; clientName: string; redirectUris: string[] };
 export type OAuthAuthorizationRequest = { clientId: string; redirectUri: string; scope: string[]; state: string; resource: string; codeChallenge: string };
@@ -85,7 +87,7 @@ export async function issueAuthorizationCode(input: OAuthAuthorizationRequest & 
   return code;
 }
 
-export async function exchangeAuthorizationCode(input: { code: string; clientId: string; redirectUri: string; codeVerifier: string; resource: string }): Promise<{ accessToken: string; expiresIn: number; scope: string } | null> {
+export async function exchangeAuthorizationCode(input: { code: string; clientId: string; redirectUri: string; codeVerifier: string; resource: string }): Promise<IssuedTokens | null> {
   if (!input.code || !input.clientId || !input.redirectUri || !input.codeVerifier || input.resource !== MCP_RESOURCE) return null;
   const db = privateDb();
   const codeHash = oauthHash(input.code);
@@ -93,10 +95,18 @@ export async function exchangeAuthorizationCode(input: { code: string; clientId:
   if (!row || row.client_id !== input.clientId || row.redirect_uri !== input.redirectUri || row.resource !== input.resource || pkceChallenge(input.codeVerifier) !== row.code_challenge) return null;
   const used = await db.prepare("UPDATE app_oauth_authorization_codes SET used_at=? WHERE code_hash=? AND used_at IS NULL").bind(nowIso(), codeHash).run();
   if (Number(used.meta?.changes || 0) !== 1) return null;
-  const accessToken = oauthRandom("mcp_access");
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
-  await db.prepare("INSERT INTO app_oauth_access_tokens(token_hash,client_id,user_id,scope,resource,expires_at,created_at) VALUES(?,?,?,?,?,?,?)").bind(oauthHash(accessToken), row.client_id, row.user_id, row.scope, row.resource, expiresAt, nowIso()).run();
-  return { accessToken, expiresIn: Math.floor(TOKEN_TTL_MS / 1000), scope: row.scope };
+  return issueTokens({ clientId: row.client_id, userId: row.user_id, scope: row.scope, resource: row.resource });
+}
+
+export async function exchangeRefreshToken(input: { refreshToken: string; clientId: string; resource: string }): Promise<IssuedTokens | null> {
+  if (!input.refreshToken || !input.clientId || input.resource !== MCP_RESOURCE) return null;
+  const db = privateDb();
+  const tokenHash = oauthHash(input.refreshToken);
+  const row = await db.prepare("SELECT client_id,user_id,scope,resource,expires_at FROM app_oauth_refresh_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>? LIMIT 1").bind(tokenHash, nowIso()).first<RefreshTokenRow>();
+  if (!row || row.client_id !== input.clientId || row.resource !== input.resource) return null;
+  const revoked = await db.prepare("UPDATE app_oauth_refresh_tokens SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(nowIso(), tokenHash).run();
+  if (Number(revoked.meta?.changes || 0) !== 1) return null;
+  return issueTokens({ clientId: row.client_id, userId: row.user_id, scope: row.scope, resource: row.resource });
 }
 
 export async function mcpOAuthToken(request: Request): Promise<McpOAuthToken | null> {
@@ -110,4 +120,20 @@ export async function mcpOAuthToken(request: Request): Promise<McpOAuthToken | n
 
 function pkceChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
+}
+
+type IssuedTokens = { accessToken: string; refreshToken: string; expiresIn: number; scope: string };
+
+async function issueTokens(input: { clientId: string; userId: string; scope: string; resource: string }): Promise<IssuedTokens> {
+  const accessToken = oauthRandom("mcp_access");
+  const refreshToken = oauthRandom("mcp_refresh");
+  const now = nowIso();
+  const accessExpiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS).toISOString();
+  const db = privateDb();
+  await db.batch([
+    db.prepare("INSERT INTO app_oauth_access_tokens(token_hash,client_id,user_id,scope,resource,expires_at,created_at) VALUES(?,?,?,?,?,?,?)").bind(oauthHash(accessToken), input.clientId, input.userId, input.scope, input.resource, accessExpiresAt, now),
+    db.prepare("INSERT INTO app_oauth_refresh_tokens(token_hash,client_id,user_id,scope,resource,expires_at,created_at) VALUES(?,?,?,?,?,?,?)").bind(oauthHash(refreshToken), input.clientId, input.userId, input.scope, input.resource, refreshExpiresAt, now),
+  ]);
+  return { accessToken, refreshToken, expiresIn: Math.floor(TOKEN_TTL_MS / 1000), scope: input.scope };
 }

@@ -64,7 +64,7 @@ export default function McpDocsPage() {
           <article><h3>Codex</h3><Code label="Terminal">{`codex mcp add guardrails --url ${MCP_URL}\ncodex mcp login guardrails\n# Complete browser sign-in and approve read-only scopes.\ncodex mcp get guardrails`}</Code></article>
           <article><h3>Claude Code</h3><Code label="Terminal">{`claude mcp add --transport http guardrails ${MCP_URL}\n# Select guardrails in /mcp, then complete browser sign-in.\nclaude mcp get guardrails`}</Code></article>
         </div>
-        <p className={styles.note}>The connection uses OAuth 2.1 authorization code flow with PKCE. Do not paste a bearer secret into a chat. <code>workspace:read</code> is only available to a signed-in user who belongs to a GuardRails workspace; all MCP tools remain read-only.</p>
+        <p className={styles.note}>The connection uses OAuth 2.1 authorization code flow with PKCE and refresh-token rotation. Do not paste a bearer secret into a chat. <code>workspace:read</code> is only available to a signed-in user who belongs to a GuardRails workspace; all MCP tools remain read-only.</p>
       </section>
 
       <section className={styles.section} id="workflows">
