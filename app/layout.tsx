@@ -28,19 +28,19 @@ import "./product-spine.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://abscissa.dev"),
   title: {
-    default: "GuardRails - Check IDE extensions before you install them",
+    default: "GuardRails | IDE extension intelligence and release review",
     template: "%s · GuardRails",
   },
   description:
-    "See what an IDE extension can access before you install it, and hear about it when an update adds terminal, network, or file access.",
+    "GuardRails gives developers and security teams evidence-backed intelligence for IDE extensions: inspect exact releases, monitor meaningful changes, and preserve defensible review decisions.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: "/",
     siteName: "GuardRails",
-    title: "GuardRails - Check IDE extensions before you install them",
+    title: "GuardRails | IDE extension intelligence and release review",
     description:
-      "Scan IDE extensions before install, then get flagged when an update quietly gains new access.",
+      "Inspect exact IDE extension releases, monitor meaningful behavior changes, and keep the evidence behind every decision.",
   },
   twitter: { card: "summary_large_image" },
   manifest: "/manifest.webmanifest",
@@ -49,9 +49,17 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const organizationJsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "Organization", name: "GuardRails", url: "https://abscissa.dev", description: "Independent IDE extension intelligence for developers and security teams.", email: "hello@abscissa.dev" },
+      { "@type": "SoftwareApplication", name: "GuardRails", applicationCategory: "SecurityApplication", operatingSystem: "Web, macOS, Windows, Linux", url: "https://abscissa.dev", description: "Evidence-backed IDE extension intelligence: exact-release reports, local inspection, release monitoring, team review, and an MCP integration for AI assistants.", featureList: ["Exact published-extension analysis", "Local CLI inspection", "Release-change monitoring", "Team evidence and decision history", "Read-only MCP intelligence for AI assistants"] },
+    ],
+  };
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
         <div className="siteFrame">
           <a className="skipLink" href="#main-content">
             Skip to content

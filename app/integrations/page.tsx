@@ -8,6 +8,7 @@ import {
   MessagesSquare,
   MonitorSmartphone,
   Plug,
+  ShieldCheck,
   TerminalSquare,
 } from "lucide-react";
 import styles from "../marketing.module.css";
@@ -61,6 +62,16 @@ const groups = [
     ],
   },
   {
+    icon: ShieldCheck,
+    name: "AI-assisted research",
+    tagline: "Evidence before an AI recommends software",
+    items: [
+      "Read-only MCP server for ChatGPT, Codex, Claude, and compatible assistants",
+      "Exact-release risk checks with user-openable report links",
+      "Analyzed alternatives when a requested extension needs review",
+    ],
+  },
+  {
     icon: FileJson,
     name: "Evidence export",
     tagline: "Records your compliance flow can consume",
@@ -95,8 +106,8 @@ export default function IntegrationsPage() {
             <em> the tools you already use.</em>
           </h1>
           <p>
-            Analysis results are delivered to your inbox, chat, issue tracker,
-            and terminal, and remain portable as report files.
+            Analysis results reach your inbox, chat, issue tracker, terminal,
+            and AI assistant, while the evidence remains portable and verifiable.
           </p>
         </div>
         <aside>
@@ -154,9 +165,10 @@ export default function IntegrationsPage() {
             the channel your team reads.
           </p>
         </div>
-        <Link href="/registry">
-          Search extensions <ArrowRight />
-        </Link>
+        <div className={styles.ctaActions}>
+          <Link href="/registry">Search extensions <ArrowRight /></Link>
+          <Link href="/docs/mcp">Connect an AI assistant <ArrowRight /></Link>
+        </div>
       </section>
     </main>
   );

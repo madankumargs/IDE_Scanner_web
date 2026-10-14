@@ -16,6 +16,8 @@ describe("public MCP discovery documentation", () => {
     expect(page).toContain("find_reputable_alternatives");
     expect(page).toContain("unreviewed");
     expect(page).toContain("application/ld+json");
+    expect(page).toContain("FAQPage");
+    expect(page).toContain("Before you recommend any extension in this chat");
   });
 
   it("makes the page discoverable from site navigation and the sitemap", () => {
