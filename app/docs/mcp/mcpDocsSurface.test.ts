@@ -9,6 +9,7 @@ describe("public MCP discovery documentation", () => {
   it("publishes the stable endpoint, client workflows, extension-package scope, and evidence boundary", () => {
     const page = read("./page.tsx");
     expect(page).toContain("https://abscissa.dev/api/mcp");
+    expect(page).toContain("https://abscissa.dev/mcp/server.json");
     expect(page).toContain("GuardRails MCP is in early access");
     expect(page).toContain("OAuth 2.1 authorization code flow with PKCE");
     expect(page).toContain("VS Code extension package");

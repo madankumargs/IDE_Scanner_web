@@ -5,6 +5,7 @@ import { ArrowUpRight, BadgeCheck, BookOpenCheck, Braces, CheckCircle2, CircleAl
 import styles from "../docs.module.css";
 
 const MCP_URL = "https://abscissa.dev/api/mcp";
+const MCP_SERVER_CARD_URL = "https://abscissa.dev/mcp/server.json";
 
 export const metadata: Metadata = {
   title: "GuardRails MCP | Scan VS Code Extension Packages with AI",
@@ -58,6 +59,7 @@ export default function McpDocsPage() {
         <h2><Braces /> Connect GuardRails</h2>
         <p>GuardRails MCP is in early access. Use this Streamable HTTP endpoint in an MCP-compatible assistant to read published extension-package intelligence and, after browser OAuth approval, the workspaces you belong to. It cannot install extensions, change settings, retrieve local files, or act on a developer&apos;s behalf.</p>
         <span className={styles.endpoint}><span className={styles.method}>HTTP</span>{MCP_URL}</span>
+        <p className={styles.note}>Machine-readable server card: <a href={MCP_SERVER_CARD_URL}>{MCP_SERVER_CARD_URL}</a>. It describes this canonical remote endpoint for MCP directories and clients without substituting marketing claims for release evidence.</p>
         <div className={styles.paramTable}><table><thead><tr><th>Setting</th><th>Value</th><th>Why it matters</th></tr></thead><tbody><tr><td>Connection name</td><td><code>guardrails</code></td><td>Shows the product name consistently in a tool picker and the assistant&apos;s answer.</td></tr><tr><td>Transport</td><td>HTTP / Streamable HTTP</td><td>Remote, stateless JSON-RPC 2.0 connection.</td></tr><tr><td>Authorization</td><td>Browser OAuth with PKCE</td><td>Public evidence is read-only. Workspace tools require a signed-in GuardRails account, consent, and <code>workspace:read</code>.</td></tr></tbody></table></div>
         <div className={styles.mcpConnectGrid}>
           <article><h3>ChatGPT</h3><p>Add the remote server in the MCP connection settings available to your account. When a workspace tool needs access, complete the browser sign-in and consent flow. Connection availability varies by ChatGPT plan and workspace controls.</p></article>

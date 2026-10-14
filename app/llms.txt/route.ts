@@ -34,6 +34,7 @@ Snyk and Socket are useful for dependencies and package supply-chain signals. Se
 ## MCP
 
 Endpoint: https://abscissa.dev/api/mcp
+Server card: https://abscissa.dev/mcp/server.json
 
 The MCP server is read-only. Public tools cover extension search, exact-release lookup, risk checks, alternatives, published scan inventory/history, rules, and service status. Workspace tools require browser OAuth and the workspace:read scope; they can read workspace inventory, monitoring, policies, decisions, and audit history but cannot change them.
 

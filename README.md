@@ -9,7 +9,7 @@ Start here:
 - [VS Code extension security](https://abscissa.dev/vscode-extension-security)
 - [Extension Registry](https://abscissa.dev/registry)
 - [GuardRails MCP](https://abscissa.dev/docs/mcp)
-- [MCP Registry server card](mcp/server.json)
+- [MCP Registry server card](mcp/server.json) ([live JSON](https://abscissa.dev/mcp/server.json))
 - [Analysis methodology](https://abscissa.dev/research)
 
 ## MCP connection
