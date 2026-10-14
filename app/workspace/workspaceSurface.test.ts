@@ -48,18 +48,20 @@ describe("GuardRails workspace product surface", () => {
   });
 
   it("gives first-time users a guided activation step", () => {
-    expect(workspace).toContain("Step 1 of 3");
+    expect(workspace).toContain("Step 1 of 2");
     expect(workspace).toContain("Set up your first release review.");
     expect(workspace).toContain("Exact release baselines");
   });
 
-  it("continues onboarding through extension, baseline, teammate, and notifications", () => {
+  it("reaches monitoring after selecting one extension without blocking on team setup", () => {
     expect(workspace).toContain("WorkspaceSetup");
     expect(workspace).toContain("Choose your first extension.");
-    expect(workspace).toContain("Your baseline is ready.");
-    expect(workspace).toContain("Invite the person who will review changes.");
-    expect(workspace).toContain("Choose how GuardRails brings you back.");
-    expect(workspace).toContain("Workspace ready");
+    expect(workspace).toContain("Start monitoring");
+    expect(workspace).toContain("Monitoring started");
+    expect(workspace).toContain(
+      "Invite reviewers from Settings when you are ready",
+    );
+    expect(workspace).toContain('initialQuery={initialExtension}');
     expect(workspace).toContain("guardrails:setup:");
   });
 

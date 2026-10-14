@@ -53,6 +53,7 @@ import ExtensionsView from "@/app/workspace/views/ExtensionsView";
 import BadgeStudioView from "@/app/workspace/views/BadgeStudioView";
 import { browserDb } from "@/lib/supabase";
 import { browserAuthHeaders } from "@/lib/browserAuth";
+import { trackProductEvent } from "@/lib/analyticsEvents";
 import {
   groupDecisionQueue,
   type QueueDecision,
@@ -301,10 +302,16 @@ export default function TeamWorkspace(
         );
       const available = Array.isArray(body.teams) ? (body.teams as Team[]) : [];
       const first = available[0]?.id || "";
+      const requestedSetup = new URLSearchParams(window.location.search).get(
+        "setup",
+      );
       const pending =
-        available.find((team) =>
-          window.localStorage.getItem(`guardrails:setup:${team.id}`),
-        )?.id || "";
+        (requestedSetup && available.some((team) => team.id === requestedSetup)
+          ? requestedSetup
+          : available.find((team) =>
+                window.localStorage.getItem(`guardrails:setup:${team.id}`),
+              )?.id) ||
+        "";
       setUserEmail(cloudflareSession.user?.email || supabaseUser?.email || "Signed-in user");
       setUserId(cloudflareSession.user?.id || supabaseUser?.id || "");
       setTeams(available);
@@ -829,12 +836,19 @@ export default function TeamWorkspace(
       <WorkspaceSetup
         team={activeTeam}
         email={userEmail}
+        initialExtension={
+          props.initialExtension ||
+          (typeof window === "undefined"
+            ? ""
+            : new URLSearchParams(window.location.search).get("extension") || "")
+        }
         getAuthHeaders={getAuthHeaders}
         onSignOut={signOut}
         onComplete={async () => {
           window.localStorage.removeItem(`guardrails:setup:${activeTeam.id}`);
           setSetupTeamId("");
           await loadWorkspace();
+          window.history.replaceState(null, "", "/workspace");
         }}
       />
     );
@@ -1216,14 +1230,14 @@ function WorkspaceOnboarding({
         </button>
       </header>
       <section>
-        <span className={styles.step}>Step 1 of 3</span>
+        <span className={styles.step}>Step 1 of 2</span>
         <div className={styles.onboardingIcon}>
           <ShieldCheck />
         </div>
         <h1>Set up your first release review.</h1>
         <p>
-          Name the workspace, anchor the first exact extension release you want
-          to monitor, and invite the person who will review changes.
+          Name the workspace, then choose the first exact extension release you
+          want to monitor. You can invite reviewers later.
         </p>
         <form onSubmit={submit}>
           <label>
@@ -1262,12 +1276,14 @@ function WorkspaceOnboarding({
 function WorkspaceSetup({
   team,
   email,
+  initialExtension = "",
   getAuthHeaders,
   onSignOut,
   onComplete,
 }: {
   team: Team;
   email: string;
+  initialExtension?: string;
   getAuthHeaders: () => Promise<Record<string, string>>;
   onSignOut: () => Promise<void>;
   onComplete: () => Promise<void>;
@@ -1278,10 +1294,6 @@ function WorkspaceSetup({
     version: string;
     state: "current" | "pending";
   } | null>(null);
-  const [inviteRole, setInviteRole] = useState("analyst");
-  const [inviteUrl, setInviteUrl] = useState("");
-  const [notificationEmail, setNotificationEmail] = useState("");
-  const [delivery, setDelivery] = useState<"in-app" | "email">("in-app");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function addExtension() {
@@ -1347,6 +1359,11 @@ function WorkspaceSetup({
         version: String(body.baseline_version || selected.version),
         state: body.monitoring_state === "monitoring" ? "current" : "pending",
       });
+      trackProductEvent({
+        name: "watch_created",
+        source_route: window.location.pathname,
+        scope: "team",
+      });
       window.localStorage.setItem(
         `guardrails:setup:${team.id}`,
         "extension-added",
@@ -1360,99 +1377,7 @@ function WorkspaceSetup({
       setSaving(false);
     }
   }
-  async function createSetupInvite() {
-    setSaving(true);
-    setError("");
-    try {
-      const headers = await getAuthHeaders();
-      if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
-      const response = await fetch(
-        `/api/teams/${encodeURIComponent(team.id)}/invites`,
-        {
-          method: "POST",
-          headers: {
-            ...headers,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ role: inviteRole, expires_in_days: 7 }),
-        },
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(
-          String(body.error || "Invitation could not be created."),
-        );
-      setInviteUrl(`${window.location.origin}${body.invitation_path}`);
-      window.localStorage.setItem(
-        `guardrails:setup:${team.id}`,
-        "teammate-invited",
-      );
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Invitation could not be created.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-  async function saveDelivery() {
-    if (delivery === "email" && notificationEmail.trim()) {
-      setSaving(true);
-      setError("");
-      try {
-        const headers = await getAuthHeaders();
-        if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
-        const response = await fetch(
-          `/api/teams/${encodeURIComponent(team.id)}/notification-channels`,
-          {
-            method: "POST",
-            headers: {
-              ...headers,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              kind: "email_resend",
-              label: "Security updates",
-              email: notificationEmail.trim(),
-              minimum_severity: "MEDIUM",
-            }),
-          },
-        );
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok)
-          throw new Error(
-            String(
-              body.error ||
-                "Email could not be connected. You can continue with in-app notifications.",
-            ),
-          );
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Email could not be connected.",
-        );
-        setSaving(false);
-        return;
-      } finally {
-        setSaving(false);
-      }
-    }
-    window.localStorage.setItem(
-      `guardrails:setup:${team.id}`,
-      "notifications-set",
-    );
-    setStep(5);
-  }
-  const labels = [
-    "First extension",
-    "Baseline",
-    "Teammate",
-    "Notifications",
-    "Ready",
-  ];
+  const labels = ["First extension", "Ready"];
   return (
     <main className={styles.setup}>
       <header>
@@ -1468,7 +1393,7 @@ function WorkspaceSetup({
       <div className={styles.setupLayout}>
         <aside>
           <span>Workspace setup</span>
-          <h2>Anchor your first release baseline.</h2>
+          <h2>Start with one extension your team already uses.</h2>
           <ol>
             {labels.map((label, index) => (
               <li
@@ -1486,7 +1411,7 @@ function WorkspaceSetup({
               </li>
             ))}
           </ol>
-          <small>Progress is saved for this browser.</small>
+          <small>You can add people and delivery channels after monitoring starts.</small>
         </aside>
         <section className={styles.setupCard}>
           {step === 1 ? (
@@ -1498,6 +1423,7 @@ function WorkspaceSetup({
               />
               <div className={styles.setupSearch}>
                 <ExtensionSearch
+                  initialQuery={initialExtension}
                   onSelect={setSelected}
                   submitLabel="Find extension"
                 />
@@ -1520,7 +1446,7 @@ function WorkspaceSetup({
                   disabled={!selected || saving}
                   onClick={() => void addExtension()}
                 >
-                  {saving ? "Adding extension…" : "Add and continue"}
+                  {saving ? "Starting monitoring…" : "Start monitoring"}
                   <ArrowRight />
                 </button>
               </footer>
@@ -1528,168 +1454,11 @@ function WorkspaceSetup({
           ) : null}
           {step === 2 ? (
             <>
-              <SetupHeading
-                number="02"
-                title={
-                  baseline?.state === "current"
-                    ? "Your baseline is ready."
-                    : "Your baseline is being prepared."
-                }
-                body={
-                  baseline?.state === "current"
-                    ? `GuardRails will compare future releases with ${selected?.display_name} ${baseline.version}.`
-                    : `${selected?.display_name} is now watched. Its first complete report will become the baseline before any update is approved.`
-                }
-              />
-              <div className={styles.baselineCard}>
-                <ShieldCheck />
-                <div>
-                  <span>
-                    {baseline?.state === "current"
-                      ? "Protected baseline"
-                      : "Baseline pending"}
-                  </span>
-                  <strong>
-                    {selected?.extension_id}@{baseline?.version}
-                  </strong>
-                  <p>
-                    {baseline?.state === "current"
-                      ? "New releases will be scanned and compared with this exact package."
-                      : "Monitoring is active; incomplete analysis will never be presented as approval."}
-                  </p>
-                </div>
-              </div>
-              <footer>
-                <button onClick={() => setStep(3)}>
-                  Continue <ArrowRight />
-                </button>
-              </footer>
-            </>
-          ) : null}
-          {step === 3 ? (
-            <>
-              <SetupHeading
-                number="03"
-                title="Invite the person who will review changes."
-                body="Create an auditable, seven-day invitation. You can skip this and invite teammates later."
-              />
-              <div className={styles.setupForm}>
-                <label>
-                  Role
-                  <select
-                    value={inviteRole}
-                    onChange={(event) => setInviteRole(event.target.value)}
-                  >
-                    <option value="analyst">Security analyst</option>
-                    <option value="admin">Administrator</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                </label>
-                <button
-                  disabled={saving || Boolean(inviteUrl)}
-                  onClick={() => void createSetupInvite()}
-                >
-                  {inviteUrl
-                    ? "Invitation created"
-                    : saving
-                      ? "Creating…"
-                      : "Create invitation"}
-                </button>
-                {inviteUrl ? (
-                  <label>
-                    Share this link
-                    <input
-                      readOnly
-                      value={inviteUrl}
-                      onFocus={(event) => event.target.select()}
-                    />
-                  </label>
-                ) : null}
-              </div>
-              <SetupError error={error} />
-              <footer>
-                <button
-                  className={styles.setupSecondary}
-                  onClick={() => setStep(4)}
-                >
-                  {inviteUrl ? "Continue" : "Skip for now"}
-                </button>
-                {inviteUrl ? (
-                  <button onClick={() => setStep(4)}>
-                    Continue <ArrowRight />
-                  </button>
-                ) : null}
-              </footer>
-            </>
-          ) : null}
-          {step === 4 ? (
-            <>
-              <SetupHeading
-                number="04"
-                title="Choose how GuardRails brings you back."
-                body="In-app notifications are always available. Add email now, or connect Slack, Jira, and webhooks later in settings."
-              />
-              <div className={styles.deliveryOptions}>
-                <button
-                  className={delivery === "in-app" ? styles.deliveryActive : ""}
-                  onClick={() => setDelivery("in-app")}
-                >
-                  <Bell />
-                  <span>
-                    <strong>In-app only</strong>
-                    <small>See changes in the review inbox.</small>
-                  </span>
-                  <CheckCircle2 />
-                </button>
-                <button
-                  className={delivery === "email" ? styles.deliveryActive : ""}
-                  onClick={() => setDelivery("email")}
-                >
-                  <Bell />
-                  <span>
-                    <strong>Email + in-app</strong>
-                    <small>
-                      Send meaningful changes to a security mailbox.
-                    </small>
-                  </span>
-                  <CheckCircle2 />
-                </button>
-              </div>
-              {delivery === "email" ? (
-                <label className={styles.emailField}>
-                  Security mailbox
-                  <input
-                    type="email"
-                    value={notificationEmail}
-                    onChange={(event) =>
-                      setNotificationEmail(event.target.value)
-                    }
-                    placeholder="security@example.com"
-                  />
-                </label>
-              ) : null}
-              <SetupError error={error} />
-              <footer>
-                <button
-                  disabled={
-                    saving ||
-                    (delivery === "email" && !notificationEmail.trim())
-                  }
-                  onClick={() => void saveDelivery()}
-                >
-                  {saving ? "Connecting…" : "Finish setup"}
-                  <ArrowRight />
-                </button>
-              </footer>
-            </>
-          ) : null}
-          {step === 5 ? (
-            <>
               <div className={styles.setupSuccess}>
                 <span>
                   <CheckCircle2 />
                 </span>
-                <small>Workspace ready</small>
+                <small>Monitoring started</small>
                 <h1>{team.name} is monitoring its first extension.</h1>
                 <p>
                   GuardRails will return new releases to your review inbox only
@@ -1706,16 +1475,7 @@ function WorkspaceSetup({
                       : "Baseline queued"}
                   </strong>
                   <strong>
-                    <CheckCircle2 />{" "}
-                    {inviteUrl
-                      ? "Teammate invitation created"
-                      : "Team invitations available later"}
-                  </strong>
-                  <strong>
-                    <CheckCircle2 />{" "}
-                    {delivery === "email"
-                      ? "Email notifications connected"
-                      : "In-app notifications active"}
+                    <CheckCircle2 /> Invite reviewers from Settings when you are ready
                   </strong>
                 </div>
               </div>

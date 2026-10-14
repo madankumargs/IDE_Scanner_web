@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowRight,
   AtSign,
@@ -15,6 +15,8 @@ import { browserDb } from "@/lib/supabase";
 import { browserAuthHeaders } from "@/lib/browserAuth";
 import { normalizeEmail } from "@/lib/emailOtp";
 import { trackProductEvent } from "@/lib/analyticsEvents";
+import ExtensionSearch from "@/app/ExtensionSearch";
+import type { DiscoveryResult } from "@/lib/types";
 import styles from "./Onboarding.module.css";
 import "./account.css";
 
@@ -30,6 +32,25 @@ const googleEnabled = true;
 // Supabase project. Keep the Supabase flags for local compatibility, but always
 // expose the working Cloudflare path in production.
 const githubEnabled = true;
+
+function extensionFromDestination(destination: string) {
+  try {
+    const target = new URL(destination, "https://guardrails.local");
+    const fromQuery = target.searchParams.get("extension");
+    if (fromQuery) return fromQuery;
+    const match = target.pathname.match(/^\/extensions\/([^/]+)/);
+    return match ? decodeURIComponent(match[1]) : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeDestination(destination: string | null | undefined) {
+  return destination?.startsWith("/") && !destination.startsWith("//")
+    ? destination
+    : "/workspace";
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const db = useMemo(() => browserDb(), []);
@@ -58,15 +79,15 @@ export default function AccountPage() {
                 ? "That sign-in provider is temporarily unavailable. Try again shortly."
         : "";
   });
-  const [role, setRole] = useState("developer");
-  const [ide, setIde] = useState("vscode");
-  const [useCase, setUseCase] = useState("personal");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [selectedExtension, setSelectedExtension] =
+    useState<DiscoveryResult | null>(null);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const destination =
     typeof window === "undefined"
       ? "/workspace"
       : new URLSearchParams(window.location.search).get("next") || "/workspace";
+  const sourceExtension = extensionFromDestination(destination);
   const entryPoint = destination.startsWith("/monitor")
     ? "monitor"
     : destination.startsWith("/extensions/")
@@ -78,14 +99,6 @@ export default function AccountPage() {
       : entryPoint === "report"
         ? "Try five free scans before setting up a workspace."
         : "Continue to your workspace.";
-  function continueToDestination() {
-    const destination = new URLSearchParams(window.location.search).get("next");
-    router.push(
-      destination?.startsWith("/") && !destination.startsWith("//")
-        ? destination
-        : "/workspace",
-    );
-  }
   useEffect(() => {
     void (async () => {
       try {
@@ -171,9 +184,7 @@ export default function AccountPage() {
   }
   async function finishOnboarding() {
     if (!account || onboardingSaving) return;
-    const name =
-      workspaceName.trim() ||
-      (useCase === "team" ? "My team workspace" : "My developer workspace");
+    const name = workspaceName.trim() || "My developer workspace";
     setOnboardingSaving(true);
     setMessage("");
     try {
@@ -200,7 +211,7 @@ export default function AccountPage() {
           ...headers,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ role, primary_ide: ide, use_case: useCase }),
+        body: JSON.stringify({}),
       });
       const profileBody = await profileResponse.json().catch(() => ({}));
       if (!profileResponse.ok) {
@@ -210,8 +221,48 @@ export default function AccountPage() {
             "Your workspace was created, but setup is not complete. Try again to save your profile.",
         );
       }
+      if (!teamsBody.reused) {
+        trackProductEvent({
+          name: "workspace_created",
+          source_route: window.location.pathname,
+        });
+      }
+
+      let monitored = false;
+      if (selectedExtension) {
+        const watchResponse = await fetch(
+          `/api/teams/${encodeURIComponent(String(teamsBody.id))}/watchlist`,
+          {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              extension_id: selectedExtension.extension_id,
+              version: selectedExtension.version,
+            }),
+          },
+        );
+        const watchBody = await watchResponse.json().catch(() => ({}));
+        monitored =
+          watchResponse.ok && watchBody.monitoring_state === "monitoring";
+        if (watchResponse.ok) {
+          trackProductEvent({
+            name: "watch_created",
+            source_route: window.location.pathname,
+            scope: "team",
+          });
+        }
+      }
+
       setAccount({ ...account, profile: profileBody.profile });
-      continueToDestination();
+      if (monitored) {
+        router.push(safeDestination(destination));
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set("setup", String(teamsBody.id));
+      const extension = selectedExtension?.extension_id || sourceExtension;
+      if (extension) params.set("extension", extension);
+      router.push(`/workspace?${params.toString()}`);
     } catch {
       setOnboardingSaving(false);
       setMessage("Setup could not be completed. Try again.");
@@ -234,13 +285,13 @@ export default function AccountPage() {
     return (
       <main className={styles.page}>
         <section className={styles.intro}>
-          <span className={styles.eyebrow}>Your first baseline</span>
-          <h1>Set up the place where extension changes come back to you.</h1>
+          <span className={styles.eyebrow}>Your first monitored extension</span>
+          <h1>Start with the extension you want to keep under review.</h1>
           <p>
-            In under a minute, create a workspace, choose the tools you use, and
-            make your first extension decision traceable. Your free plan starts
-            immediately with no payment details. You can invite teammates after
-            setup.
+            GuardRails creates a workspace around a real decision: the exact
+            extension release you want to monitor. Invite reviewers and connect
+            delivery channels later, when they are useful. Your free plan starts
+            immediately with no payment details.
           </p>
           <p>Five Deep Scans are free. No card is required.</p>
           <ul className={styles.benefits}>
@@ -249,62 +300,38 @@ export default function AccountPage() {
               New releases return with an exact before-and-after comparison
             </li>
             <li>Every decision keeps its evidence, owner, and reason</li>
-            <li>Five free Deep Scans before you need a workspace</li>
+            <li>Workspace controls stay optional until your first watch is live</li>
           </ul>
         </section>
         <section className={styles.form} aria-label="Workspace setup">
           <div className={styles.formIntro}>
-            <span className={styles.formEyebrow}>Step 1 of 1</span>
-            <h2>Start your free workspace</h2>
+            <span className={styles.formEyebrow}>One useful step</span>
+            <h2>Choose an extension to monitor</h2>
             <p>
-              Start alone or invite a team later. This does not upload any
+              Select the exact release to start from. This does not upload your
               source code.
             </p>
           </div>
+          <ExtensionSearch
+            initialQuery={sourceExtension}
+            onSelect={setSelectedExtension}
+            submitLabel="Find extension"
+          />
+          {selectedExtension ? (
+            <p className={styles.message}>
+              Monitoring starts with <strong>{selectedExtension.display_name}</strong>{" "}
+              <code>@{selectedExtension.version}</code>.
+            </p>
+          ) : null}
           <label className={styles.workspaceName}>
-            <span>Workspace name</span>
+            <span>Workspace name (optional)</span>
             <input
               value={workspaceName}
               onChange={(event) => setWorkspaceName(event.target.value)}
               maxLength={80}
-              placeholder={
-                useCase === "team"
-                  ? "Acme engineering"
-                  : "My developer workspace"
-              }
+              placeholder="My developer workspace"
             />
           </label>
-          <Choice
-            label="Who is this for?"
-            value={useCase}
-            setValue={setUseCase}
-            options={[
-              ["personal", "Just me"],
-              ["team", "My team"],
-            ]}
-          />
-          <Choice
-            label="Your role"
-            value={role}
-            setValue={setRole}
-            options={[
-              ["developer", "Developer"],
-              ["security", "Security engineer"],
-              ["engineering_leader", "Engineering leader"],
-            ]}
-          />
-          <Choice
-            label="Primary IDE"
-            value={ide}
-            setValue={setIde}
-            options={[
-              ["vscode", "VS Code"],
-              ["cursor", "Cursor"],
-              ["windsurf", "Windsurf"],
-              ["vscodium", "VSCodium"],
-              ["other", "Other"],
-            ]}
-          />
           <button
             className={styles.primaryAction}
             onClick={() => void finishOnboarding()}
@@ -316,7 +343,7 @@ export default function AccountPage() {
               </>
             ) : (
               <>
-                Start free workspace <ArrowRight />
+                {selectedExtension ? "Start monitoring" : "Create workspace"} <ArrowRight />
               </>
             )}
           </button>
@@ -492,37 +519,6 @@ function GitHubMark() {
         d="M12 .5C5.73.5.5 5.73.5 12c0 5.02 3.44 9.27 8.21 10.78.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.21.08 1.84 1.24 1.84 1.24 1.07 1.84 2.81 1.31 3.49 1 .11-.78.42-1.31.76-1.61-2.66-.3-5.46-1.33-5.46-5.92 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1.01-.32 3.3 1.23A11.5 11.5 0 0 1 12 6.76c1.02 0 2.05.14 3.01.41 2.29-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.87.12 3.17.77.84 1.23 1.91 1.23 3.22 0 4.6-2.8 5.61-5.47 5.91.43.37.81 1.09.81 2.2v3.27c0 .32.22.69.83.57A11.5 11.5 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z"
       />
     </svg>
-  );
-}
-function Choice({
-  label,
-  value,
-  setValue,
-  options,
-}: {
-  label: string;
-  value: string;
-  setValue: (value: string) => void;
-  options: string[][];
-}) {
-  return (
-    <fieldset className={styles.choice}>
-      <legend>{label}</legend>
-      <div className={styles.choiceOptions}>
-        {options.map(([id, text]) => (
-          <button
-            type="button"
-            className={styles.choiceButton}
-            aria-pressed={value === id}
-            key={id}
-            onClick={() => setValue(id)}
-          >
-            {value === id ? <Check /> : null}
-            {text}
-          </button>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 function RadarIcon() {

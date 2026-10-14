@@ -20,6 +20,19 @@ describe("GuardRails account surface", () => {
     expect(page).toContain("Your GuardRails workspace.");
   });
 
+  it("starts onboarding from the extension a user wants to monitor", () => {
+    expect(page).toContain("Your first monitored extension");
+    expect(page).toContain("Choose an extension to monitor");
+    expect(page).toContain("extensionFromDestination");
+    expect(page).toContain("selectedExtension.extension_id");
+    expect(page).toContain("router.push(safeDestination(destination))");
+    expect(page).toContain('params.set("setup", String(teamsBody.id))');
+    expect(page).toContain('watchBody.monitoring_state === "monitoring"');
+    expect(page).toContain('name: "workspace_created"');
+    expect(page).not.toContain('label="Primary IDE"');
+    expect(page).not.toContain('label="Your role"');
+  });
+
   it("uses a light atmospheric surface without dark-green treatments", () => {
     expect(css).toContain("#edf7f4");
     expect(css).toContain("#f4faf8");
