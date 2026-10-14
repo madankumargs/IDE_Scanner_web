@@ -19,6 +19,7 @@ const topLinks: readonly (readonly [string, string])[] = [
 const moreGroups: readonly { label: string; items: readonly NavItem[] }[] = [
   { label: "Product", items: [
     ["/workspace", "Team Workspace", "Assign decisions and preserve the evidence", Users],
+    ["/docs/mcp", "MCP for AI", "Connect an AI assistant to extension intelligence", Bot],
     ["/cli", "Local CLI", "Inspect extensions installed on your machine", TerminalSquare],
     ["/ide", "GuardRails IDE", "Preview explicit authority for agents and tools", ShieldCheck],
     ["/registry/mcp", "MCP Registry", "Inspect servers before an agent connects", Boxes],

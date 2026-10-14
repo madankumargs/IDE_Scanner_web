@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "guardrails": {
+      "type": "streamable-http",
+      "url": "https://abscissa.dev/api/mcp"
+    }
+  }
+}

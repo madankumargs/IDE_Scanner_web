@@ -1,0 +1,36 @@
+{
+  "name": "guardrails-mcp",
+  "version": "1.0.0",
+  "description": "Read-only, evidence-backed IDE extension intelligence for AI assistants.",
+  "author": {
+    "name": "GuardRails",
+    "url": "https://abscissa.dev"
+  },
+  "homepage": "https://abscissa.dev/docs/mcp",
+  "repository": "https://github.com/preethamak/IDE_Scanner_web",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "GuardRails",
+    "shortDescription": "Check IDE extension risk",
+    "longDescription": "GuardRails helps users check published IDE extensions before recommending or installing them. It returns read-only, evidence-backed public intelligence for exact releases and can suggest reputable analyzed alternatives when a candidate needs review.",
+    "developerName": "GuardRails",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Check an exact IDE extension release before installation",
+      "Find reputable analyzed alternatives",
+      "Open the public evidence report for verification"
+    ],
+    "websiteURL": "https://abscissa.dev/docs/mcp",
+    "supportURL": "https://abscissa.dev/contact",
+    "privacyPolicyURL": "https://abscissa.dev/privacy",
+    "termsOfServiceURL": "https://abscissa.dev/terms",
+    "defaultPrompt": [
+      "Check this VS Code extension before I install it.",
+      "Find reputable alternatives for this extension category.",
+      "Which exact release should I review before recommending this extension?"
+    ],
+    "brandColor": "#1F7A6C",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
+}

@@ -103,6 +103,7 @@ export default function RootLayout({
                   <Link href="/monitor">Release Monitoring</Link>
                   <Link href="/workspace">Team Workspace</Link>
                   <Link href="/ide">GuardRails IDE</Link>
+                  <Link href="/docs/mcp">MCP for AI assistants</Link>
                   <Link href="/pricing">Pricing</Link>
                   <Link href="/status">Product Status</Link>
                 </div>
