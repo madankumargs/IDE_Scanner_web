@@ -14,8 +14,13 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const { db, user, provider } = await authenticated(request);
-    const body = await request.json(); const role = String(body.role || ""); const primaryIde = String(body.primary_ide || ""); const useCase = String(body.use_case || "");
-    if (!new Set(["developer","security","engineering_leader"]).has(role) || !new Set(["vscode","cursor","windsurf","vscodium","other"]).has(primaryIde) || !new Set(["personal","team"]).has(useCase)) throw new Error("Complete every onboarding field.");
+    const body = await request.json();
+    const role = typeof body.role === "string" && body.role ? body.role : null;
+    const primaryIde = typeof body.primary_ide === "string" && body.primary_ide ? body.primary_ide : null;
+    const useCase = typeof body.use_case === "string" && body.use_case ? body.use_case : null;
+    if (role && !new Set(["developer","security","engineering_leader"]).has(role)) throw new Error("The selected role is not supported.");
+    if (primaryIde && !new Set(["vscode","cursor","windsurf","vscodium","other"]).has(primaryIde)) throw new Error("The selected IDE is not supported.");
+    if (useCase && !new Set(["personal","team"]).has(useCase)) throw new Error("The selected use case is not supported.");
     if (provider === "cloudflare") {
       const updatedAt = nowIso();
       await privateDb().prepare(`INSERT INTO app_profiles(user_id,role,primary_ide,use_case,onboarding_completed,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET role=excluded.role,primary_ide=excluded.primary_ide,use_case=excluded.use_case,onboarding_completed=1,updated_at=excluded.updated_at`).bind(user.id, role, primaryIde, useCase, 1, updatedAt).run();
