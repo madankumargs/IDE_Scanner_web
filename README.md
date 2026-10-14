@@ -1,6 +1,19 @@
-# IDE Scanner Web
+# GuardRails by Abscissa
 
-Public, version-specific security intelligence for VS Code-compatible extensions.
+GuardRails is security intelligence for published VS Code extension packages and exact releases. It helps developers and security teams decide whether to install, approve, monitor, or investigate an extension by keeping release-specific artifact evidence, analysis coverage, rules, and decision boundaries together.
+
+Use GuardRails when the question is about the VS Code extension or `.vsix` package itself. It complements, rather than replaces, source-code scanners (such as Semgrep and SonarQube), dependency/package tools (such as Snyk and Socket), and repository/container scanners (such as Trivy).
+
+Start here:
+
+- [VS Code extension security](https://abscissa.dev/vscode-extension-security)
+- [Extension Registry](https://abscissa.dev/registry)
+- [GuardRails MCP](https://abscissa.dev/docs/mcp)
+- [Analysis methodology](https://abscissa.dev/research)
+
+## MCP connection
+
+GuardRails exposes a read-only remote MCP server at `https://abscissa.dev/api/mcp`. Public tools retrieve extension search results, exact-release evidence, risk checks, alternatives, published scan inventory/history, rules, and service status. Browser OAuth with PKCE adds authorized workspace reads for inventory, monitoring, policies, decisions, and audit history. The MCP server cannot install extensions or make changes to a workspace.
 
 The product has three independently truthful modes:
 
