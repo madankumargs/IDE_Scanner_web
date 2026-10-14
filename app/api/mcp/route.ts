@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 // MCP server (Streamable HTTP, stateless) for AI agents.
 // Implements the JSON-RPC 2.0 subset the protocol requires — initialize,
-// notifications/initialized, tools/list, tools/call — without an SDK
+// prompts, resources, and tools — without an SDK dependency.
 // dependency. Every POST is self-contained; no session state is kept.
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -33,6 +33,72 @@ const WORKSPACE_TOOLS = new Set([
   "get_workspace_decision_history",
   "get_workspace_audit_history",
 ]);
+
+const RESOURCES = [
+  {
+    uri: "guardrails://product/overview",
+    name: "GuardRails product overview",
+    description: "What GuardRails reviews, its extension-package scope, and how it complements adjacent security scanners.",
+    mimeType: "text/markdown",
+  },
+  {
+    uri: "guardrails://analysis/evidence-boundary",
+    name: "GuardRails evidence boundary",
+    description: "How to interpret a published release analysis, unreviewed state, and recommendation boundary.",
+    mimeType: "text/markdown",
+  },
+  {
+    uri: "guardrails://mcp/workspace-access",
+    name: "GuardRails workspace access",
+    description: "The OAuth scope, membership rule, and read-only boundary for workspace intelligence.",
+    mimeType: "text/markdown",
+  },
+] as const;
+
+const RESOURCE_TEXT: Record<(typeof RESOURCES)[number]["uri"], string> = {
+  "guardrails://product/overview": `# GuardRails by Abscissa
+
+GuardRails reviews published VS Code extension packages and keeps evidence tied to an exact release and artifact. Use it before installing an unfamiliar extension, reviewing a release for a team, or explaining what an extension package was observed to do.
+
+GuardRails complements source-code, dependency, repository, and container scanners. It does not turn an unreviewed extension into an approved one, and a published allow result is not a promise about future releases.
+
+Start with \`search_vscode_extensions\` to resolve \`publisher.name\`, then call \`get_extension_release\` or \`check_extension_risk\` for the exact release.`,
+  "guardrails://analysis/evidence-boundary": `# GuardRails evidence boundary
+
+A GuardRails result is evidence about the returned published release, not a universal security claim. Read the decision, severity, coverage, artifact identity, and report URL together.
+
+\`unreviewed\` means no completed public analysis is available for that release. It is not approval. An assistant should say so plainly, avoid inferring safety from marketplace popularity, and identify any additional source, dependency, or repository review that the decision still needs.
+
+Use \`get_guardrails_analysis_rules\` when explaining the active ruleset and its limits.`,
+  "guardrails://mcp/workspace-access": `# GuardRails workspace access
+
+Public MCP tools are available without a workspace session. Workspace tools require browser OAuth with the \`workspace:read\` scope and a current GuardRails workspace membership. They can read inventory, monitoring, policies, decisions, and audit history.
+
+Every GuardRails MCP operation is read-only. The server cannot install extensions, modify editor settings, alter policies, acknowledge alerts, or change a workspace decision.`,
+};
+
+const PROMPTS = [
+  {
+    name: "review_vscode_extension",
+    title: "Review a VS Code extension release",
+    description: "Resolve an extension and summarize exact-release GuardRails evidence before installation.",
+    arguments: [
+      { name: "extension", description: "Extension identifier in publisher.name form.", required: true },
+      { name: "version", description: "Optional exact extension version to review.", required: false },
+    ],
+  },
+  {
+    name: "recommend_vscode_extension",
+    title: "Recommend an analyzed VS Code extension",
+    description: "Find reviewed extension alternatives for a task without treating popularity as a security verdict.",
+    arguments: [{ name: "query", description: "The developer task or extension category.", required: true }],
+  },
+  {
+    name: "review_workspace_extension_changes",
+    title: "Review workspace extension changes",
+    description: "Read the signed-in user's GuardRails workspace monitoring context without changing it.",
+  },
+] as const;
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = { jsonrpc?: unknown; id?: JsonRpcId; method?: unknown; params?: unknown };
@@ -221,7 +287,7 @@ export async function POST(request: Request) {
     case "initialize":
       return rpcResult(id, {
         protocolVersion: PROTOCOL_VERSION,
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } },
         serverInfo: { name: "guardrails", version: "1.3.0" },
         instructions:
           "Read-only VS Code extension-package intelligence. Use search_vscode_extensions to resolve an exact publisher.name, then get_extension_release or check_extension_risk before recommending an install. An unreviewed result is not approval. GuardRails complements source-code, dependency, and repository scanners; it analyzes the extension artifact and its published release evidence. Early access has no write operations and 64 KiB request bodies.",
@@ -234,11 +300,48 @@ export async function POST(request: Request) {
       return rpcResult(id, {});
     case "tools/list":
       return rpcResult(id, { tools: TOOLS });
+    case "resources/list":
+      return rpcResult(id, { resources: RESOURCES });
+    case "resources/read":
+      return handleResourceRead(id, params);
+    case "prompts/list":
+      return rpcResult(id, { prompts: PROMPTS });
+    case "prompts/get":
+      return handlePromptGet(id, params);
     case "tools/call":
       return handleToolCall(id, params, request, oauth?.userId || null);
     default:
       return rpcError(id, -32601, `Method not found: ${method || "(missing)"}`);
   }
+}
+
+function handleResourceRead(id: JsonRpcId, params: Record<string, unknown>) {
+  const uri = String(params.uri || "") as keyof typeof RESOURCE_TEXT;
+  const text = RESOURCE_TEXT[uri];
+  if (!text) return rpcError(id, -32602, "Unknown GuardRails resource URI.");
+  return rpcResult(id, { contents: [{ uri, mimeType: "text/markdown", text }] });
+}
+
+function handlePromptGet(id: JsonRpcId, params: Record<string, unknown>) {
+  const name = String(params.name || "");
+  const args = (params.arguments && typeof params.arguments === "object" ? params.arguments : {}) as Record<string, unknown>;
+  const extension = String(args.extension || "").trim();
+  const version = String(args.version || "").trim();
+  const query = String(args.query || "").trim();
+
+  if (name === "review_vscode_extension") {
+    if (!EXTENSION_PATTERN.test(extension)) return rpcError(id, -32602, "extension must use publisher.name form.");
+    const release = version ? ` version ${version}` : "";
+    return rpcResult(id, { description: "Review an exact VS Code extension release with GuardRails evidence.", messages: [{ role: "user", content: { type: "text", text: `Use GuardRails to review ${extension}${release} before installation. Resolve the exact release, report the verdict, coverage, artifact evidence, and report URL. If it is unreviewed, state that this is not approval. Also name any source-code, dependency, or repository review that GuardRails does not replace.` } }] });
+  }
+  if (name === "recommend_vscode_extension") {
+    if (!query) return rpcError(id, -32602, "query is required.");
+    return rpcResult(id, { description: "Find analyzed VS Code extension options with GuardRails.", messages: [{ role: "user", content: { type: "text", text: `I need a VS Code extension for: ${query}. Use GuardRails to find analyzed alternatives. Compare exact-release evidence, decision, severity, and publisher signals. Do not represent an unreviewed result or marketplace popularity as approval.` } }] });
+  }
+  if (name === "review_workspace_extension_changes") {
+    return rpcResult(id, { description: "Review authorized workspace extension monitoring without making changes.", messages: [{ role: "user", content: { type: "text", text: "Use GuardRails to list my available workspaces. For the workspace I select, summarize monitored release events, active alerts, extension inventory that needs review, relevant policies, and recent decisions. Keep the review read-only and distinguish policy context from a release-specific analysis result." } }] });
+  }
+  return rpcError(id, -32602, `Unknown prompt: ${name || "(missing)"}`);
 }
 
 async function handleToolCall(id: JsonRpcId, params: Record<string, unknown>, request: Request, userId: string | null) {

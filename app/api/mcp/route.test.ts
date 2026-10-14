@@ -56,6 +56,21 @@ describe("public MCP endpoint", () => {
     ]));
   });
 
+  it("publishes public product resources and guided review prompts", async () => {
+    const resourcesResponse = await POST(request({ jsonrpc: "2.0", id: 1, method: "resources/list" }));
+    const resources = await resourcesResponse.json();
+    expect(resources.result.resources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ uri: "guardrails://product/overview", mimeType: "text/markdown" }),
+      expect.objectContaining({ uri: "guardrails://analysis/evidence-boundary" }),
+    ]));
+
+    const readResponse = await POST(request({ jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: "guardrails://analysis/evidence-boundary" } }));
+    await expect(readResponse.json()).resolves.toMatchObject({ result: { contents: [expect.objectContaining({ text: expect.stringContaining("unreviewed") })] } });
+
+    const promptResponse = await POST(request({ jsonrpc: "2.0", id: 3, method: "prompts/get", params: { name: "review_vscode_extension", arguments: { extension: "ms-python.python", version: "1.2.3" } } }));
+    await expect(promptResponse.json()).resolves.toMatchObject({ result: { messages: [expect.objectContaining({ content: expect.objectContaining({ text: expect.stringContaining("ms-python.python version 1.2.3") }) })] } });
+  });
+
   it("challenges unauthenticated workspace calls with protected-resource metadata", async () => {
     const response = await POST(request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_workspace_extension_inventory", arguments: { workspace_id: "workspace-id" } } }));
     expect(response.status).toBe(401);

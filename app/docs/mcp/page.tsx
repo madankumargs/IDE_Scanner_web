@@ -99,7 +99,7 @@ export default function McpDocsPage() {
            <article className={styles.toolCard}><strong>get_workspace_decision_history</strong><p>Reads prior extension decisions and their rationales so an assistant can explain the existing review record without changing it.</p><span>Requires: <code>workspace:read</code> and workspace membership.</span></article>
            <article className={styles.toolCard}><strong>get_workspace_audit_history</strong><p>Reads the workspace audit history for a defensible review timeline.</p><span>Requires: <code>workspace:read</code> and workspace membership.</span></article>
         </div>
-        <p>Every tool declares itself read-only and returns structured data beside user-openable evidence. The server supports <code>initialize</code>, <code>ping</code>, <code>tools/list</code>, and <code>tools/call</code>.</p>
+        <p>Every tool declares itself read-only and returns structured data beside user-openable evidence. The server also publishes product-scope, evidence-boundary, and workspace-access resources plus reusable review prompts, so a connected assistant can load the operating context before it calls a tool. The protocol supports <code>initialize</code>, <code>ping</code>, <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>, <code>prompts/get</code>, <code>tools/list</code>, and <code>tools/call</code>.</p>
       </section>
 
       <section className={styles.mcpBoundary}>
