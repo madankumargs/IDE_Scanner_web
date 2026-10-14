@@ -10,6 +10,7 @@ describe("public MCP discovery documentation", () => {
     const page = read("./page.tsx");
     expect(page).toContain("https://abscissa.dev/api/mcp");
     expect(page).toContain("GuardRails MCP is in early access");
+    expect(page).toContain("OAuth 2.1 authorization code flow with PKCE");
     expect(page).toContain("VS Code extension package");
     expect(page).toContain("codex mcp add guardrails");
     expect(page).toContain("codex mcp login guardrails");
@@ -17,6 +18,8 @@ describe("public MCP discovery documentation", () => {
     expect(page).toContain("search_vscode_extensions");
     expect(page).toContain("get_extension_release");
     expect(page).toContain("get_guardrails_analysis_rules");
+    expect(page).toContain("list_guardrails_workspaces");
+    expect(page).toContain("get_workspace_extension_inventory");
     expect(page).toContain("check_extension_risk");
     expect(page).toContain("find_reputable_alternatives");
     expect(page).toContain("unreviewed");

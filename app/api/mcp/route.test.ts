@@ -52,7 +52,15 @@ describe("public MCP endpoint", () => {
       expect.objectContaining({ name: "get_extension_release", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
       expect.objectContaining({ name: "list_published_extension_scans", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
       expect.objectContaining({ name: "get_guardrails_analysis_rules", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
+      expect.objectContaining({ name: "get_workspace_extension_inventory", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
     ]));
+  });
+
+  it("challenges unauthenticated workspace calls with protected-resource metadata", async () => {
+    const response = await POST(request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_workspace_extension_inventory", arguments: { workspace_id: "workspace-id" } } }));
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain("oauth-protected-resource/api/mcp");
+    expect(response.headers.get("www-authenticate")).toContain("workspace:read");
   });
 
   it("serves the full public extension-analysis surface through structured tools", async () => {

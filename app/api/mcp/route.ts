@@ -8,6 +8,10 @@ import { validBearerSecret } from "@/lib/internalRunnerAuth";
 import { runtimeEnv } from "@/lib/runtimeEnv";
 import { getActiveRuleCatalog } from "@/lib/activeRuleCatalog";
 import { getPublicStatus } from "@/lib/publicStatus";
+import { mcpOAuthToken } from "@/lib/mcpOAuth";
+import { privateDb } from "@/lib/cloudflarePrivate";
+import { requireTeamRole } from "@/lib/teams";
+import { getWorkspaceState } from "@/lib/cloudflareWorkspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +25,14 @@ const PROTOCOL_VERSION = "2025-06-18";
 const EXTENSION_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+$/;
 const MAX_BODY_BYTES = 64 * 1024;
 const MCP_ACCESS_TOKEN_ENV = "MCP_ACCESS_TOKEN";
+const WORKSPACE_TOOLS = new Set([
+  "list_guardrails_workspaces",
+  "get_workspace_extension_inventory",
+  "get_workspace_monitoring",
+  "get_workspace_policies",
+  "get_workspace_decision_history",
+  "get_workspace_audit_history",
+]);
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = { jsonrpc?: unknown; id?: JsonRpcId; method?: unknown; params?: unknown };
@@ -122,6 +134,54 @@ const TOOLS = [
     outputSchema: { type: "object", required: ["overall"], properties: { overall: { type: "string" } } },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
+  {
+    name: "list_guardrails_workspaces",
+    title: "List GuardRails workspaces",
+    description: "List the GuardRails workspaces available to the signed-in MCP user. Requires the workspace:read OAuth scope.",
+    inputSchema: { type: "object", properties: {} },
+    outputSchema: { type: "object", required: ["workspaces"], properties: { workspaces: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_workspace_extension_inventory",
+    title: "Get workspace extension inventory",
+    description: "Read a GuardRails workspace's observed IDE extension inventory, device summary, exact versions, scan state, and monitoring state. Requires workspace:read OAuth scope and workspace membership.",
+    inputSchema: { type: "object", properties: { workspace_id: { type: "string", description: "GuardRails workspace ID." } }, required: ["workspace_id"] },
+    outputSchema: { type: "object", required: ["workspace_id", "inventory"], properties: { workspace_id: { type: "string" }, inventory: { type: "object" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_workspace_monitoring",
+    title: "Get workspace monitoring",
+    description: "Read GuardRails workspace watchlist entries, monitoring status, release events, and active alerts. Requires workspace:read OAuth scope and workspace membership.",
+    inputSchema: { type: "object", properties: { workspace_id: { type: "string", description: "GuardRails workspace ID." }, limit: { type: "integer", minimum: 1, maximum: 100 } }, required: ["workspace_id"] },
+    outputSchema: { type: "object", required: ["workspace_id", "watchlist", "alerts", "release_events"], properties: { workspace_id: { type: "string" }, watchlist: { type: "array" }, alerts: { type: "array" }, release_events: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_workspace_policies",
+    title: "Get workspace policies",
+    description: "Read the enabled GuardRails workspace policy set and monitoring preferences. Requires workspace:read OAuth scope and workspace membership.",
+    inputSchema: { type: "object", properties: { workspace_id: { type: "string", description: "GuardRails workspace ID." } }, required: ["workspace_id"] },
+    outputSchema: { type: "object", required: ["workspace_id", "policies", "preferences"], properties: { workspace_id: { type: "string" }, policies: { type: "array" }, preferences: { type: "object" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_workspace_decision_history",
+    title: "Get workspace decision history",
+    description: "Read recorded extension decisions, rationale, owners, and evidence references for a GuardRails workspace. Requires workspace:read OAuth scope and workspace membership.",
+    inputSchema: { type: "object", properties: { workspace_id: { type: "string", description: "GuardRails workspace ID." }, limit: { type: "integer", minimum: 1, maximum: 100 } }, required: ["workspace_id"] },
+    outputSchema: { type: "object", required: ["workspace_id", "decisions"], properties: { workspace_id: { type: "string" }, decisions: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_workspace_audit_history",
+    title: "Get workspace audit history",
+    description: "Read the GuardRails workspace audit trail for decisions, monitoring, and policy activity. Requires workspace:read OAuth scope and workspace membership.",
+    inputSchema: { type: "object", properties: { workspace_id: { type: "string", description: "GuardRails workspace ID." }, limit: { type: "integer", minimum: 1, maximum: 100 } }, required: ["workspace_id"] },
+    outputSchema: { type: "object", required: ["workspace_id", "events"], properties: { workspace_id: { type: "string" }, events: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
 ] as const;
 
 export async function GET() {
@@ -153,6 +213,9 @@ export async function POST(request: Request) {
   const id = message.id === undefined ? null : message.id;
   const method = typeof message.method === "string" ? message.method : "";
   const params = (message.params && typeof message.params === "object" ? message.params : {}) as Record<string, unknown>;
+  const toolName = method === "tools/call" ? String(params.name || "") : "";
+  const oauth = await mcpOAuthToken(request).catch(() => null);
+  if (WORKSPACE_TOOLS.has(toolName) && (!oauth || !oauth.scopes.includes("workspace:read"))) return oauthRequired();
 
   switch (method) {
     case "initialize":
@@ -172,13 +235,13 @@ export async function POST(request: Request) {
     case "tools/list":
       return rpcResult(id, { tools: TOOLS });
     case "tools/call":
-      return handleToolCall(id, params, request);
+      return handleToolCall(id, params, request, oauth?.userId || null);
     default:
       return rpcError(id, -32601, `Method not found: ${method || "(missing)"}`);
   }
 }
 
-async function handleToolCall(id: JsonRpcId, params: Record<string, unknown>, request: Request) {
+async function handleToolCall(id: JsonRpcId, params: Record<string, unknown>, request: Request, userId: string | null) {
   const name = String(params.name || "");
   const args = (params.arguments && typeof params.arguments === "object" ? params.arguments : {}) as Record<string, unknown>;
   const origin = new URL(request.url).origin;
@@ -191,6 +254,12 @@ async function handleToolCall(id: JsonRpcId, params: Record<string, unknown>, re
     if (name === "get_extension_scan_history") return rpcResult(id, await getExtensionScanHistory(args, origin));
     if (name === "get_guardrails_analysis_rules") return rpcResult(id, await getAnalysisRules());
     if (name === "get_guardrails_service_status") return rpcResult(id, await getServiceStatus());
+    if (name === "list_guardrails_workspaces") return rpcResult(id, await listGuardRailsWorkspaces(userId));
+    if (name === "get_workspace_extension_inventory") return rpcResult(id, await getWorkspaceExtensionInventory(args, userId));
+    if (name === "get_workspace_monitoring") return rpcResult(id, await getWorkspaceMonitoring(args, userId));
+    if (name === "get_workspace_policies") return rpcResult(id, await getWorkspacePolicies(args, userId));
+    if (name === "get_workspace_decision_history") return rpcResult(id, await getWorkspaceDecisionHistory(args, userId));
+    if (name === "get_workspace_audit_history") return rpcResult(id, await getWorkspaceAuditHistory(args, userId));
     return rpcError(id, -32602, `Unknown tool: ${name || "(missing)"}`);
   } catch {
     return rpcResult(id, toolError("The analysis backend is temporarily unavailable. Try again shortly."));
@@ -377,6 +446,52 @@ async function getServiceStatus() {
   return toolJson(await getPublicStatus() as Record<string, unknown>);
 }
 
+async function listGuardRailsWorkspaces(userId: string | null) {
+  if (!userId) return toolError("OAuth workspace authorization is required.");
+  const rows = await privateDb().prepare("SELECT t.id,t.name,t.slug,t.created_at,m.role FROM app_team_members m JOIN app_teams t ON t.id=m.team_id WHERE m.user_id=? ORDER BY t.created_at").bind(userId).all<Record<string, unknown>>();
+  return toolJson({ workspaces: rows.results.map((row) => ({ id: String(row.id), name: String(row.name), slug: String(row.slug), role: String(row.role), created_at: String(row.created_at) })) });
+}
+
+async function workspaceForMcp(args: Record<string, unknown>, userId: string | null) {
+  const workspaceId = String(args.workspace_id || "").trim();
+  if (!workspaceId) return { error: toolError("workspace_id is required.") } as const;
+  if (!userId) return { error: toolError("OAuth workspace authorization is required.") } as const;
+  await requireTeamRole(workspaceId, userId, ["owner", "admin", "analyst", "viewer"]);
+  return { workspaceId, state: await getWorkspaceState(workspaceId) } as const;
+}
+
+async function getWorkspaceExtensionInventory(args: Record<string, unknown>, userId: string | null) {
+  const workspace = await workspaceForMcp(args, userId);
+  if ("error" in workspace) return workspace.error;
+  const installations = workspace.state.inventory.installations;
+  return toolJson({ workspace_id: workspace.workspaceId, inventory: { devices: workspace.state.inventory.devices, installations, last_import_at: workspace.state.inventory.last_import_at, summary: { devices: workspace.state.inventory.devices.length, installations: installations.length, unique_extensions: new Set(installations.map((item) => String(item.extension_id).toLowerCase())).size, monitored: installations.filter((item) => workspace.state.watchlist.some((watch) => String(watch.extension_id).toLowerCase() === String(item.extension_id).toLowerCase())).length } } });
+}
+
+async function getWorkspaceMonitoring(args: Record<string, unknown>, userId: string | null) {
+  const workspace = await workspaceForMcp(args, userId);
+  if ("error" in workspace) return workspace.error;
+  const limit = boundedInteger(args.limit, 50, 100);
+  return toolJson({ workspace_id: workspace.workspaceId, monitoring: workspace.state.monitoring || null, watchlist: workspace.state.watchlist.slice(0, limit), alerts: workspace.state.alerts.slice(0, limit), release_events: workspace.state.release_events.filter((event) => String(event.state) !== "superseded").slice(0, limit) });
+}
+
+async function getWorkspacePolicies(args: Record<string, unknown>, userId: string | null) {
+  const workspace = await workspaceForMcp(args, userId);
+  if ("error" in workspace) return workspace.error;
+  return toolJson({ workspace_id: workspace.workspaceId, policies: workspace.state.policies, preferences: workspace.state.preferences });
+}
+
+async function getWorkspaceDecisionHistory(args: Record<string, unknown>, userId: string | null) {
+  const workspace = await workspaceForMcp(args, userId);
+  if ("error" in workspace) return workspace.error;
+  return toolJson({ workspace_id: workspace.workspaceId, decisions: workspace.state.decisions.slice(0, boundedInteger(args.limit, 50, 100)) });
+}
+
+async function getWorkspaceAuditHistory(args: Record<string, unknown>, userId: string | null) {
+  const workspace = await workspaceForMcp(args, userId);
+  if ("error" in workspace) return workspace.error;
+  return toolJson({ workspace_id: workspace.workspaceId, events: workspace.state.audit.slice(0, boundedInteger(args.limit, 50, 100)) });
+}
+
 function toolJson(payload: Record<string, unknown>) {
   return {
     content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
@@ -412,6 +527,13 @@ function authorize(request: Request): NextResponse | null {
   }
   if (validBearerSecret(request.headers.get("authorization"), accessToken)) return null;
   return NextResponse.json({ error: "Unauthorized MCP request." }, { status: 401, headers: { ...rpcHeaders(), "WWW-Authenticate": 'Bearer realm="guardrails-mcp"' } });
+}
+
+function oauthRequired() {
+  return NextResponse.json(
+    { error: "OAuth authorization with workspace:read is required for GuardRails workspace tools." },
+    { status: 401, headers: { ...rpcHeaders(), "WWW-Authenticate": 'Bearer resource_metadata="https://abscissa.dev/.well-known/oauth-protected-resource/api/mcp", scope="workspace:read"' } },
+  );
 }
 
 function contentLength(request: Request): number {
