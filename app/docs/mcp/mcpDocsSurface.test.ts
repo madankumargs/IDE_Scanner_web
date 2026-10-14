@@ -6,18 +6,24 @@ function read(path: string) {
 }
 
 describe("public MCP discovery documentation", () => {
-  it("publishes the stable endpoint, client workflows, and evidence boundary", () => {
+  it("publishes the stable endpoint, client workflows, extension-package scope, and evidence boundary", () => {
     const page = read("./page.tsx");
     expect(page).toContain("https://abscissa.dev/api/mcp");
-    expect(page).toContain("Add custom MCP server");
+    expect(page).toContain("GuardRails MCP is in early access");
+    expect(page).toContain("VS Code extension package");
     expect(page).toContain("codex mcp add guardrails");
+    expect(page).toContain("codex mcp login guardrails");
     expect(page).toContain("claude mcp add --transport http guardrails");
+    expect(page).toContain("search_vscode_extensions");
+    expect(page).toContain("get_extension_release");
+    expect(page).toContain("get_guardrails_analysis_rules");
     expect(page).toContain("check_extension_risk");
     expect(page).toContain("find_reputable_alternatives");
     expect(page).toContain("unreviewed");
+    expect(page).toContain("Will adding this MCP make every ChatGPT user discover GuardRails?");
     expect(page).toContain("application/ld+json");
     expect(page).toContain("FAQPage");
-    expect(page).toContain("Before you recommend any extension in this chat");
+    expect(page).toContain("Before you recommend a VS Code extension in this chat");
   });
 
   it("makes the page discoverable from site navigation and the sitemap", () => {

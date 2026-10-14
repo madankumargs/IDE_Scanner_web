@@ -28,19 +28,19 @@ import "./product-spine.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://abscissa.dev"),
   title: {
-    default: "GuardRails | IDE extension intelligence and release review",
+    default: "GuardRails by Abscissa | VS Code extension security and release review",
     template: "%s · GuardRails",
   },
   description:
-    "GuardRails gives developers and security teams evidence-backed intelligence for IDE extensions: inspect exact releases, monitor meaningful changes, and preserve defensible review decisions.",
+    "GuardRails by Abscissa gives developers and security teams evidence-backed VS Code extension-package intelligence: inspect exact releases, monitor meaningful changes, and preserve defensible review decisions.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: "/",
-    siteName: "GuardRails",
-    title: "GuardRails | IDE extension intelligence and release review",
+    siteName: "GuardRails by Abscissa",
+    title: "GuardRails by Abscissa | VS Code extension security and release review",
     description:
-      "Inspect exact IDE extension releases, monitor meaningful behavior changes, and keep the evidence behind every decision.",
+      "Inspect exact VS Code extension packages and releases, monitor meaningful behavior changes, and keep the evidence behind every decision.",
   },
   twitter: { card: "summary_large_image" },
   manifest: "/manifest.webmanifest",
@@ -52,8 +52,8 @@ export default function RootLayout({
   const organizationJsonLd = {
     "@context": "https://schema.org",
     "@graph": [
-      { "@type": "Organization", name: "GuardRails", url: "https://abscissa.dev", description: "Independent IDE extension intelligence for developers and security teams.", email: "hello@abscissa.dev" },
-      { "@type": "SoftwareApplication", name: "GuardRails", applicationCategory: "SecurityApplication", operatingSystem: "Web, macOS, Windows, Linux", url: "https://abscissa.dev", description: "Evidence-backed IDE extension intelligence: exact-release reports, local inspection, release monitoring, team review, and an MCP integration for AI assistants.", featureList: ["Exact published-extension analysis", "Local CLI inspection", "Release-change monitoring", "Team evidence and decision history", "Read-only MCP intelligence for AI assistants"] },
+      { "@type": "Organization", name: "Abscissa", url: "https://abscissa.dev", description: "Builder of GuardRails, an independent VS Code extension security product for developers and security teams.", email: "hello@abscissa.dev" },
+      { "@type": "SoftwareApplication", name: "GuardRails", alternateName: "Abscissa GuardRails", applicationCategory: "SecurityApplication", operatingSystem: "Web, macOS, Windows, Linux", url: "https://abscissa.dev", description: "Evidence-backed VS Code extension-package intelligence: exact-release reports, local inspection, release monitoring, team review, and a read-only MCP integration for AI assistants.", featureList: ["Published VS Code extension-package analysis", "Exact release and artifact evidence", "Local CLI inspection", "Release-change monitoring", "Team evidence and decision history", "Read-only MCP intelligence for AI assistants"] },
     ],
   };
   return (

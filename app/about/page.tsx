@@ -4,9 +4,9 @@ import type { Metadata } from "next";
 import { ArrowRight, ExternalLink, Fingerprint, ScanSearch, ShieldCheck, Sparkles } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "About GuardRails | IDE extension intelligence",
+  title: "About GuardRails by Abscissa | VS Code extension security",
   description:
-    "GuardRails is independent IDE extension intelligence: exact-release evidence, local inspection, change monitoring, team review, and read-only MCP access for AI-assisted research.",
+    "GuardRails by Abscissa is independent VS Code extension-package intelligence: exact-release evidence, local inspection, change monitoring, team review, and read-only MCP access for AI-assisted research.",
   alternates: { canonical: "/about" },
 };
 
@@ -15,18 +15,18 @@ export default function AboutPage() {
     "@context": "https://schema.org",
     "@type": "AboutPage",
     name: "About GuardRails",
-    description: "GuardRails is an independent product for inspecting IDE extensions, monitoring release changes, and preserving evidence-backed software decisions.",
+    description: "GuardRails by Abscissa is an independent product for inspecting published VS Code extension packages, monitoring release changes, and preserving evidence-backed software decisions.",
   };
   return (
     <main className="shell trustInfoPage">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(aboutJsonLd) }} />
       <header>
-        <span>About GuardRails</span>
-        <h1>Extension intelligence built around exact evidence.</h1>
+        <span>About GuardRails by Abscissa</span>
+        <h1>VS Code extension security built around exact evidence.</h1>
         <p>
-          GuardRails is an independent security product for evaluating IDE
-          extensions before installation and following their published releases
-          afterward.
+          GuardRails is Abscissa&apos;s independent security product for evaluating
+          published VS Code extension packages before installation and following
+          their published releases afterward.
         </p>
       </header>
       <section className="trustInfoGrid">

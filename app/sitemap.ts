@@ -8,6 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ["/", 1, "weekly"],
     ["/pricing", 0.9, "weekly"],
     ["/registry", 0.9, "daily"],
+    ["/vscode-extension-security", 0.9, "weekly"],
     ["/ide", 0.9, "weekly"],
     ["/docs/mcp", 0.8, "monthly"],
     ["/cli", 0.8, "weekly"],

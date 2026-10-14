@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { rankAlternatives } from "@/lib/alternatives";
 import { isValidGateCheck, lookupGateVerdict } from "@/lib/gateLookup";
-import { getBadgeDecision, getPublicInventory } from "@/lib/productData";
+import { getBadgeDecision, getExtensionProduct, getPublicAnalysisHistory, getPublicInventory, getVersionProduct, listCatalog } from "@/lib/productData";
 import { publicDb } from "@/lib/supabase";
 import { deriveTrustTier } from "@/lib/trustTiers";
 import { validBearerSecret } from "@/lib/internalRunnerAuth";
 import { runtimeEnv } from "@/lib/runtimeEnv";
+import { getActiveRuleCatalog } from "@/lib/activeRuleCatalog";
+import { getPublicStatus } from "@/lib/publicStatus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +74,54 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
+  {
+    name: "search_vscode_extensions",
+    title: "Search VS Code extensions",
+    description: "Search GuardRails' extension catalog by extension id, publisher, or name. Use this to identify the exact publisher.name before assessing a published extension package.",
+    inputSchema: { type: "object", properties: { query: { type: "string", description: "Extension name, publisher, or publisher.name identifier." }, limit: { type: "integer", minimum: 1, maximum: 20, description: "Maximum results. Defaults to 10." } }, required: ["query"] },
+    outputSchema: { type: "object", required: ["query", "extensions"], properties: { query: { type: "string" }, extensions: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  },
+  {
+    name: "get_extension_release",
+    title: "Get extension release details",
+    description: "Return the catalog and public analysis summary for a VS Code extension. Provide a version to inspect that exact release; omit it for the latest catalog release and its available analysis state. This does not claim an unscanned release is safe.",
+    inputSchema: { type: "object", properties: { extension: { type: "string", description: "Extension id in publisher.name form." }, version: { type: "string", description: "Optional exact version." } }, required: ["extension"] },
+    outputSchema: { type: "object", required: ["extension", "analysis_state"], properties: { extension: { type: "object" }, version: { type: ["object", "null"] }, analysis_state: { type: "string", enum: ["analyzed", "unreviewed", "not_found"] } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  },
+  {
+    name: "list_published_extension_scans",
+    title: "List published extension scans",
+    description: "List recent publicly published GuardRails analyses. Use this for ecosystem research, not as proof about releases absent from the list.",
+    inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, description: "Maximum scans. Defaults to 20." }, offset: { type: "integer", minimum: 0, maximum: 10000, description: "Offset for pagination." } } },
+    outputSchema: { type: "object", required: ["items", "totals"], properties: { items: { type: "array" }, totals: { type: "object" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_extension_scan_history",
+    title: "Get published scan history",
+    description: "Return the most recently published public analysis records, including exact extension versions, decisions, evidence confidence, and scan timestamps.",
+    inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, description: "Maximum history records. Defaults to 20." }, page: { type: "integer", minimum: 1, maximum: 1000, description: "Page number. Defaults to 1." } } },
+    outputSchema: { type: "object", required: ["items", "total", "page"], properties: { items: { type: "array" }, total: { type: "integer" }, page: { type: "integer" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_guardrails_analysis_rules",
+    title: "Get GuardRails analysis rules",
+    description: "Return the currently published GuardRails rule catalog, including rule categories, evidence classes, severity defaults, and decision effects. Use this to explain what the extension-package analysis checks and its limits.",
+    inputSchema: { type: "object", properties: {} },
+    outputSchema: { type: "object", required: ["rules"], properties: { policy_version: { type: ["string", "null"] }, ruleset_version: { type: "string" }, rules: { type: "array" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: "get_guardrails_service_status",
+    title: "Get GuardRails service status",
+    description: "Return the current public GuardRails service status before relying on a scan or report lookup.",
+    inputSchema: { type: "object", properties: {} },
+    outputSchema: { type: "object", required: ["overall"], properties: { overall: { type: "string" } } },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  },
 ] as const;
 
 export async function GET() {
@@ -109,9 +159,9 @@ export async function POST(request: Request) {
       return rpcResult(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "guardrails", version: "1.1.0" },
+        serverInfo: { name: "guardrails", version: "1.2.0" },
         instructions:
-          "Read-only public extension intelligence. Check a candidate before recommending it. An unreviewed result is not approval; link the exact report for a human decision. Early-access limits: 64 KiB request bodies and no write operations.",
+          "Read-only VS Code extension-package intelligence. Use search_vscode_extensions to resolve an exact publisher.name, then get_extension_release or check_extension_risk before recommending an install. An unreviewed result is not approval. GuardRails complements source-code, dependency, and repository scanners; it analyzes the extension artifact and its published release evidence. Early access has no write operations and 64 KiB request bodies.",
       });
     case "notifications/initialized":
     case "notifications/cancelled":
@@ -135,6 +185,12 @@ async function handleToolCall(id: JsonRpcId, params: Record<string, unknown>, re
   try {
     if (name === "check_extension_risk") return rpcResult(id, await checkExtensionRisk(args, origin));
     if (name === "find_reputable_alternatives") return rpcResult(id, await findReputableAlternatives(args, origin));
+    if (name === "search_vscode_extensions") return rpcResult(id, await searchVsCodeExtensions(args, origin));
+    if (name === "get_extension_release") return rpcResult(id, await getExtensionRelease(args, origin));
+    if (name === "list_published_extension_scans") return rpcResult(id, await listPublishedExtensionScans(args, origin));
+    if (name === "get_extension_scan_history") return rpcResult(id, await getExtensionScanHistory(args, origin));
+    if (name === "get_guardrails_analysis_rules") return rpcResult(id, await getAnalysisRules());
+    if (name === "get_guardrails_service_status") return rpcResult(id, await getServiceStatus());
     return rpcError(id, -32602, `Unknown tool: ${name || "(missing)"}`);
   } catch {
     return rpcResult(id, toolError("The analysis backend is temporarily unavailable. Try again shortly."));
@@ -234,6 +290,91 @@ async function findReputableAlternatives(args: Record<string, unknown>, origin: 
       report_url: `${origin}${item.report_path}`,
     })),
   });
+}
+
+function boundedInteger(value: unknown, fallback: number, maximum: number, minimum = 1): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.min(Math.max(parsed, minimum), maximum) : fallback;
+}
+
+async function searchVsCodeExtensions(args: Record<string, unknown>, origin: string) {
+  const query = String(args.query || "").trim();
+  if (!query) return toolError("Provide an extension name, publisher, or publisher.name identifier.");
+  const extensions = await listCatalog(query, boundedInteger(args.limit, 10, 20));
+  return toolJson({
+    query,
+    extensions: extensions.map((item) => ({
+      extension: item.id,
+      display_name: item.display_name,
+      publisher: item.publisher,
+      publisher_verified: item.publisher_verified,
+      latest_version: item.latest_version || null,
+      scan_supported: item.scan_supported ?? null,
+      scan_support_reason: item.scan_support_reason || null,
+      extension_url: `${origin}/extensions/${encodeURIComponent(item.id)}`,
+    })),
+    note: "Search identifies a published extension. Resolve the exact release before making a security recommendation.",
+  });
+}
+
+async function getExtensionRelease(args: Record<string, unknown>, origin: string) {
+  const extension = String(args.extension || "").trim();
+  const version = String(args.version || "").trim();
+  if (!EXTENSION_PATTERN.test(extension)) return toolError("Provide extension as publisher.name, e.g. ms-python.python.");
+  const product = version ? await getVersionProduct(extension, version) : await getExtensionProduct(extension);
+  if (!product) return toolJson({ extension, version: version || null, analysis_state: "not_found", note: "No matching extension or published release was found." });
+  const record = product as Record<string, unknown>;
+  const scan = record.scan && typeof record.scan === "object" ? record.scan as Record<string, unknown> : null;
+  const versionRow = version ? record.version : null;
+  const extensionRecord = version ? { id: extension } : record.extension;
+  const scanId = scan?.id ? String(scan.id) : null;
+  const scannedVersion = version || String((scan?.version || (extensionRecord as Record<string, unknown> | null)?.latest_version || ""));
+  return toolJson({
+    extension: extensionRecord,
+    version: versionRow,
+    scan: scan ? compactScan(scan) : null,
+    analysis_state: scan ? "analyzed" : "unreviewed",
+    report_url: scanId && scannedVersion ? `${origin}/extensions/${encodeURIComponent(extension)}/versions/${encodeURIComponent(scannedVersion)}/scans/${encodeURIComponent(scanId)}` : `${origin}/extensions/${encodeURIComponent(extension)}`,
+    note: scan ? "This analysis applies only to the returned release and artifact evidence." : "No completed published analysis is available for this release. This is not an approval.",
+  });
+}
+
+function compactScan(scan: Record<string, unknown>) {
+  const keys = ["id", "extension_id", "version", "decision", "severity", "public_outcome", "decision_reason", "evidence_confidence", "coverage_percent", "artifact_sha256", "scanned_at", "scanner_build", "ruleset_version", "analysis_status"];
+  return Object.fromEntries(keys.filter((key) => scan[key] !== undefined).map((key) => [key, scan[key]]));
+}
+
+async function listPublishedExtensionScans(args: Record<string, unknown>, origin: string) {
+  const inventory = await getPublicInventory(boundedInteger(args.limit, 20, 50), boundedInteger(args.offset, 0, 10000, 0));
+  return toolJson({
+    items: inventory.items.map((item) => ({ ...item, report_url: `${origin}/extensions/${encodeURIComponent(item.extension_id)}/versions/${encodeURIComponent(item.version)}/scans/${encodeURIComponent(item.scan_id)}` })),
+    totals: inventory.totals,
+    publication: inventory.publication || null,
+    availability: inventory.availability || "available",
+    note: "Only published public analyses appear here. Releases absent from this list are not assessed by this result.",
+  });
+}
+
+async function getExtensionScanHistory(args: Record<string, unknown>, origin: string) {
+  const page = boundedInteger(args.page, 1, 1000);
+  const history = await getPublicAnalysisHistory(boundedInteger(args.limit, 20, 50), (page - 1) * boundedInteger(args.limit, 20, 50));
+  return toolJson({ ...history, page, page_size: boundedInteger(args.limit, 20, 50), items: history.items.map((item) => ({ ...item, report_url: `${origin}/extensions/${encodeURIComponent(item.extension_id)}/versions/${encodeURIComponent(item.version)}/scans/${encodeURIComponent(item.scan_id)}` })) });
+}
+
+async function getAnalysisRules() {
+  const catalog = await getActiveRuleCatalog();
+  if (!catalog) return toolError("The active published rule catalog is temporarily unavailable.");
+  return toolJson({
+    policy_version: catalog.policyVersion,
+    ruleset_version: catalog.rulesetVersion,
+    score_schema_version: catalog.scoreSchemaVersion,
+    scanner_build: catalog.scannerBuild,
+    rules: catalog.rules.map((rule) => ({ rule_id: rule.id, title: rule.title, category: rule.category, evidence_class: rule.evidence, default_severity: rule.severity, description: rule.description, recommendation: rule.recommendation, decision_effect: rule.decisionEffect, confidence_basis: rule.confidenceBasis, false_positive_notes: rule.falsePositiveNotes })),
+  });
+}
+
+async function getServiceStatus() {
+  return toolJson(await getPublicStatus() as Record<string, unknown>);
 }
 
 function toolJson(payload: Record<string, unknown>) {

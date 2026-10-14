@@ -1,19 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getBadgeDecision, getPublicInventory, lookupGateVerdict, isValidGateCheck, rankAlternatives, publicDb } = vi.hoisted(() => ({
+const { getBadgeDecision, getExtensionProduct, getPublicAnalysisHistory, getPublicInventory, getVersionProduct, listCatalog, lookupGateVerdict, isValidGateCheck, rankAlternatives, publicDb, getActiveRuleCatalog, getPublicStatus } = vi.hoisted(() => ({
   getBadgeDecision: vi.fn(),
+  getExtensionProduct: vi.fn(),
+  getPublicAnalysisHistory: vi.fn(),
   getPublicInventory: vi.fn(),
+  getVersionProduct: vi.fn(),
+  listCatalog: vi.fn(),
   lookupGateVerdict: vi.fn(),
   isValidGateCheck: vi.fn(),
   rankAlternatives: vi.fn(),
   publicDb: vi.fn(),
+  getActiveRuleCatalog: vi.fn(),
+  getPublicStatus: vi.fn(),
 }));
 
-vi.mock("@/lib/productData", () => ({ getBadgeDecision, getPublicInventory }));
+vi.mock("@/lib/productData", () => ({ getBadgeDecision, getExtensionProduct, getPublicAnalysisHistory, getPublicInventory, getVersionProduct, listCatalog }));
 vi.mock("@/lib/gateLookup", () => ({ lookupGateVerdict, isValidGateCheck }));
 vi.mock("@/lib/alternatives", () => ({ rankAlternatives }));
 vi.mock("@/lib/supabase", () => ({ publicDb }));
 vi.mock("@/lib/trustTiers", () => ({ deriveTrustTier: vi.fn(() => ({ tier: "verified", summary: "Verified" })) }));
+vi.mock("@/lib/activeRuleCatalog", () => ({ getActiveRuleCatalog }));
+vi.mock("@/lib/publicStatus", () => ({ getPublicStatus }));
 
 import { GET, OPTIONS, POST } from "./route";
 
@@ -40,7 +48,18 @@ describe("public MCP endpoint", () => {
     expect(body.result.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "check_extension_risk", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
       expect.objectContaining({ name: "find_reputable_alternatives", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
+      expect.objectContaining({ name: "search_vscode_extensions", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
+      expect.objectContaining({ name: "get_extension_release", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
+      expect.objectContaining({ name: "list_published_extension_scans", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
+      expect.objectContaining({ name: "get_guardrails_analysis_rules", annotations: expect.objectContaining({ readOnlyHint: true }), outputSchema: expect.any(Object) }),
     ]));
+  });
+
+  it("serves the full public extension-analysis surface through structured tools", async () => {
+    listCatalog.mockResolvedValue([{ id: "ms-python.python", display_name: "Python", publisher: "Microsoft", publisher_verified: true }]);
+    const response = await POST(request({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "search_vscode_extensions", arguments: { query: "python" } } }));
+    const body = await response.json();
+    expect(body.result.structuredContent).toMatchObject({ query: "python", extensions: [expect.objectContaining({ extension: "ms-python.python" })] });
   });
 
   it("requires the configured early-access bearer token", async () => {
