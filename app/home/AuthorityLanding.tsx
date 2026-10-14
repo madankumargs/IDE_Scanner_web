@@ -113,15 +113,18 @@ export default async function AuthorityLanding() {
 
     <section className={styles.positioning} aria-labelledby="positioning-heading">
       <header className={styles.positioningHeader}>
-        <div><span className={styles.sectionKicker}>What GuardRails is</span><h2 id="positioning-heading">An evidence desk for <em>IDE extensions.</em></h2></div>
-        <p>GuardRails is the product behind abscissa.dev: a research and review companion that turns a published extension release into searchable, comparable, version-pinned evidence.</p>
+        <div><span className={styles.sectionKicker}>The complete GuardRails product</span><h2 id="positioning-heading">One evidence system for <em>every extension decision.</em></h2></div>
+        <p>GuardRails connects the public registry, Deep Scans, local inspection, monitoring, team review, portable evidence, and automation around the same exact-release record.</p>
       </header>
       <div className={styles.positioningGrid}>
-        <article><span>01 / Review</span><h3>More than a scanner</h3><p>Inspect package behavior, observed capabilities, and coverage before an extension enters your editor or your team.</p></article>
-        <article><span>02 / Connection</span><h3>Read-only MCP access</h3><p>Connect ChatGPT, Codex, Claude, or another MCP client to check extension risk, cite public evidence, and find analyzed alternatives before recommending software.</p><Link href="/docs/mcp">Read the MCP guide <ArrowUpRight /></Link></article>
-        <article><span>03 / Boundary</span><h3>Useful, not a guarantee</h3><p>GuardRails is not an antivirus or a safety promise. Results stay tied to exact artifacts, available coverage, and the limits shown in each report.</p></article>
+        <article><span>01 / Public intelligence</span><h3>Registry and Deep Scans</h3><p>Inspect published packages, exact versions, observed capabilities, coverage, and the evidence behind a release before installation.</p><Link href="/registry">Browse the registry <ArrowUpRight /></Link></article>
+        <article><span>02 / Local inspection</span><h3>GuardRails CLI</h3><p>Inspect extensions already installed on a machine and keep portable report bundles under your own control.</p><Link href="/cli">Explore local inspection <ArrowUpRight /></Link></article>
+        <article><span>03 / Change awareness</span><h3>Release monitoring</h3><p>Watch the extensions your team depends on and return meaningful access or behavior changes to review.</p><Link href="/monitor">See release monitoring <ArrowUpRight /></Link></article>
+        <article><span>04 / Shared decisions</span><h3>Team workspace</h3><p>Assign reviews, preserve the rationale, and keep the approved baseline visible when the next version arrives.</p><Link href="/workspace">Open the workspace <ArrowUpRight /></Link></article>
+        <article><span>05 / Verifiable records</span><h3>Reports, exports, and badges</h3><p>Share exact-release evidence in reports, audit exports, public inventory, and version-pinned trust badges.</p><Link href="/badge">Build a trust badge <ArrowUpRight /></Link></article>
+        <article><span>06 / Assisted research</span><h3>AI and API access</h3><p>Connect an MCP-compatible assistant or a pipeline to check evidence and alternatives before a software recommendation is made.</p><Link href="/docs/mcp">Connect an assistant <ArrowUpRight /></Link></article>
       </div>
-      <div className={styles.positioningRead}><strong>Overall read</strong><p>GuardRails is closer to a release-review and evidence system for extension supply-chain risk than a generic dashboard.</p><Link href="/about">Read how the product works <ArrowRight /></Link></div>
+      <div className={styles.positioningRead}><strong>Product boundary</strong><p>Every capability reads from the same evidence model. GuardRails is not a safety guarantee; it makes the artifact, coverage, findings, and decision history visible enough to act on.</p><Link href="/about">Read how GuardRails works <ArrowRight /></Link></div>
     </section>
 
     <section className={styles.researchLink}><p>Research note</p><div><h2>What an extension can reach is a supply-chain question.</h2><Link href="/research/solidity-pro">Read the Solidity Pro case study <ArrowUpRight /></Link></div></section>
