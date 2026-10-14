@@ -9,6 +9,7 @@ describe("public MCP discovery documentation", () => {
   it("publishes the stable endpoint, client workflows, and evidence boundary", () => {
     const page = read("./page.tsx");
     expect(page).toContain("https://abscissa.dev/api/mcp");
+    expect(page).toContain("Add custom MCP server");
     expect(page).toContain("codex mcp add guardrails");
     expect(page).toContain("claude mcp add --transport http guardrails");
     expect(page).toContain("check_extension_risk");

@@ -49,6 +49,10 @@ export default function McpDocsPage() {
         <p>Use this stable Streamable HTTP endpoint in your AI application&apos;s remote MCP or connector settings. GuardRails is read-only: it does not install extensions, change settings, or access private workspace data.</p>
         <span className={styles.endpoint}><span className={styles.method}>HTTP</span>{MCP_URL}</span>
         <div className={styles.paramTable}><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>Connection name</td><td><code>guardrails</code></td></tr><tr><td>Connection type</td><td>HTTP / Streamable HTTP</td></tr><tr><td>Access</td><td>Read-only public intelligence</td></tr></tbody></table></div>
+        <Code label="ChatGPT">{`Open Plugins, choose Add custom MCP server, and enter:
+${MCP_URL}
+
+Create the connection, then install it in the chat where you want to research an extension.`}</Code>
         <Code label="Codex">{`codex mcp add guardrails --url ${MCP_URL}`}</Code>
         <Code label="Claude Code">{`claude mcp add --transport http guardrails ${MCP_URL}`}</Code>
         <p className={styles.note}>For a token-protected early-access deployment, use a bearer token instead of placing a secret in a prompt. The connection instructions are in the <Link href="/docs#mcp">developer API documentation</Link>.</p>
