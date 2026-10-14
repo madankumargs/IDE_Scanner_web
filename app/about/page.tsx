@@ -4,15 +4,22 @@ import type { Metadata } from "next";
 import { ArrowRight, ExternalLink, Fingerprint, ScanSearch, ShieldCheck, Sparkles } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "About",
+  title: "About GuardRails | IDE extension intelligence",
   description:
-    "GuardRails is an independent security product for evaluating IDE extensions before installation and following their published releases afterward.",
+    "GuardRails is independent IDE extension intelligence: exact-release evidence, local inspection, change monitoring, team review, and read-only MCP access for AI-assisted research.",
   alternates: { canonical: "/about" },
 };
 
 export default function AboutPage() {
+  const aboutJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "AboutPage",
+    name: "About GuardRails",
+    description: "GuardRails is an independent product for inspecting IDE extensions, monitoring release changes, and preserving evidence-backed software decisions.",
+  };
   return (
     <main className="shell trustInfoPage">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(aboutJsonLd) }} />
       <header>
         <span>About GuardRails</span>
         <h1>Extension intelligence built around exact evidence.</h1>
@@ -34,6 +41,17 @@ export default function AboutPage() {
             ruleset, and runtime limitations stay attached to that release.
             Unsupported or failed runtime coverage is visible; it is not
             converted into an allow.
+          </p>
+        </article>
+        <article>
+          <ExternalLink />
+          <h2>How the product fits into work</h2>
+          <p>
+            Start with a public release report, inspect local extensions with
+            the CLI when needed, monitor meaningful updates, and keep team
+            decisions beside the evidence. A read-only MCP connection also
+            lets compatible AI assistants research a release before making a
+            recommendation.
           </p>
         </article>
         <article>

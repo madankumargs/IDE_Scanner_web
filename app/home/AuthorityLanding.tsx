@@ -10,8 +10,16 @@ import { getPublicInventory } from "@/lib/productData";
 
 export default async function AuthorityLanding() {
   const inventory = await getPublicInventory(8);
+  const productJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: "GuardRails | IDE extension intelligence",
+    description: "GuardRails helps developers and security teams inspect exact IDE extension releases, monitor meaningful changes, and keep evidence attached to software decisions.",
+    about: ["IDE extension security", "software supply-chain risk", "release monitoring", "developer tooling"],
+  };
 
   return <main className={`${styles.page} productLanding`}>
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
     <section className={`${styles.hero} productLandingHero`}>
       <div className={styles.heroTopline}>
         <span className={styles.heroKicker}><i /> Extension intelligence for the software you install</span>
@@ -110,7 +118,7 @@ export default async function AuthorityLanding() {
       </header>
       <div className={styles.positioningGrid}>
         <article><span>01 / Review</span><h3>More than a scanner</h3><p>Inspect package behavior, observed capabilities, and coverage before an extension enters your editor or your team.</p></article>
-        <article><span>02 / Connection</span><h3>Read-only MCP access</h3><p>Connect Codex, Claude, or another MCP client to check extension risk and find alternatives from the public evidence corpus.</p><Link href="/docs#mcp">Read the MCP docs <ArrowUpRight /></Link></article>
+        <article><span>02 / Connection</span><h3>Read-only MCP access</h3><p>Connect ChatGPT, Codex, Claude, or another MCP client to check extension risk, cite public evidence, and find analyzed alternatives before recommending software.</p><Link href="/docs/mcp">Read the MCP guide <ArrowUpRight /></Link></article>
         <article><span>03 / Boundary</span><h3>Useful, not a guarantee</h3><p>GuardRails is not an antivirus or a safety promise. Results stay tied to exact artifacts, available coverage, and the limits shown in each report.</p></article>
       </div>
       <div className={styles.positioningRead}><strong>Overall read</strong><p>GuardRails is closer to a release-review and evidence system for extension supply-chain risk than a generic dashboard.</p><Link href="/about">Read how the product works <ArrowRight /></Link></div>
