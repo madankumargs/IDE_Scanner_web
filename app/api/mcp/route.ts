@@ -222,7 +222,7 @@ export async function POST(request: Request) {
       return rpcResult(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "guardrails", version: "1.2.0" },
+        serverInfo: { name: "guardrails", version: "1.3.0" },
         instructions:
           "Read-only VS Code extension-package intelligence. Use search_vscode_extensions to resolve an exact publisher.name, then get_extension_release or check_extension_risk before recommending an install. An unreviewed result is not approval. GuardRails complements source-code, dependency, and repository scanners; it analyzes the extension artifact and its published release evidence. Early access has no write operations and 64 KiB request bodies.",
       });
