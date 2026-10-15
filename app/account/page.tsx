@@ -238,6 +238,7 @@ export default function AccountPage() {
             body: JSON.stringify({
               extension_id: selectedExtension.extension_id,
               version: selectedExtension.version,
+              registry: selectedExtension.registry || "vs-marketplace",
             }),
           },
         );

@@ -1,18 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { reconcileCloudflareBadgeHealth } from "./cloudflareBadgeHealth";
 
-function database() {
+function database({
+  catalog = [{ id: "publisher.extension", latest_version: "1.2.4" }],
+  watchlist = [{ extension_id: "Publisher.Extension", baseline_version: "1.2.3", last_observed_version: "1.2.3" }],
+}: {
+  catalog?: Array<Record<string, unknown>>;
+  watchlist?: Array<Record<string, unknown>>;
+} = {}) {
   const run = vi.fn().mockResolvedValue({ success: true });
   const updates: string[] = [];
   const db = {
     prepare: vi.fn((query: string) => ({
       bind: vi.fn((...values: unknown[]) => ({
         all: query.includes("registry_section_chunks")
-          ? vi.fn().mockResolvedValue({ results: [{ payload: JSON.stringify([
-              { id: "publisher.extension", latest_version: "1.2.4" },
-            ]) }] })
+          ? vi.fn().mockResolvedValue({ results: [{ payload: JSON.stringify(catalog) }] })
           : vi.fn().mockResolvedValue({ results: [{ team_id: "team-1", state_json: JSON.stringify({
-              watchlist: [{ extension_id: "Publisher.Extension", baseline_version: "1.2.3", last_observed_version: "1.2.3" }],
+              watchlist,
               release_events: [],
               audit: [],
             }) }] }),
@@ -28,6 +32,7 @@ function database() {
 }
 
 describe("Cloudflare badge health reconciliation", () => {
+  afterEach(() => vi.unstubAllGlobals());
   it("advances a watched release and creates one durable release event", async () => {
     const { db, updates } = database();
     await expect(reconcileCloudflareBadgeHealth(db, "2026-09-16T10:00:00.000Z")).resolves.toEqual({
@@ -65,5 +70,39 @@ describe("Cloudflare badge health reconciliation", () => {
       releases_detected: 0,
     });
     expect(updates).toHaveLength(1);
+  });
+
+  it("checks Marketplace watches that are not yet in a nonempty catalog", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ extensions: [{
+        publisher: { publisherName: "marketplace" },
+        extensionName: "missing",
+        versions: [{ version: "2.0.0" }],
+      }] }] }),
+    }));
+    const { db, updates } = database({
+      catalog: [{ id: "catalog.present", latest_version: "1.0.0" }],
+      watchlist: [{ extension_id: "Marketplace.Missing", registry: "vs-marketplace", baseline_version: "1.0.0", last_observed_version: "1.0.0" }],
+    });
+
+    await expect(reconcileCloudflareBadgeHealth(db, "2026-09-16T10:00:00.000Z")).resolves.toMatchObject({ releases_detected: 1 });
+    const state = JSON.parse(updates[0]) as Record<string, unknown>;
+    expect(state.watchlist).toEqual([expect.objectContaining({ last_observed_version: "2.0.0" })]);
+  });
+
+  it("checks Open VSX watches against Open VSX rather than the Marketplace", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("open-vsx.org/api/eclipse/assistant");
+      return { ok: true, json: async () => ({ version: "3.0.0" }) };
+    }));
+    const { db, updates } = database({
+      catalog: [{ id: "catalog.present", latest_version: "1.0.0" }],
+      watchlist: [{ extension_id: "eclipse.assistant", registry: "openvsx", baseline_version: "2.0.0", last_observed_version: "2.0.0" }],
+    });
+
+    await expect(reconcileCloudflareBadgeHealth(db, "2026-09-16T10:00:00.000Z")).resolves.toMatchObject({ releases_detected: 1 });
+    const state = JSON.parse(updates[0]) as Record<string, unknown>;
+    expect(state.watchlist).toEqual([expect.objectContaining({ last_observed_version: "3.0.0" })]);
   });
 });

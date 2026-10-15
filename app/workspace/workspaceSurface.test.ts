@@ -69,6 +69,15 @@ describe("GuardRails workspace product surface", () => {
     expect(workspace).toContain("guardrails:setup:");
   });
 
+  it("adds valid Marketplace extensions even before they are mirrored locally", () => {
+    expect(workspace).toContain(
+      "A public Marketplace result is sufficient to start a watch.",
+    );
+    expect(workspace).toContain(
+      "The watchlist endpoint resolves Marketplace extensions directly.",
+    );
+  });
+
   it("offers clearly labeled non-destructive sample data", () => {
     expect(workspace).toContain("Preview sample workspace");
     expect(workspace).toContain("This preview uses example data");

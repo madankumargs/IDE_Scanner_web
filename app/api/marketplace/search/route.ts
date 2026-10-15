@@ -5,7 +5,7 @@ import { unstable_cache } from "next/cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const cachedSearch=unstable_cache(async(query:string)=>searchMarketplace(query),["registry-search-v2"],{revalidate:3600,tags:["registry-search"]});
+const cachedSearch=unstable_cache(async(query:string)=>searchMarketplace(query),["registry-search-v3"],{revalidate:3600,tags:["registry-search"]});
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams.get("q")?.trim() || "";

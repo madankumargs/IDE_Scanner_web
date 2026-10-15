@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ authenticated: vi.fn(), role: vi.fn(), maybeSingle: vi.fn(), from: vi.fn(), entitlement: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticated: vi.fn(), role: vi.fn(), maybeSingle: vi.fn(), from: vi.fn(), entitlement: vi.fn(), resolveMarketplace: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ authenticated: mocks.authenticated }));
 vi.mock("@/lib/teams", () => ({ requireTeamRole: mocks.role }));
 vi.mock("@/lib/supabase", () => ({ serviceDb: () => ({ from: mocks.from }) }));
 vi.mock("@/lib/entitlements", () => ({ requireEntitlement: mocks.entitlement }));
+vi.mock("@/lib/marketplace", () => ({ resolveMarketplaceExtension: mocks.resolveMarketplace }));
 import { DELETE, GET, POST } from "./route";
 
 describe("team watchlist removal", () => {
@@ -50,6 +51,45 @@ describe("team watchlist removal", () => {
   it("rejects a malformed baseline scan before looking it up", async () => {
     const response = await POST(new Request("http://localhost", { method: "POST", body: JSON.stringify({ extension_id: "GitHub.copilot", baseline_scan_id: "not-a-uuid" }) }), { params: Promise.resolve({ id: "team-1" }) });
     expect(response.status).toBe(400);
+  });
+
+  it("registers a valid Marketplace extension before adding it to a Supabase watchlist", async () => {
+    mocks.resolveMarketplace.mockResolvedValue({
+      extension_id: "openai.chatgpt",
+      display_name: "ChatGPT",
+      publisher: "openai",
+      short_description: "Official ChatGPT extension",
+      registry: "vs-marketplace",
+      publisher_verified: true,
+      install_count: 100,
+      rating_average: 4.8,
+      icon_url: "https://example.test/icon.png",
+    });
+    const register = vi.fn().mockResolvedValue({ error: null });
+    const extensions = {
+      select: () => ({ ilike: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+      upsert: register,
+    };
+    const existing = { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) };
+    const single = vi.fn().mockResolvedValue({ data: { extension_id: "openai.chatgpt", monitoring_state: "baseline_pending" }, error: null });
+    const watches = { upsert: vi.fn(() => ({ select: () => ({ single }) })) };
+    // The first team_watchlist_items lookup uses `select`; the final write uses
+    // the table's upsert chain.
+    mocks.from.mockImplementation((table: string) => {
+      if (table === "extensions") return extensions;
+      if (table === "team_watchlist_items") {
+        return {
+          select: existing.select,
+          upsert: watches.upsert,
+        };
+      }
+      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) };
+    });
+
+    const response = await POST(new Request("http://localhost", { method: "POST", body: JSON.stringify({ extension_id: "openai.chatgpt" }) }), { params: Promise.resolve({ id: "team-1" }) });
+    expect(response.status).toBe(201);
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ id: "openai.chatgpt", publisher_verified: true }), { onConflict: "id" });
+    expect(watches.upsert).toHaveBeenCalledWith(expect.objectContaining({ extension_id: "openai.chatgpt" }), { onConflict: "team_id,extension_id" });
   });
 
   it("returns observable registry monitoring health with the watchlist", async () => {

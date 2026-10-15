@@ -42,6 +42,57 @@ describe("listMarketplaceVersions", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("only marks publishers verified when the Marketplace confirms domain verification", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ extensions: [{
+        extensionName: "assistant",
+        displayName: "Assistant",
+        publisher: {
+          publisherName: "Example",
+          isDomainVerified: false,
+          flags: "verified",
+        },
+        versions: [{ version: "1.0.0" }],
+      }] }] }),
+    }));
+
+    const [item] = await searchMarketplace("Example.assistant");
+    expect(item.publisher_verified).toBe(false);
+  });
+
+  it("combines Marketplace and Open VSX search results", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("open-vsx.org")) {
+        return {
+          ok: true,
+          json: async () => ({
+            extensions: [{
+              namespace: "eclipse",
+              name: "assistant",
+              displayName: "Open VSX Assistant",
+              version: "2.0.0",
+            }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ results: [{ extensions: [{
+          extensionName: "assistant",
+          displayName: "Marketplace Assistant",
+          publisher: { publisherName: "Example" },
+          versions: [{ version: "1.0.0" }],
+        }] }] }),
+      };
+    }));
+
+    const results = await searchMarketplace("assistant");
+    expect(results.map((item) => item.extension_id)).toEqual(
+      expect.arrayContaining(["Example.assistant", "eclipse.assistant"]),
+    );
+  });
+
   it("supports Visual Studio VSIX packages for Deep Scan", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -89,6 +140,6 @@ describe("listMarketplaceVersions", () => {
     const results = await listPublisherExtensions("GitHub");
     expect(results.map((item) => item.extension_id)).toEqual(["GitHub.first", "GitHub.second"]);
     const body = JSON.parse(String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body));
-    expect(body.filters[0].criteria).toEqual([{ filterType: 2, value: "GitHub" }]);
+    expect(body.filters[0].criteria).toEqual([{ filterType: 18, value: "GitHub" }]);
   });
 });
