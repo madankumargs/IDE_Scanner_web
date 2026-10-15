@@ -28,10 +28,10 @@ jobs:
             echo "CLOUDFLARE_API_TOKEN is required for a production deployment."
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm

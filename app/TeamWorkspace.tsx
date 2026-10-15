@@ -324,7 +324,7 @@ export default function TeamWorkspace(
       );
       setState("error");
     }
-  }, [db, getAuthHeaders]);
+  }, [db, getAuthHeaders, router]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadTeams(), 0);
@@ -395,7 +395,7 @@ export default function TeamWorkspace(
     } catch {
       setDataState("error");
     }
-  }, [activeTeamId, getAuthHeaders]);
+  }, [activeTeamId, getAuthHeaders, router]);
   useEffect(() => {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);

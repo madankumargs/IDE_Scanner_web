@@ -11,6 +11,10 @@ const extensionsView = fs.readFileSync(
   path.join(root, "app/workspace/views/ExtensionsView.tsx"),
   "utf8",
 );
+const reviewInbox = fs.readFileSync(
+  path.join(root, "app/workspace/views/ReviewInbox.tsx"),
+  "utf8",
+);
 const page = fs.readFileSync(path.join(root, "app/workspace/page.tsx"), "utf8");
 const css = fs.readFileSync(
   path.join(root, "app/workspace/teamWorkspace.module.css"),
@@ -78,6 +82,11 @@ describe("GuardRails workspace product surface", () => {
     expect(extensionsView).toContain("Next expected check");
     expect(extensionsView).toContain("Refresh status");
     expect(extensionsView).toContain("last_event_at");
+  });
+
+  it("places monitored release comparisons beside the review queue", () => {
+    expect(reviewInbox).toContain('import ReleaseEventQueue from "@/app/ReleaseEventQueue"');
+    expect(reviewInbox).toContain("<ReleaseEventQueue teamId={teamId} />");
   });
 
   it("makes monitoring health and the review queue visible", () => {

@@ -10,8 +10,9 @@ import {
   Radar,
   RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ExtensionSearch from "@/app/ExtensionSearch";
+import { trackProductEvent } from "@/lib/analyticsEvents";
 import type {
   MonitoringHealth,
   WatchItem,
@@ -50,6 +51,15 @@ export default function ExtensionsView({
   const [selected, setSelected] = useState<DiscoveryResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (initialExtension) {
+      trackProductEvent({
+        name: "report_monitor_setup_opened",
+        source_route: window.location.pathname,
+      });
+    }
+  }, [initialExtension]);
 
   async function monitorSelected() {
     if (!selected) return;
@@ -104,6 +114,12 @@ export default function ExtensionsView({
       setNotice(
         `${selected.display_name} is now monitored from ${body.baseline_version || selected.version}.`,
       );
+      if (initialExtension) {
+        trackProductEvent({
+          name: "report_monitor_completed",
+          source_route: window.location.pathname,
+        });
+      }
       setSelected(null);
       setAdding(false);
       await onRefresh();
@@ -183,18 +199,19 @@ export default function ExtensionsView({
               </button>
             </div>
           ) : null}
-          {notice ? (
-            <p
-              className={
-                notice.includes("now monitored")
-                  ? styles.monitorSuccess
-                  : styles.monitorError
-              }
-            >
-              <CircleAlert /> {notice}
-            </p>
-          ) : null}
         </section>
+      ) : null}
+      {notice ? (
+        <p
+          className={
+            notice.includes("now monitored")
+              ? styles.monitorSuccess
+              : styles.monitorError
+          }
+          role="status"
+        >
+          <CircleAlert /> {notice}
+        </p>
       ) : null}
       <section className={styles.monitorHealthPanel}>
         <header>

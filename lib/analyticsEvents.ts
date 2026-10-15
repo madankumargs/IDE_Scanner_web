@@ -11,6 +11,8 @@ export type ProductEvent =
   | (BaseEvent & { name: "workspace_signup_started"; entry_point: "deep_scan" | "monitor" | "report" | "account" })
   | (BaseEvent & { name: "workspace_created" })
   | (BaseEvent & { name: "watch_created"; scope: "personal" | "team" })
+  | (BaseEvent & { name: "report_monitor_setup_opened" })
+  | (BaseEvent & { name: "report_monitor_completed" })
   | (BaseEvent & { name: "decision_created"; decision: "allow" | "review" | "block" | "exception" })
   | (BaseEvent & { name: "alert_delivered"; channel: "slack" | "email" | "webhook" | "jira" })
   | (BaseEvent & { name: "alert_acknowledged"; scope: "personal" | "team" })

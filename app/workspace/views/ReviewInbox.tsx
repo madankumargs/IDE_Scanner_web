@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import PermissionPassport from "@/app/extensions/PermissionPassport";
 import PermissionDiffCard from "@/app/extensions/PermissionDiffCard";
+import ReleaseEventQueue from "@/app/ReleaseEventQueue";
 import type { QueueDecision } from "@/lib/teamDecisionQueue";
 import { buildPermissionPassport } from "@/lib/permissionPassport";
 import type {
@@ -412,6 +413,7 @@ export default function ReviewInbox({
           </Link>
         }
       />
+      <ReleaseEventQueue teamId={teamId} />
       <div className={styles.filterBar}>
         {reviewFilters.map(({ id, label }) => (
           <button

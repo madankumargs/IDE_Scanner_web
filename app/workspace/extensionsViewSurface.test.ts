@@ -10,6 +10,8 @@ describe("workspace monitoring conversion", () => {
     expect(source).toContain("Start monitoring");
     expect(source).toContain("/watchlist");
     expect(source).toContain("baseline_version");
+    expect(source).toContain("report_monitor_setup_opened");
+    expect(source).toContain("report_monitor_completed");
   });
 
   it("keeps monitoring an explicit user action", () => {

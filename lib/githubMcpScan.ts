@@ -157,8 +157,6 @@ async function readReportArchive(archive: ArrayBuffer): Promise<Record<string, u
     if (view.getUint32(offset, true) !== centralDirectory) continue;
     const compressedSize = view.getUint32(offset + 20, true);
     const fileNameLength = view.getUint16(offset + 28, true);
-    const extraLength = view.getUint16(offset + 30, true);
-    const commentLength = view.getUint16(offset + 32, true);
     const compression = view.getUint16(offset + 10, true);
     const localOffset = view.getUint32(offset + 42, true);
     const name = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + fileNameLength));

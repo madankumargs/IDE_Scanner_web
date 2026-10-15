@@ -711,14 +711,16 @@ function compactCloudflareBundle(bundle: Bundle, scanPurpose = ""): { bundle: Bu
       // let a stale worker exhaust D1 even after the worker-side guard.
       compacted.findings = array(detail.findings).map((item) => {
         const finding = jsonObject(item);
-        const { evidence: _rawEvidence, ...withoutRawEvidence } = finding;
+        const withoutRawEvidence = { ...finding };
+        delete withoutRawEvidence.evidence;
         return withoutRawEvidence;
       });
       const evidence = jsonObject(detail.evidence);
       compacted.evidence = Object.fromEntries(
         Object.entries(evidence).map(([key, value]) => {
           const record = jsonObject(value);
-          const { raw: _raw, ...withoutRaw } = record;
+          const withoutRaw = { ...record };
+          delete withoutRaw.raw;
           return [key, withoutRaw];
         }),
       );
