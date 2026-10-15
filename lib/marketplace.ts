@@ -13,23 +13,25 @@ type GalleryExtension = {
   statistics?: Array<{ statisticName?: string; value?: number }>;
 };
 
-export async function searchMarketplace(query: string, limit = 20): Promise<MarketplaceSearchResult[]> {
+export async function searchMarketplace(query: string, limit = 50): Promise<MarketplaceSearchResult[]> {
   const exactId = tryNormalizeMarketplaceId(query);
   if (exactId) {
     const exact = await resolveExactExtension(exactId);
     if (exact) return [exact];
   }
-  // Marketplace is the primary registry for this product. We only ask the
-  // secondary registry when Marketplace cannot answer, so one degraded
-  // provider cannot make every ordinary search wait at the loading state.
-  const marketplace = await Promise.allSettled([searchVsMarketplace(query, limit)]);
-  const primary = marketplace[0];
-  const combined = primary.status === "fulfilled" && primary.value.length
-    ? primary.value
-    : await Promise.allSettled([searchOpenVsx(query, limit)]).then(([secondary]) => secondary.status === "fulfilled" ? secondary.value : []);
+  // Search both public registries. A result in one catalog must not hide a
+  // valid extension from the other one.
+  const [marketplace, openVsx] = await Promise.allSettled([
+    searchVsMarketplace(query, limit),
+    searchOpenVsx(query, limit),
+  ]);
+  const combined = [
+    ...(marketplace.status === "fulfilled" ? marketplace.value : []),
+    ...(openVsx.status === "fulfilled" ? openVsx.value : []),
+  ];
   const unique = new Map<string, MarketplaceSearchResult>();
   for (const item of combined) if (!unique.has(item.extension_id.toLowerCase())) unique.set(item.extension_id.toLowerCase(), item);
-  if (primary.status === "rejected" && !combined.length) {
+  if (marketplace.status === "rejected" && openVsx.status === "rejected") {
     throw new Error("Neither VS Marketplace nor Open VSX could be reached.");
   }
   return [...unique.values()].sort((left, right) => relevance(right, query) - relevance(left, query)).slice(0, limit);
@@ -39,7 +41,7 @@ async function searchVsMarketplace(query: string, limit: number): Promise<Market
   const response = await registryFetch(GALLERY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json;api-version=7.2-preview.1" },
-    body: JSON.stringify({ filters: [{ criteria: [{ filterType: 10, value: query }], pageNumber: 1, pageSize: Math.min(limit, 25), sortBy: 4 }], flags: 914 }),
+    body: JSON.stringify({ filters: [{ criteria: [{ filterType: 10, value: query }], pageNumber: 1, pageSize: Math.min(limit, 100), sortBy: 4 }], flags: 914 }),
     cache: "no-store"
   });
   if (!response.ok) throw new Error(`VS Marketplace search returned ${response.status}`);
@@ -57,7 +59,7 @@ export async function listPublisherExtensions(
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json;api-version=7.2-preview.1" },
     body: JSON.stringify({
-      filters: [{ criteria: [{ filterType: 2, value: clean }], pageNumber: 1, pageSize: Math.min(limit, 100), sortBy: 4 }],
+      filters: [{ criteria: [{ filterType: 18, value: clean }], pageNumber: 1, pageSize: Math.min(limit, 100), sortBy: 4 }],
       flags: 914,
     }),
     cache: "no-store",
@@ -72,7 +74,7 @@ export async function listPublisherExtensions(
 }
 
 async function searchOpenVsx(query: string, limit: number): Promise<MarketplaceSearchResult[]> {
-  const response = await registryFetch(`https://open-vsx.org/api/-/search?query=${encodeURIComponent(query)}&size=${Math.min(limit, 25)}`, { cache: "no-store" });
+  const response = await registryFetch(`https://open-vsx.org/api/-/search?query=${encodeURIComponent(query)}&size=${Math.min(limit, 100)}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Open VSX search returned ${response.status}`);
   const data = await response.json() as { extensions?: OpenVsxExtension[] };
   return (data.extensions || []).map(normalizeOpenVsx);
@@ -212,7 +214,10 @@ function normalizeExtension(raw: GalleryExtension): MarketplaceSearchResult | nu
     display_name: raw.displayName || name,
     publisher,
     publisher_display_name: raw.publisher?.displayName || publisher,
-    publisher_verified: Boolean(raw.publisher?.isDomainVerified || String(raw.publisher?.flags || "").toLowerCase().includes("verified")),
+    // `flags` is a listing flag and is returned as "verified" for publishers
+    // that are not domain verified. Only the explicit domain-verification bit
+    // is safe to present as a verified publisher badge.
+    publisher_verified: raw.publisher?.isDomainVerified === true,
     short_description: raw.shortDescription || "",
     version: version.version,
     last_updated: version.lastUpdated || raw.lastUpdated || "",

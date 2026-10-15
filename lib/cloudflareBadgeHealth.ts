@@ -45,12 +45,24 @@ export async function reconcileCloudflareBadgeHealth(
     .prepare("SELECT team_id,state_json FROM app_team_state")
     .bind()
     .all<{ team_id: string; state_json: string }>();
-  if (!latestByExtension.size) {
-    const watchedIds = teams.results.flatMap((team) => array(parseState(team.state_json).watchlist).map((watch) => stringValue(watch.extension_id))).filter(Boolean);
-    const marketplaceVersions = await fetchMarketplaceVersions(watchedIds);
-    for (const [extensionId, version] of marketplaceVersions) latestByExtension.set(extensionId, version);
-  }
-  if (!latestByExtension.size) {
+  const watched = teams.results.flatMap((team) =>
+    array(parseState(team.state_json).watchlist).map((watch) => ({
+      extensionId: stringValue(watch.extension_id),
+      registry: stringValue(watch.registry) === "openvsx" ? "openvsx" : "vs-marketplace",
+    })),
+  ).filter((watch) => Boolean(watch.extensionId));
+  const missingMarketplaceIds = watched
+    .filter((watch) => watch.registry === "vs-marketplace" && !latestByExtension.has(watch.extensionId.toLowerCase()))
+    .map((watch) => watch.extensionId);
+  const openVsxIds = watched
+    .filter((watch) => watch.registry === "openvsx")
+    .map((watch) => watch.extensionId);
+  const [marketplaceVersions, openVsxVersions] = await Promise.all([
+    fetchMarketplaceVersions(missingMarketplaceIds),
+    fetchOpenVsxVersions(openVsxIds),
+  ]);
+  for (const [extensionId, version] of marketplaceVersions) latestByExtension.set(extensionId, version);
+  if (!latestByExtension.size && !openVsxVersions.size) {
     for (const team of teams.results) {
       const state = parseState(team.state_json);
       state.monitoring = { status: "degraded", last_checked_at: now, next_check_at: null, cadence_hours: 6, error: "The registry catalog was unavailable during the last monitoring check." };
@@ -73,7 +85,10 @@ export async function reconcileCloudflareBadgeHealth(
 
     for (const watch of watchlist) {
       const extensionId = stringValue(watch.extension_id);
-      const latestVersion = latestByExtension.get(extensionId.toLowerCase());
+      const registry = stringValue(watch.registry) === "openvsx" ? "openvsx" : "vs-marketplace";
+      const latestVersion = registry === "openvsx"
+        ? openVsxVersions.get(extensionId.toLowerCase())
+        : latestByExtension.get(extensionId.toLowerCase());
       const observedVersion = stringValue(watch.last_observed_version || watch.baseline_version);
       if (!extensionId || !latestVersion || !observedVersion || latestVersion === observedVersion) continue;
 
@@ -221,6 +236,24 @@ async function fetchMarketplaceVersions(extensionIds: string[]): Promise<Map<str
       if (id && version) result.set(id, version);
     }
   } catch { /* catalog health remains degraded when the provider is unavailable */ }
+  return result;
+}
+
+async function fetchOpenVsxVersions(extensionIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const uniqueIds = new Map(extensionIds.map((id) => [id.toLowerCase(), id]));
+  await Promise.allSettled([...uniqueIds].map(async ([key, extensionId]) => {
+    const [publisher, name] = extensionId.split(".", 2);
+    if (!publisher || !name) return;
+    const response = await fetch(
+      `https://open-vsx.org/api/${encodeURIComponent(publisher)}/${encodeURIComponent(name)}`,
+      { cache: "no-store", signal: AbortSignal.timeout(12_000) },
+    );
+    if (!response.ok) return;
+    const payload = await response.json() as { version?: unknown };
+    const version = stringValue(payload.version);
+    if (version) result.set(key, version);
+  }));
   return result;
 }
 

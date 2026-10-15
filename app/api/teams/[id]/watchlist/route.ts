@@ -41,6 +41,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const body = await request.json(); const extensionId = typeof body.extension_id === "string" ? body.extension_id.trim() : "";
     const baselineScanId = typeof body.baseline_scan_id === "string" ? body.baseline_scan_id.trim() : "";
     const requestedVersion = typeof body.version === "string" ? body.version.trim() : "";
+    const requestedRegistry = body.registry === "openvsx" ? "openvsx" : "vs-marketplace";
     if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+$/.test(extensionId)) return NextResponse.json({ error: "A valid extension id is required." }, { status: 400 });
     if (baselineScanId && !/^[0-9a-f-]{36}$/i.test(baselineScanId)) return NextResponse.json({ error: "A valid completed baseline scan is required." }, { status: 400 });
     if (requestedVersion && requestedVersion.length > 256) return NextResponse.json({ error: "The extension version is invalid." }, { status: 400 });
@@ -48,11 +49,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const product = await getCloudflareRegistryProduct<{ extension?: Record<string, unknown>; versions?: Array<Record<string, unknown>> }>(extensionId);
       let extension = product?.extension || await getCloudflareRegistryCatalogExtension<Record<string, unknown>>(extensionId);
       let versions = product?.versions || [];
+      let registry = requestedRegistry;
       if (!extension) {
         try {
           const marketplace = await resolveMarketplaceExtension(extensionId);
           extension = { id: marketplace.extension_id, display_name: marketplace.display_name, icon_url: marketplace.icon_url };
           versions = [{ version: marketplace.version, is_latest: true }];
+          registry = marketplace.registry || requestedRegistry;
         } catch {
           return NextResponse.json({ error: "Add this extension to the registry before monitoring it." }, { status: 404 });
         }
@@ -61,14 +64,33 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const existing = state.watchlist.find((item) => String(item.extension_id).toLowerCase() === extensionId.toLowerCase());
       if (existing) return NextResponse.json(existing, { status: 200 });
       const selected = requestedVersion || String((versions.find((version) => version.is_latest) || versions[0])?.version || "");
-      const item = { extension_id: extensionId, created_at: nowIso(), baseline_version: selected || null, monitoring_state: "monitoring", last_observed_version: selected || null, last_event_at: nowIso(), extensions: { display_name: String(extension.display_name || extensionId), icon_url: String(extension.icon_url || "") } };
+      const item = { extension_id: extensionId, registry, created_at: nowIso(), baseline_version: selected || null, monitoring_state: "monitoring", last_observed_version: selected || null, last_event_at: nowIso(), extensions: { display_name: String(extension.display_name || extensionId), icon_url: String(extension.icon_url || "") } };
       state.watchlist.unshift(item);
       await saveState(id, state);
       return NextResponse.json(item, { status: 201 });
     }
-    const db = serviceDb(); const { data: extension, error: extensionError } = await db.from("extensions").select("id").ilike("id", extensionId).maybeSingle();
+    const db = serviceDb(); const { data: registeredExtension, error: extensionError } = await db.from("extensions").select("id").ilike("id", extensionId).maybeSingle();
     if (extensionError) throw extensionError;
-    if (!extension) return NextResponse.json({ error: "Add this extension to the registry before monitoring it." }, { status: 404 });
+    let extension = registeredExtension;
+    if (!extension) {
+      const marketplace = await resolveMarketplaceExtension(extensionId);
+      const registered = await db.from("extensions").upsert({
+        id: marketplace.extension_id,
+        name: marketplace.extension_id.split(".").slice(1).join("."),
+        display_name: marketplace.display_name,
+        publisher: marketplace.publisher,
+        description: marketplace.short_description || "",
+        registry: marketplace.registry || "vs-marketplace",
+        publisher_verified: marketplace.publisher_verified,
+        installs: marketplace.install_count,
+        rating: marketplace.rating_average,
+        icon_url: marketplace.icon_url || "",
+        repository_url: "",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "id" });
+      if (registered.error) throw registered.error;
+      extension = { id: marketplace.extension_id };
+    }
     const existing = await db.from("team_watchlist_items").select("extension_id").eq("team_id", id).eq("extension_id", extension.id).maybeSingle();
     if (existing.error) throw existing.error;
     if (!existing.data) await requireEntitlement(id, "monitored_extensions", 1);

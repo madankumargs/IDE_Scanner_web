@@ -1303,24 +1303,25 @@ function WorkspaceSetup({
     try {
       const headers = await getAuthHeaders();
       if (!headers.Authorization) throw new Error("Your session expired. Sign in again.");
-      const productResponse = await fetch(
-        `/api/extensions/${encodeURIComponent(selected.extension_id)}`,
-      );
-      const product = await productResponse.json().catch(() => ({}));
-      if (!productResponse.ok)
-        throw new Error(
-          String(
-            product.error ||
-              "This extension could not be prepared for monitoring.",
-          ),
+      // A public Marketplace result is sufficient to start a watch. A
+      // cataloged scan is optional here and only upgrades the initial baseline
+      // when one is already available.
+      let scan: Record<string, unknown> | null = null;
+      try {
+        const productResponse = await fetch(
+          `/api/extensions/${encodeURIComponent(selected.extension_id)}`,
         );
-      const scan =
-        product.scan && typeof product.scan === "object"
-          ? (product.scan as Record<string, unknown>)
-          : null;
+        const product = await productResponse.json().catch(() => ({}));
+        if (productResponse.ok && product.scan && typeof product.scan === "object") {
+          scan = product.scan as Record<string, unknown>;
+        }
+      } catch {
+        // The watchlist endpoint resolves Marketplace extensions directly.
+      }
       const payload: Record<string, string> = {
         extension_id: selected.extension_id,
         version: selected.version,
+        registry: selected.registry || "vs-marketplace",
       };
       if (scan?.id) payload.baseline_scan_id = String(scan.id);
       let response = await fetch(

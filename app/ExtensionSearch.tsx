@@ -61,7 +61,7 @@ export default function ExtensionSearch({ initialQuery = "", onSelect, submitLab
 }
 
 function ResultGroup({ label, items, action }: { label: string; items: DiscoveryResult[]; action: (item: DiscoveryResult) => React.ReactNode }) {
-  return <section className="discoveryGroup"><span>{label}</span>{items.slice(0, 8).map((item) => <article key={`${item.registry}-${item.extension_id}`}><ExtensionIcon iconUrl={item.icon_url} publisher={item.publisher} name={item.display_name}/><div><strong>{item.display_name}{item.publisher_verified ? <BadgeCheck aria-label="Verified Marketplace publisher"/> : null}</strong><code>{item.extension_id} · {item.version}</code><small>{item.registry === "openvsx" ? "Open VSX" : "VS Marketplace"} · {formatInstalls(item.install_count)} installs{item.rating_count ? <> · <Star/> {item.rating_average.toFixed(1)} ({formatInstalls(item.rating_count)})</> : ""}</small></div>{action(item)}</article>)}</section>;
+  return <section className="discoveryGroup"><span>{label}</span>{items.map((item) => <article key={`${item.registry}-${item.extension_id}`}><ExtensionIcon iconUrl={item.icon_url} publisher={item.publisher} name={item.display_name}/><div><strong>{item.display_name}{item.publisher_verified ? <BadgeCheck aria-label="Verified Marketplace publisher"/> : null}</strong><code>{item.extension_id} · {item.version}</code><small>{item.registry === "openvsx" ? "Open VSX" : "VS Marketplace"} · {formatInstalls(item.install_count)} installs{item.rating_count ? <> · <Star/> {item.rating_average.toFixed(1)} ({formatInstalls(item.rating_count)})</> : ""}</small></div>{action(item)}</article>)}</section>;
 }
 
 function formatInstalls(value: number) {
