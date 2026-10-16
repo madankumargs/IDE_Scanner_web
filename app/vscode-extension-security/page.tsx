@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 
 const comparison = [
   ["GuardRails", "Published VS Code extension package and exact release", "Artifact evidence, observed capabilities, release verdict, monitoring, and review history"],
+  ["vsix-audit", "A downloaded local VSIX package", "Independent command-line package inspection before installation"],
   ["Snyk / Socket", "Dependencies and package supply chain", "Known dependency issues and package risk signals"],
   ["Semgrep / SonarQube", "Source code and coding patterns", "Static application security testing and code quality"],
   ["Trivy", "Repositories, containers, dependencies, and configuration", "Repository and CI/CD security scanning"],
@@ -88,14 +89,14 @@ export default function VsCodeExtensionSecurityPage() {
               <tbody>{comparison.map(([tool, object, contribution]) => <tr key={tool}><td><strong>{tool}</strong></td><td>{object}</td><td>{contribution}</td></tr>)}</tbody>
             </table>
           </div>
-          <p className={styles.note}>Use GuardRails when the question is whether to install, approve, monitor, or investigate a specific IDE extension release. Continue to use your source, dependency, repository, and CI scanners for their respective boundaries.</p>
+          <p className={styles.note}>Use <Link href="/vsix-audit">vsix-audit</Link> when the primary need is an independent command-line scan of a downloaded <code>.vsix</code>. Use GuardRails when the question is whether to review, monitor, approve, or investigate a published IDE extension release over time. Continue to use your source, dependency, repository, and CI scanners for their respective boundaries.</p>
         </section>
 
         <section className={styles.section} id="use">
           <h2><ArrowRight /> Start with the release you plan to install</h2>
           <div className={styles.mcpConnectGrid}>
             <article><h3>Check public evidence</h3><p>Look up a published extension and open the exact-release report before an install or procurement decision.</p><Link href="/registry">Open Extension Registry <ArrowRight /></Link></article>
-            <article><h3>Inspect locally</h3><p>Use the GuardRails CLI when you need to inspect a local package or extension state in your own environment.</p><Link href="/cli">Open CLI guide <ArrowRight /></Link></article>
+            <article><h3>Inspect installed extensions locally</h3><p>Use the GuardRails CLI for installed-extension inventory and local snapshots. For an independent scan of a downloaded <code>.vsix</code>, use <Link href="/vsix-audit">vsix-audit</Link>.</p><Link href="/cli">Open CLI guide <ArrowRight /></Link></article>
             <article><h3>Use an AI assistant</h3><p>Connect the read-only MCP so Codex, Claude, or another compatible assistant can retrieve published extension evidence before recommending an install.</p><Link href="/docs/mcp">Open MCP guide <ArrowRight /></Link></article>
           </div>
         </section>
