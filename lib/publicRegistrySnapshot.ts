@@ -14,6 +14,7 @@ import { hasAccuracyGateAttestation } from "@/lib/publicationHealth";
 
 const DEFAULT_SNAPSHOT_URL =
   "https://raw.githubusercontent.com/preethamak/IDE_Scanner_web/main/public/registry-snapshot.json";
+const LOCAL_SNAPSHOT_URL = "http://127.0.0.1:8765/registry-snapshot.json";
 const SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 
 export type PublicRegistryProduct = {
@@ -64,7 +65,9 @@ export async function getPublicRegistrySnapshot(retry = false): Promise<PublicRe
     return value;
   }
 
-  const url = process.env.PUBLIC_REGISTRY_SNAPSHOT_URL || DEFAULT_SNAPSHOT_URL;
+  const url =
+    process.env.PUBLIC_REGISTRY_SNAPSHOT_URL ||
+    (process.env.NODE_ENV === "development" ? LOCAL_SNAPSHOT_URL : DEFAULT_SNAPSHOT_URL);
   try {
     const response = await fetch(url, {
       headers: { Accept: "application/json" },

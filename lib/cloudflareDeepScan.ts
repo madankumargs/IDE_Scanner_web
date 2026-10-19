@@ -496,6 +496,12 @@ export async function getCloudflareScanSummary(extensionId: string, version: str
   const product = await getCloudflareScanProduct(extensionId, version, String(row.id), true);
   if (!product?.scan) return null;
   const scan = jsonObject(product.scan);
+  const findings = Array.isArray(product.findings) ? product.findings : [];
+  const files = Array.isArray(product.files) ? product.files : [];
+  const dependencies = Array.isArray(product.dependencies) ? product.dependencies : [];
+  const actionable = findings.filter((item) => ["block", "investigate", "review"].includes(String(jsonObject(item).actionability || "contextual"))).length;
+  const contextual = findings.filter((item) => ["low", "contextual"].includes(String(jsonObject(item).actionability || "contextual"))).length;
+  const capabilities = jsonObject(scan.capabilities);
   return {
     id: row.id,
     extension_id: row.extension_id,
@@ -515,6 +521,14 @@ export async function getCloudflareScanSummary(extensionId: string, version: str
     scanner_build: scan.scanner_build,
     ruleset_version: scan.ruleset_version,
     capability_assessment: scan.capability_assessment,
+    report_detail_state: "summary_only",
+    summary_counts_recorded: true,
+    actionable_findings_count: actionable,
+    contextual_findings_count: contextual,
+    evidence_count: scan.evidence && typeof scan.evidence === "object" && !Array.isArray(scan.evidence) ? Object.keys(scan.evidence as Row).length : Array.isArray(scan.evidence) ? scan.evidence.length : null,
+    capability_count: Object.keys(capabilities).length,
+    file_count: files.length,
+    dependency_count: dependencies.length,
   };
 }
 

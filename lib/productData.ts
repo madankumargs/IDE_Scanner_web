@@ -343,7 +343,12 @@ export async function getVersionProduct(id: string, version: string, client?: Su
     const versionRow = cloudflareVersions.find((item) => String(item.version || "") === version);
     if (!versionRow) return null;
     const scan = cloudflareProduct?.scans?.find((item) => String(item.version || "") === version);
-    return { version: versionRow, scan: scan?.scan || null, findings: scan?.findings || [], files: scan?.files || [], dependencies: scan?.dependencies || [] };
+    const summary = scan?.scan
+      ? cloudflareProduct?.detail_state === "summary_only"
+        ? { ...scan.scan, report_detail_state: "summary_only" }
+        : scan.scan
+      : null;
+    return { version: versionRow, scan: summary, findings: scan?.findings || [], files: scan?.files || [], dependencies: scan?.dependencies || [] };
   }
   const db = client || publicDb();
   if (!db) return null;

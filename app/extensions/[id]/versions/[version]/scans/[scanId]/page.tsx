@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import AnalysisReport from "@/app/ExtensionDossier";
+import FullReportSignInGate from "@/app/FullReportSignInGate";
 import { getExtensionProduct, getVersionScanProduct } from "@/lib/productData";
 import { parseExtensionDossierData } from "@/lib/reportContract";
 import { cloudflarePrivateAvailable } from "@/lib/cloudflareDeepScan";
 import { cloudflareGuestTrialToken, cloudflareSessionActive, cloudflareSessionUser } from "@/lib/cloudflareSession";
 import { serverDb } from "@/lib/supabaseServer";
 import { runtimeSupabase } from "@/lib/supabaseRuntime";
+import { reportProofPresentation } from "@/lib/reportProofPresentation";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +65,22 @@ export default async function ImmutableScanPage({
           </p>
         </section>
       </main>
+    );
+  }
+  if (!claims) {
+    return (
+      <FullReportSignInGate
+        extension={extensionProduct.extension}
+        version={version}
+        scan={versionProduct.scan as Record<string, unknown>}
+        proof={reportProofPresentation({
+          scan: versionProduct.scan as Record<string, unknown>,
+          findings: versionProduct.findings,
+          files: versionProduct.files,
+          dependencies: versionProduct.dependencies,
+        })}
+        returnHref={`/extensions/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/scans/${encodeURIComponent(scanId)}`}
+      />
     );
   }
   return <AnalysisReport data={data} signedIn={claims} />;

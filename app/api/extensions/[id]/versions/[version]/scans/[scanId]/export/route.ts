@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { getVersionScanProduct } from "@/lib/productData";
+import { reportAccessUser } from "@/lib/reportAccess";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: {
     params: Promise<{ id: string; version: string; scanId: string }>;
   },
 ) {
+  const user = await reportAccessUser(request);
+  if (!user) return NextResponse.json({ error: "Sign in to export the full report.", code: "auth_required" }, { status: 401, headers: { "Cache-Control": "private, no-store" } });
   const { id, version, scanId } = await context.params;
   const product = await getVersionScanProduct(id, version, scanId);
   const scan = product?.scan as Record<string, unknown> | null | undefined;

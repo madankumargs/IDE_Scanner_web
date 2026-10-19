@@ -7,6 +7,7 @@ import { scanDecision } from "@/lib/extensionPageModel";
 import type { CatalogExtension } from "@/lib/productData";
 import PermissionPassport from "@/app/extensions/PermissionPassport";
 import { buildPermissionPassport } from "@/lib/permissionPassport";
+import type { ReportProof } from "@/lib/reportProofPresentation";
 
 type Props = {
   extension: CatalogExtension;
@@ -15,6 +16,7 @@ type Props = {
   scan: Record<string, unknown> | null;
   fullAnalysisHref?: string;
   signedIn: boolean;
+  proof?: ReportProof;
 };
 
 export default function PublicSecuritySummary({
@@ -24,6 +26,7 @@ export default function PublicSecuritySummary({
   scan,
   fullAnalysisHref,
   signedIn,
+  proof,
 }: Props) {
   const decision = scanDecision(scan?.decision);
   const scanned = Boolean(scan?.id) && decision !== "not-scanned";
@@ -51,7 +54,7 @@ export default function PublicSecuritySummary({
           verified={extension.publisher_verified}
         />
         <div className={`summaryOutcome ${decision}`}>
-          <span>Security outcome</span>
+          <span>Can I install this release?</span>
           <strong>{headline}</strong>
           <p>{reason}</p>
         </div>
@@ -74,6 +77,17 @@ export default function PublicSecuritySummary({
           </strong>
         </article>
       </section>
+      <section className="summaryQuestions" aria-label="Installation guidance">
+        <article>
+          <span>Why this result?</span>
+          <strong>{reason}</strong>
+        </article>
+        <article>
+          <span>What should I do next?</span>
+          <strong>{nextStep(decision, scanned)}</strong>
+        </article>
+      </section>
+      {proof ? <EvidenceBasis proof={proof} /> : null}
       <PublicAnalysisCallout
         extensionId={extension.id}
         version={version}
@@ -117,4 +131,39 @@ export default function PublicSecuritySummary({
       </section>
     </main>
   );
+}
+
+function EvidenceBasis({ proof }: { proof: ReportProof }) {
+  return (
+    <section className="summaryEvidence" aria-labelledby="summary-evidence-title">
+      <div className="summaryEvidenceIntro">
+        <span className="kicker">Evidence behind this result</span>
+        <h2 id="summary-evidence-title">Recorded proof for this exact release</h2>
+        <p>These values support the decision above. They describe the scanned artifact only and do not establish publisher-wide safety.</p>
+      </div>
+      <dl>
+        <div><dt>Artifact identity</dt><dd>{proof.artifactSha256Recorded ? "SHA-256 recorded" : "Not recorded"}</dd></div>
+        <div><dt>Scan source</dt><dd>{proof.source}</dd></div>
+        <div><dt>Actionable evidence</dt><dd>{proof.actionable == null ? "Not included in summary" : `${proof.actionable} ${proof.actionable === 1 ? "group" : "groups"}`}</dd></div>
+        <div><dt>Contextual evidence</dt><dd>{proof.contextual == null ? "Not included in summary" : `${proof.contextual} ${proof.contextual === 1 ? "group" : "groups"}`}</dd></div>
+        <div><dt>Recorded observations</dt><dd>{proof.observations == null ? "Not recorded" : `${proof.observations} ${proof.observations === 1 ? "observation" : "observations"}`}</dd></div>
+        <div><dt>Access signals</dt><dd>{proof.capabilities == null ? "Not recorded" : `${proof.capabilities} recorded ${proof.capabilities === 1 ? "capability" : "capabilities"}`}</dd></div>
+        <div><dt>Detailed inventory</dt><dd>{inventoryCopy(proof)}</dd></div>
+      </dl>
+    </section>
+  );
+}
+
+function inventoryCopy(proof: ReportProof) {
+  const files = proof.files == null ? "Files not recorded" : `${proof.files} ${proof.files === 1 ? "file" : "files"}`;
+  const dependencies = proof.dependencies == null ? "Dependencies not recorded" : `${proof.dependencies} ${proof.dependencies === 1 ? "dependency" : "dependencies"}`;
+  return proof.detailAvailable ? `${files} · ${dependencies}` : `${files} · ${dependencies} · detailed list after sign-in`;
+}
+
+function nextStep(decision: string, scanned: boolean) {
+  if (!scanned) return "Request a Deep Scan for this exact version to obtain a decision and supporting evidence.";
+  if (decision === "block") return "Do not install this release. Review the supporting evidence and choose a different version.";
+  if (decision === "review") return "Inspect the review findings and file locations, then record a team decision before approval.";
+  if (decision === "allow") return "Approval can proceed under your organization’s normal extension controls.";
+  return "Wait for a completed analysis before treating this release as approved.";
 }

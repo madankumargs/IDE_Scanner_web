@@ -11,10 +11,10 @@ export function publicAnalysisAction({ extensionId, version, fullAnalysisHref, s
   const accountHref = `/account?next=${encodeURIComponent(fullAnalysisHref || versionHref)}`;
 
   if (scanned && fullAnalysisHref && signedIn) {
-    return { href: fullAnalysisHref, label: "Open Full Analysis", requiresSignIn: false };
+    return { href: fullAnalysisHref, label: "Open full report and monitoring", requiresSignIn: false };
   }
 
   return scanned
-    ? { href: accountHref, label: "Sign in for Full Analysis", requiresSignIn: true }
+    ? { href: accountHref, label: "Sign in for full report and monitoring", requiresSignIn: true }
     : { href: accountHref, label: "Sign in to request a Deep Scan", requiresSignIn: true };
 }

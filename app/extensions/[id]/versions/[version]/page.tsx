@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import PublicSecuritySummary from "@/app/PublicSecuritySummary";
 import { getExtensionProduct, getVersionProduct } from "@/lib/productData";
+import { reportProofPresentation } from "@/lib/reportProofPresentation";
 
 // This is a public, exact-release summary. Keep it on ISR so a burst of
 // visitors does not make every request repeat the D1 and registry work.
@@ -26,5 +27,11 @@ export default async function VersionPage({ params }: { params: Promise<{ id: st
   // Authentication is intentionally resolved by the full-analysis route. A
   // public summary must remain cacheable and must not vary its HTML by a
   // session cookie.
-  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={false}/>;
+  const proof = reportProofPresentation({
+    scan,
+    findings: versionProduct?.findings,
+    files: versionProduct?.files,
+    dependencies: versionProduct?.dependencies,
+  });
+  return <PublicSecuritySummary extension={extensionProduct.extension} version={version} versions={versions} scan={scan || null} fullAnalysisHref={fullAnalysisHref} signedIn={false} proof={proof}/>;
 }
