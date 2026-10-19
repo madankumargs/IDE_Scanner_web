@@ -10,7 +10,7 @@ type NavItem = readonly [string, string, string, ComponentType];
 
 // A deliberately small top row; everything secondary lives in one grouped menu.
 const topLinks: readonly (readonly [string, string])[] = [
-  ["/registry", "Registry"],
+  ["/registry?chooser=1", "Registry"],
   ["/monitor", "Monitor"],
   ["/docs", "Docs"],
   ["/pricing", "Pricing"],
@@ -56,7 +56,7 @@ export default function SiteNav() {
   return <nav className="primaryNav guardrailsNav" aria-label="Primary navigation" ref={root}>
     <button className="mobileNavToggle" aria-expanded={open === "mobile"} aria-label={open === "mobile" ? "Close navigation" : "Open navigation"} onClick={() => setOpen(open === "mobile" ? null : "mobile")}>{open === "mobile" ? <X/> : <Menu/>}</button>
     <div className="desktopNav">
-      {topLinks.map(([href, label]) => <Link key={href} className={active(href) ? "active" : ""} href={href}>{label}</Link>)}
+      {topLinks.map(([href, label]) => <Link key={href} className={active(href.split("?", 1)[0]) ? "active" : ""} href={href}>{label}</Link>)}
       <div className="navMenu">
         <button className={moreActive ? "active" : ""} aria-expanded={open === "more"} aria-controls="more-menu" onClick={() => setOpen(open === "more" ? null : "more")}>More<ChevronDown/></button>
         <div id="more-menu" role="menu" aria-label="More" className={`navPopover groupedNavPopover ${open === "more" ? "isOpen" : ""}`}>
@@ -66,7 +66,7 @@ export default function SiteNav() {
     </div>
     <div className={`mobileNavPanel ${open === "mobile" ? "isOpen" : ""}`}>
       <div className="mobileNavGroup"><span>Explore</span>
-        {menuLink(["/registry", "Extension Registry", "Inspect exact releases before installation", Boxes])}
+        {menuLink(["/registry?chooser=1", "Extension Registry", "Choose extension or Skills scanning", Boxes])}
         {menuLink(["/docs", "Docs and API", "Gate releases in CI and from AI agents", BookOpen])}
         {menuLink(["/pricing", "Pricing", "Plans and product availability", History])}
       </div>

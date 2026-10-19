@@ -6,6 +6,7 @@ const root = process.cwd();
 const page = fs.readFileSync(path.join(root,"app/PublicScanPage.tsx"),"utf8");
 const inventory = fs.readFileSync(path.join(root,"app/InventoryClient.tsx"),"utf8");
 const css = fs.readFileSync(path.join(root,"app/registry/registry.module.css"),"utf8");
+const chooser = fs.readFileSync(path.join(root,"app/registry/RegistryChooser.tsx"),"utf8");
 
 describe("Extension Registry product surface",()=>{
   it("frames registry search around identity and exact releases",()=>{
@@ -34,5 +35,10 @@ describe("Extension Registry product surface",()=>{
     expect(page).toContain("registry.module.css");
     expect(inventory).toContain("registry.module.css");
     expect(css).toContain("@media(max-width:680px)");
+  });
+  it("opens an isolated chooser with existing and Skills paths",()=>{
+    expect(chooser).toContain('href="/analyze"');
+    expect(chooser).toContain('href="/skills"');
+    expect(chooser).toContain('role="dialog"');
   });
 });

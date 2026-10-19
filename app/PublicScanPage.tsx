@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, PackageCheck, ScanSearch, ShieldCheck } from "lucide-react";
 import ExtensionSearch from "@/app/ExtensionSearch";
 import InventoryClient from "@/app/InventoryClient";
+import RegistryChooser from "@/app/registry/RegistryChooser";
 import { getPublicAnalysisHistory, getPublicInventory } from "@/lib/productData";
 import { getPublicMetrics } from "@/lib/publicMetrics";
 import { deriveTrustTier } from "@/lib/trustTiers";
@@ -12,8 +13,8 @@ const popular = ["GitHub Copilot", "Cline", "Continue", "ESLint", "Docker"];
 const HISTORY_PAGE_SIZE = 24;
 const INVENTORY_PAGE_SIZE = 240;
 
-export default async function ExtensionRegistryPage({ searchParams }: { searchParams: Promise<{ q?: string; view?: string; page?: string; retry?: string }> }) {
-  const { q, view, page: rawPage, retry } = await searchParams;
+export default async function ExtensionRegistryPage({ searchParams }: { searchParams: Promise<{ q?: string; view?: string; page?: string; retry?: string; chooser?: string }> }) {
+  const { q, view, page: rawPage, retry, chooser } = await searchParams;
   const historyView = view === "history";
   const page = Math.max(1, Number.parseInt(rawPage || "1", 10) || 1);
   const inventory = await getPublicInventory(INVENTORY_PAGE_SIZE, historyView ? 0 : (page - 1) * INVENTORY_PAGE_SIZE, retry === "1");
@@ -25,6 +26,7 @@ export default async function ExtensionRegistryPage({ searchParams }: { searchPa
   const reviewCount = inventory.totals.review + inventory.totals.blocked;
   const spotlight = inventory.items.find((item) => item.decision === "review" || item.decision === "block") || inventory.items[0];
   return <main className={styles.page}>
+    <RegistryChooser open={chooser === "1"}/>
     <section className={styles.hero}>
       <div className={styles.heroCopy}><span className={styles.eyebrow}><i/> Extension intelligence</span><h1>Know what runs<br/>in your editor.</h1><p>Search any VS Code or Open VSX extension. Search by name or ID, confirm you found the right one, and read what each release can access before installing.</p></div>
       <div className={styles.searchPanel}><div className={styles.searchHeading}><span><ScanSearch/> Search the registry</span><small>Marketplace + Open VSX</small></div><div className={styles.discoverySearch}><ExtensionSearch initialQuery={q || ""} submitLabel="Find extension"/></div><div className={styles.popular}><span>Popular</span>{popular.map((name) => <Link key={name} href={`/registry?q=${encodeURIComponent(name)}`}>{name}</Link>)}</div><footer><ShieldCheck/><span>Results separate exact matches from similar names.</span></footer></div>

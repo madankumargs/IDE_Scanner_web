@@ -4,13 +4,13 @@
 # The app needs the sibling ./ide-scanner Python scanner at runtime (lib/pythonBridge.ts).
 
 # ---------- deps: install node_modules (dev deps included; build needs them) ----------
-FROM node:22-bookworm-slim AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app/ide-scanner-web
 COPY ide-scanner-web/package.json ide-scanner-web/package-lock.json ./
 RUN npm ci
 
 # ---------- build: compile Next.js standalone output ----------
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app/ide-scanner-web
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/ide-scanner-web/node_modules ./node_modules
@@ -18,7 +18,7 @@ COPY ide-scanner-web ./
 RUN npm run build
 
 # ---------- runtime: slim image, non-root, standalone server ----------
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 # Python + yara are runtime dependencies of the scanner bridge, not the web app build.
 RUN apt-get update \
