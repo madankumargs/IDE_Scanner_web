@@ -20,7 +20,8 @@
     "test:public-corpus": "vitest run lib/publicCorpusConsistency.test.ts",
     "test:typography": "node scripts/typography-audit.mjs",
     "test:e2e": "playwright test",
-    "launch:readiness": "node scripts/launch-readiness.mjs"
+    "launch:readiness": "node scripts/launch-readiness.mjs",
+    "skills:top-scan": "tsx scripts/scan-top-skills.ts"
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.2.8",

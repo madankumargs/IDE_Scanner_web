@@ -85,6 +85,14 @@ type GitHubRepository = { default_branch: string };
 type GitHubCommit = { sha: string };
 type GitHubTree = { tree: SkillTreeEntry[]; truncated?: boolean };
 
+export type PublicGitHubSkillCandidate = {
+  sourceUrl: string;
+  owner: string;
+  repo: string;
+  commit: string;
+  skillPath: string;
+};
+
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 512 * 1024;
 const MAX_TOTAL_FILE_BYTES = 2 * 1024 * 1024;
@@ -182,12 +190,14 @@ async function readLimitedResponse(response: Response, limit: number) {
 
 async function githubRequest<T>(url: string, init?: RequestInit, limit = MAX_JSON_BYTES): Promise<T> {
   let response: Response;
+  const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
   try {
     response = await fetch(url, {
       ...init,
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "GuardRails-Skills-Scanner/1.0",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers || {}),
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -209,9 +219,10 @@ async function githubRequest<T>(url: string, init?: RequestInit, limit = MAX_JSO
 
 async function githubText(url: string) {
   let response: Response;
+  const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
   try {
     response = await fetch(url, {
-      headers: { Accept: "text/plain", "User-Agent": "GuardRails-Skills-Scanner/1.0" },
+      headers: { Accept: "text/plain", "User-Agent": "GuardRails-Skills-Scanner/1.0", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
@@ -219,6 +230,37 @@ async function githubText(url: string) {
   }
   if (!response.ok) throw new SkillScanError(`GitHub returned HTTP ${response.status} while reading a Skill file.`, "source_unavailable", 502);
   return readLimitedResponse(response, MAX_FILE_BYTES);
+}
+
+function selectedSkillPaths(parsed: ParsedSource, tree: GitHubTree) {
+  const allSkillPaths = tree.tree
+    .filter((entry) => entry.type === "blob" && basename(entry.path) === "SKILL.md")
+    .map((entry) => entry.path);
+  const requestedRoot = parsed.requestedPath === "SKILL.md"
+    ? ""
+    : parsed.requestedPath
+      ? normalizePath(parsed.requestedPath.endsWith("/SKILL.md") ? dirname(parsed.requestedPath) : parsed.requestedPath)
+      : "";
+  const matching = allSkillPaths.filter((path) => !requestedRoot || path === `${requestedRoot}/SKILL.md` || (requestedRoot === "" && path === "SKILL.md"));
+  return { matching, requestedRoot };
+}
+
+export async function discoverPublicGitHubSkillUrls(input: string, maxSkills = 100): Promise<PublicGitHubSkillCandidate[]> {
+  const parsed = parsePublicGitHubSkillUrl(input);
+  const repoUrl = `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}`;
+  const repository = await githubRequest<GitHubRepository>(repoUrl);
+  const requestedRef = parsed.requestedRef || repository.default_branch;
+  const commit = await githubRequest<GitHubCommit>(`${repoUrl}/commits/${encodeURIComponent(requestedRef)}`);
+  if (!/^[a-f0-9]{40}$/i.test(commit.sha)) throw new SkillScanError("GitHub did not return an immutable commit SHA.", "source_unavailable", 502);
+  const tree = await githubRequest<GitHubTree>(`${repoUrl}/git/trees/${commit.sha}?recursive=1`);
+  const { matching } = selectedSkillPaths(parsed, tree);
+  return matching.slice(0, Math.max(1, Math.min(maxSkills, 100))).map((path) => ({
+    sourceUrl: `https://github.com/${parsed.owner}/${parsed.repo}/tree/${commit.sha}/${path}`,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    commit: commit.sha,
+    skillPath: dirname(path),
+  }));
 }
 
 function basename(path: string) {
@@ -532,9 +574,7 @@ export async function scanPublicGitHubSkill(input: string): Promise<SkillScanRep
   const commit = await githubRequest<GitHubCommit>(`${repoUrl}/commits/${encodeURIComponent(requestedRef)}`);
   if (!/^[a-f0-9]{40}$/i.test(commit.sha)) throw new SkillScanError("GitHub did not return an immutable commit SHA.", "source_unavailable", 502);
   const tree = await githubRequest<GitHubTree>(`${repoUrl}/git/trees/${commit.sha}?recursive=1`);
-  const allSkillPaths = tree.tree.filter((entry) => entry.type === "blob" && basename(entry.path) === "SKILL.md").map((entry) => entry.path);
-  const requestedRoot = parsed.requestedPath === "SKILL.md" ? "" : parsed.requestedPath ? normalizePath(parsed.requestedPath.endsWith("/SKILL.md") ? dirname(parsed.requestedPath) : parsed.requestedPath) : "";
-  const matching = allSkillPaths.filter((path) => !requestedRoot || path === `${requestedRoot}/SKILL.md` || (requestedRoot === "" && path === "SKILL.md"));
+  const { matching, requestedRoot } = selectedSkillPaths(parsed, tree);
   if (!matching.length) throw new SkillScanError("No SKILL.md was found at the requested public GitHub path.", "not_skill");
   if (!requestedRoot && matching.length > 1) throw new SkillScanError(`This repository contains ${matching.length} Skills. Open one Skill directory or SKILL.md directly so the report has an unambiguous identity.`, "not_skill");
   const selectedSkillPath = matching[0];
